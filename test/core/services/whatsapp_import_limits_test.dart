@@ -12,17 +12,14 @@ WhatsAppChat _chat(int count) {
   final lines = <String>[
     for (int i = 0; i < count; i++)
       '${1 + (i ~/ 24)}.10.2026, '
-      '${(i % 24).toString().padLeft(2, '0')}:00 - רחל: ${_card(i)}',
+          '${(i % 24).toString().padLeft(2, '0')}:00 - רחל: ${_card(i)}',
   ];
   return WhatsAppImportService.parseText(lines.join('\n'));
 }
 
 void main() {
   test('a 230-candidate export is limited to the newest 200', () {
-    final plan = AiImportRunner.planChat(
-      _chat(230),
-      since: DateTime(2026, 10),
-    );
+    final plan = AiImportRunner.planChat(_chat(230), since: DateTime(2026, 10));
     expect(plan.messageCount, AiConfig.maxWhatsappImportMessages);
     expect(plan.remaining, 30);
     expect(plan.batchCount, lessThanOrEqualTo(AiConfig.maxWhatsappRequests));
@@ -37,14 +34,13 @@ void main() {
   });
 
   test('date range filters before applying the 200-message limit', () {
-    final chat = WhatsAppImportService.parseText(<String>[
-      '1.1.2026, 10:00 - רחל: ${_card(1)}',
-      '21.10.2026, 10:00 - רחל: ${_card(2)}',
-    ].join('\n'));
-    final plan = AiImportRunner.planChat(
-      chat,
-      since: DateTime(2026, 7, 22),
+    final chat = WhatsAppImportService.parseText(
+      <String>[
+        '1.1.2026, 10:00 - רחל: ${_card(1)}',
+        '21.10.2026, 10:00 - רחל: ${_card(2)}',
+      ].join('\n'),
     );
+    final plan = AiImportRunner.planChat(chat, since: DateTime(2026, 7, 22));
     expect(plan.outsidePeriod, 1);
     expect(plan.messageCount, 1);
     expect(plan.batches.single.single.message.text, contains('מועמד 2 '));
@@ -57,10 +53,7 @@ void main() {
       ],
       mediaPaths: const <String, String>{},
     );
-    final recent = AiImportRunner.planChat(
-      chat,
-      since: DateTime(2026, 7, 22),
-    );
+    final recent = AiImportRunner.planChat(chat, since: DateTime(2026, 7, 22));
     expect(recent.undated, 1);
     expect(recent.messageCount, 0);
     expect(AiImportRunner.planChat(chat).messageCount, 1);
@@ -74,10 +67,7 @@ void main() {
       text: latest.text,
       attachmentName: latest.attachmentName,
     );
-    final plan = AiImportRunner.planChat(
-      chat,
-      alreadyImported: <String>{key},
-    );
+    final plan = AiImportRunner.planChat(chat, alreadyImported: <String>{key});
     expect(plan.skipped, 1);
     expect(plan.messageCount, 200);
     expect(plan.remaining, 29);

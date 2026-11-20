@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -51,7 +52,7 @@ List<Widget> buildDashboardSummarySlivers(
       value: ideasCount.toString(),
       subtitle: 'כל מה שמופיע ברעיונות',
       icon: Icons.lightbulb_outline,
-      color: Colors.amber.shade700,
+      color: AppColors.copper,
       route: '/matches',
     ),
     _StatItem(
@@ -59,7 +60,7 @@ List<Widget> buildDashboardSummarySlivers(
       value: datingCount.toString(),
       subtitle: '',
       icon: Icons.favorite,
-      color: Colors.green.shade600,
+      color: AppColors.blue,
       route: '/matches?statuses=dating',
     ),
   ];
@@ -69,7 +70,7 @@ List<Widget> buildDashboardSummarySlivers(
     value: marriedCount.toString(),
     subtitle: 'שידוכים שלי',
     icon: Icons.favorite,
-    color: Colors.pink.shade400,
+    color: AppColors.rose,
     route: '/matches?archived=true&statuses=married',
   );
   return <Widget>[

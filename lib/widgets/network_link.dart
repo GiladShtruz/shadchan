@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:provider/provider.dart';
@@ -10,9 +10,10 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/utils/gender_text.dart';
 
-/// "המאגר המשותף" at the head of המאגר שלי: how many cards the connected
-/// matchmakers share, and ideas waiting for an answer — or, with nobody
-/// connected yet, the way to the matchmakers among the contacts.
+/// The value line at the head of המאגר שלי: "אתה משתף X כרטיסים · השדכנים
+/// שלך משתפים איתך Y" — a tap on it opens what is shared with me. With
+/// nothing shared either way, the way to the matchmakers among the contacts.
+/// Every figure here is a count already on the share rows: nothing is read.
 class NetworkLink extends StatelessWidget {
   const NetworkLink({super.key});
 
@@ -23,9 +24,8 @@ class NetworkLink extends StatelessWidget {
     final Color ink = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
-        MatchmakerNetwork.cards,
+        MatchmakerShares.rows,
         MatchmakerNetwork.proposals,
-        MatchmakerConnections.connections,
         NetworkSharing.revision,
       ]),
       builder: (BuildContext context, _) {
@@ -34,19 +34,19 @@ class NetworkLink extends StatelessWidget {
           accessTo: context.watch<CardAccessProvider>().accessTo,
         ).length;
         final int connected = MatchmakerNetwork.connectedNames.length;
-        final int cards = MatchmakerNetwork.cards.value.length;
+        final int cards = MatchmakerShares.totalSharedWithMe;
         final int waiting = MatchmakerNetwork.incomingPending.length;
         final String title = connected == 0
-            ? 'המאגר המשותף של שדכנים שמכירים'
-            : 'המאגר המשותף';
+            ? 'שיתוף כרטיסים עם שדכנים שמכירים'
+            : 'שדכנים שותפים';
         final String line = connected == 0
-            ? 'מתחברים לשדכנים מאנשי הקשר, ורואים כרטיסים שהם בוחרים לשתף'
+            ? 'בוחרים מה לשתף עם כל שדכן מאנשי הקשר, ורואים מה הם משתפים'
             : waiting > 0
             ? (waiting == 1
                   ? 'הצעת רעיון אחת ממתינה לתשובה שלך'
                   : '$waiting הצעות רעיון ממתינות לתשובה שלך')
-            : '{אתה משתף|את משתפת} $mine כרטיסים · דרך השדכנים שלך פתוחים '
-                      'לך עוד $cards'
+            : '{אתה משתף|את משתפת} $mine כרטיסים · השדכנים שלך משתפים '
+                      'איתך $cards'
                   .forGender(context.userGender);
         return Material(
           color: dark ? AppColors.surfaceDm : theme.colorScheme.surface,

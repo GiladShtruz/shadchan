@@ -414,10 +414,10 @@ service cloud.firestore {
     match /matchmakerActivity/{uid} {
       // Yourself; a card owner who gave this matchmaker access; and, for
       // "שדכנים שאני מכיר", a matchmaker who has [uid] saved in their phone
-      // or who is connected with them (or asked / was asked).
+      // or who shares with them (or asked to) either way.
       allow get: if durable() && (uid == request.auth.uid ||
         (exists(accessPath(request.auth.uid, uid)) && get(accessPath(request.auth.uid, uid)).data.status == 'approved' && get(accessPath(request.auth.uid, uid)).data.get('cardGranted', true) == true) ||
-        exists(connectionPath(request.auth.uid, uid)) ||
+        exists(shareRowPath(request.auth.uid, uid)) || exists(shareRowPath(uid, request.auth.uid)) ||
         knownPhoneInContacts(request.auth.uid, uid));
       allow list: if false;
       allow create, update: if durable() && uid == request.auth.uid
@@ -806,8 +806,10 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/phoneDirectory/$(get(path).data.phoneHash)).data.uid == uid
         && get(/databases/$(database)/documents/contactHashes/$(ownerUid)).data.hashes.hasAny([get(path).data.phoneHash]);
     }
-    function connectionPath(a, b) {
-      return /databases/$(database)/documents/matchmakerConnections/$(a < b ? a + '_' + b : b + '_' + a);
+    // One direction of sharing between two matchmakers (2026-11-20):
+    // `matchmakerShares/{owner}_{reader}` — what [owner] shares with [reader].
+    function shareRowPath(owner, reader) {
+      return /databases/$(database)/documents/matchmakerShares/$(owner + '_' + reader);
     }
     function inOwnersContacts(ownerUid) {
       return paired() ?
@@ -1069,73 +1071,75 @@ service cloud.firestore {
                         || (isMatchmaker() && resource.data.status != 'blocked'));
     }
 
-    // --- "שדכנים שאני מכיר": matchmakers who already know each other -----
+    // ---- Sharing between two matchmakers (2026-11-20) -------------------
     //
-    // One document per pair, `{a}_{b}` with the two uids sorted. One side asks
-    // (pending), the other approves or declines. **Contacts are the layer of
-    // trust**: a matchmaker may ask only somebody saved in their own phone who
-    // matchmakes here — checked against the hashes they published and the
-    // directory entry the other account wrote as its own. A connection shares
-    // nothing: no card, no friend and no figure of either database lives here.
-    match /matchmakerConnections/{pairId} {
-      function wellFormed(d) {
-        return d.keys().hasOnly(['uids', 'fromUid', 'toUid', 'status', 'names', 'createdAt', 'updatedAt'])
-          && d.uids is list && d.uids.size() == 2 && d.uids[0] < d.uids[1]
-          && pairId == d.uids[0] + '_' + d.uids[1]
-          && d.fromUid in d.uids && d.toUid in d.uids && d.fromUid != d.toUid
-          && d.status in ['pending', 'approved', 'declined']
-          && d.names is map && d.names.keys().hasOnly([d.fromUid, d.toUid])
-          && d.names.get(d.fromUid, '') is string && d.names.get(d.fromUid, '').size() <= 80
-          && d.names.get(d.toUid, '') is string && d.names.get(d.toUid, '').size() <= 80
+    // **One direction, one pair, one decision.** `matchmakerShares/
+    // {owner}_{reader}` says what [owner] shares with [reader]: the whole
+    // database, the friends picked, or everything except some — or nothing
+    // ("none"). Each matchmaker decides for each other matchmaker on their
+    // own; nothing here is ever a pool of many databases. The card itself is
+    // never copied per reader: the owner publishes one view of a card
+    // (`networkCards`) and lists who may read it. [reader] may only *ask*
+    // ("requested"). Both sides must be matchmakers who know each other from
+    // the phone book. The old mutual `matchmakerConnections` model is gone.
+    match /matchmakerShares/{shareId} {
+      function shareOk(d) {
+        return d.keys().hasOnly([
+                 'ownerUid', 'readerUid', 'uids', 'mode', 'count',
+                 'ownerName', 'readerName', 'createdAt', 'updatedAt'])
+          && d.ownerUid is string && d.readerUid is string
+          && shareId == d.ownerUid + '_' + d.readerUid
+          && d.ownerUid != d.readerUid
+          && d.uids == [d.ownerUid, d.readerUid]
+          && d.mode in ['requested', 'all', 'selected', 'allExcept', 'none']
+          && d.get('count', 0) is int && d.get('count', 0) >= 0
+          && d.get('count', 0) <= 100000
+          && d.get('ownerName', '') is string && d.get('ownerName', '').size() <= 80
+          && d.get('readerName', '') is string && d.get('readerName', '').size() <= 80
           && d.createdAt is timestamp
           && d.updatedAt == request.time;
       }
-      // [uid] is a matchmaker saved in the caller's phone.
-      function matchmakerInMyContacts(uid) {
-        return knownPhoneInContacts(request.auth.uid, uid)
-          && get(/databases/$(database)/documents/phoneDirectory/$(get(/databases/$(database)/documents/userPhones/$(uid)).data.phoneHash)).data.matchmaker == true;
+      // Two matchmakers who know each other from the phone book — either one
+      // saved the other — and the other side matchmakes here.
+      function knownMatchmaker(other) {
+        return (knownPhoneInContacts(request.auth.uid, other)
+                || knownPhoneInContacts(other, request.auth.uid))
+          && get(/databases/$(database)/documents/phoneDirectory/$(get(/databases/$(database)/documents/userPhones/$(other)).data.phoneHash)).data.matchmaker == true;
       }
-      // A fresh request from the caller.
-      function asking(d) {
-        return d.fromUid == request.auth.uid && d.status == 'pending'
-          && d.createdAt == request.time
-          && matchmakerInMyContacts(d.toUid);
-      }
-
       allow read: if durable() && request.auth.uid in resource.data.uids;
-
-      allow create: if durable() && wellFormed(request.resource.data)
-                    && asking(request.resource.data);
-
-      allow update: if durable() && wellFormed(request.resource.data)
-                    && request.auth.uid in resource.data.uids
-                    && request.resource.data.uids == resource.data.uids
+      allow create: if durable() && shareOk(request.resource.data)
+                    && request.resource.data.createdAt == request.time
                     && (
-                      // The side asked answers: approve or "לא עכשיו".
-                      (resource.data.status == 'pending'
-                       && resource.data.toUid == request.auth.uid
-                       && request.resource.data.fromUid == resource.data.fromUid
-                       && request.resource.data.toUid == resource.data.toUid
-                       && request.resource.data.createdAt == resource.data.createdAt
-                       && request.resource.data.status in ['approved', 'declined']
-                       && request.resource.data.names.get(resource.data.fromUid, '') == resource.data.names.get(resource.data.fromUid, ''))
+                      (request.resource.data.ownerUid == request.auth.uid
+                       && request.resource.data.mode != 'requested'
+                       && knownMatchmaker(request.resource.data.readerUid))
                       ||
-                      // Asking after a "לא עכשיו": at once when it was the
-                      // caller who said it, after thirty days when it was said
-                      // to the caller — never a stream of requests.
-                      (resource.data.status == 'declined'
-                       && asking(request.resource.data)
-                       && (resource.data.toUid == request.auth.uid
-                           || resource.data.updatedAt < request.time - duration.value(30, 'd')))
+                      (request.resource.data.readerUid == request.auth.uid
+                       && request.resource.data.mode == 'requested'
+                       && request.resource.data.get('count', 0) == 0
+                       && knownMatchmaker(request.resource.data.ownerUid))
                     );
-
-      // Leaving a connection, or withdrawing one's own request. A request
-      // declined *to* the caller stays until its thirty days are up — deleting
-      // it would be a way round them.
-      allow delete: if durable() && request.auth.uid in resource.data.uids
-                    && (resource.data.status == 'approved'
-                        || (resource.data.status == 'pending' && resource.data.fromUid == request.auth.uid)
-                        || (resource.data.status == 'declined' && resource.data.toUid == request.auth.uid));
+      allow update: if durable() && shareOk(request.resource.data)
+                    && request.resource.data.ownerUid == resource.data.ownerUid
+                    && request.resource.data.readerUid == resource.data.readerUid
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && (
+                      // The owner decides — any time, without asking anyone.
+                      (request.auth.uid == resource.data.ownerUid
+                       && request.resource.data.mode != 'requested')
+                      ||
+                      // The reader asks again after sharing stopped.
+                      (request.auth.uid == resource.data.readerUid
+                       && resource.data.mode == 'none'
+                       && request.resource.data.mode == 'requested'
+                       && request.resource.data.diff(resource.data).affectedKeys()
+                            .hasOnly(['mode', 'readerName', 'updatedAt']))
+                    );
+      // The owner removes the row; the reader withdraws a request.
+      allow delete: if durable()
+                    && (request.auth.uid == resource.data.ownerUid
+                        || (request.auth.uid == resource.data.readerUid
+                            && resource.data.mode == 'requested'));
     }
 
     // "Yitzchak marked you as 'busy' on his phone — is that right?" A
@@ -1202,17 +1206,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // --- The network between connected matchmakers ----------------------
+    // --- Sharing between matchmakers: who may see what -------------------
     //
-    // **A trust network, never a public database.** Everything below is
-    // readable only across an *approved* `matchmakerConnections` row — two
-    // matchmakers who have each other in their phones and both said yes.
-    // Removing the connection closes all of it at once: the rules read the
-    // row on every request.
-    function connectedTo(other) {
+    // **A trust network, never a public database.** [other] and the caller
+    // share when either one shares something with the other right now.
+    function activeShare(owner, reader) {
+      return exists(shareRowPath(owner, reader))
+        && get(shareRowPath(owner, reader)).data.mode in ['all', 'selected', 'allExcept'];
+    }
+    function sharesBetween(other) {
       return other != request.auth.uid
-        && exists(connectionPath(request.auth.uid, other))
-        && get(connectionPath(request.auth.uid, other)).data.status == 'approved';
+        && (activeShare(request.auth.uid, other) || activeShare(other, request.auth.uid));
+    }
+    // Two matchmakers who may send each other a card or an idea: they share,
+    // or one has the other saved in their phone.
+    function networkPeer(other) {
+      return other != request.auth.uid
+        && (sharesBetween(other)
+            || knownPhoneInContacts(request.auth.uid, other)
+            || knownPhoneInContacts(other, request.auth.uid));
     }
 
     // The cards a matchmaker chose to make visible to the matchmakers they
@@ -1234,7 +1246,7 @@ service cloud.firestore {
                'preferredRegions', 'preferredMaritalStatuses',
                'preferredReligiousLevels', 'preferredReligiousLevelOtherLabels',
                'tags', 'photoPaths', 'identity', 'cardOwnerUid', 'status',
-               'updatedAt'])
+               'readers', 'nameKey', 'updatedAt'])
         && d.ownerUid == ownerUid && d.personId == personId
         && d.ownerName is string && d.ownerName.size() <= 80
         && d.gender in ['male', 'female']
@@ -1249,11 +1261,34 @@ service cloud.firestore {
             || (get(accessPath(d.cardOwnerUid, databaseUid())).data.status == 'approved'
                 && get(accessPath(d.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true));
     }
+    // The pre-2026-11-20 copies, readable and removable by their owner only
+    // so the app can clean them up. Nobody else reads them any more.
     match /sharedCards/{ownerUid}/cards/{personId} {
-      allow read: if durable() && (request.auth.uid == ownerUid || connectedTo(ownerUid));
-      allow create, update: if durable() && request.auth.uid == ownerUid
-                            && sharedCardOk(request.resource.data, ownerUid, personId);
-      allow delete: if durable() && request.auth.uid == ownerUid;
+      allow read, delete: if durable() && request.auth.uid == ownerUid;
+    }
+
+    // **One published view of a card, and the list of who may read it.**
+    // `networkCards/{owner}_{personId}`: the shared-card whitelist plus
+    // `readers` — the matchmakers the owner shares this card with right now —
+    // and `nameKey` for a search by name on the server. Changing who sees a
+    // card rewrites `readers`; the card is never copied per matchmaker. A
+    // reader lists only what names them (`readers` array-contains), page by
+    // page — never anybody's whole database.
+    match /networkCards/{cardId} {
+      allow read: if durable()
+                  && (resource.data.ownerUid == request.auth.uid
+                      || request.auth.uid in resource.data.readers);
+      allow create, update: if durable()
+                            && request.resource.data.personId is string
+                            && cardId == request.auth.uid + '_' + request.resource.data.personId
+                            && request.resource.data.readers is list
+                            && request.resource.data.readers.size() > 0
+                            && request.resource.data.readers.size() <= 500
+                            && !(request.auth.uid in request.resource.data.readers)
+                            && request.resource.data.nameKey is string
+                            && request.resource.data.nameKey.size() <= 80
+                            && sharedCardOk(request.resource.data, request.auth.uid, request.resource.data.personId);
+      allow delete: if durable() && resource.data.ownerUid == request.auth.uid;
     }
 
     // ---- The couple space (2026-11-20) -----------------------------------
@@ -1330,16 +1365,15 @@ service cloud.firestore {
       allow delete: if durable() && request.auth.uid == ownerUid;
     }
 
-    // One card sent to one connected matchmaker — from a chat, even when it
-    // is not in the shared pool. The same whitelist as a shared card; only
-    // the matchmaker it was sent to reads it, and only while the two stay
-    // connected. A single's own card needs the same consent as in the pool.
+    // One card sent by its owner to one matchmaker — in a chat, on purpose.
+    // The same whitelist as a shared card; only the matchmaker it was sent
+    // to reads it, and only while the two know each other or share. A single's own card needs the same consent as in the pool.
     match /sentCards/{ownerUid}/to/{toUid}/cards/{personId} {
       allow read: if durable()
                   && (request.auth.uid == ownerUid
-                      || (request.auth.uid == toUid && connectedTo(ownerUid)));
+                      || (request.auth.uid == toUid && networkPeer(ownerUid)));
       allow create, update: if durable() && request.auth.uid == ownerUid
-                            && connectedTo(toUid)
+                            && networkPeer(toUid)
                             && sharedCardOk(request.resource.data, ownerUid, personId);
       allow delete: if durable() && request.auth.uid == ownerUid;
     }
@@ -1358,7 +1392,7 @@ service cloud.firestore {
           && d.uids == [d.fromUid, d.toUid] && d.fromUid != d.toUid
           && d.fromName is string && d.fromName.size() <= 80
           && d.toName is string && d.toName.size() <= 80
-          && d.status in ['pending', 'approved', 'declined', 'withdrawn']
+          && d.status in ['pending', 'approved', 'opened', 'declined', 'withdrawn']
           && d.target is map && d.target.personId is string
           && d.candidate is map && d.candidate.personId is string
           && d.candidate.get('description', '') is string
@@ -1378,15 +1412,16 @@ service cloud.firestore {
                       // Between connected matchmakers: offered, and opened by
                       // the yes of the one who holds the card.
                       (request.resource.data.status == 'pending'
-                       && connectedTo(request.resource.data.toUid)
-                       && (exists(/databases/$(database)/documents/sharedCards/$(request.resource.data.toUid)/cards/$(request.resource.data.target.personId))
+                       && networkPeer(request.resource.data.toUid)
+                       && ((exists(/databases/$(database)/documents/networkCards/$(request.resource.data.toUid + '_' + request.resource.data.target.personId))
+                            && request.auth.uid in get(/databases/$(database)/documents/networkCards/$(request.resource.data.toUid + '_' + request.resource.data.target.personId)).data.readers)
                            || exists(/databases/$(database)/documents/sentCards/$(request.resource.data.toUid)/to/$(request.auth.uid)/cards/$(request.resource.data.target.personId)))
                        && (request.resource.data.candidate.get('cardOwnerUid', null) == null
                            || get(accessPath(request.resource.data.candidate.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true))
                       ||
                       // Between partners: open at once, on a card of the
                       // partner's database — no request for approval.
-                      (request.resource.data.status == 'approved'
+                      (request.resource.data.status in ['approved', 'opened']
                        && partnerOf(request.resource.data.toUid)
                        && exists(/databases/$(database)/documents/partnerCards/$(request.resource.data.toUid)/cards/$(request.resource.data.target.personId)))
                     );
@@ -1409,9 +1444,15 @@ service cloud.firestore {
                        && request.resource.data.status == 'withdrawn'
                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
                       ||
-                      // Each side writes only where its own half stands.
+                      // Agreed is not yet open: either side opens the idea
+                      // the moment they really ask the two friends.
                       (resource.data.status == 'approved'
-                       && request.resource.data.status == 'approved'
+                       && request.resource.data.status == 'opened'
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+                      ||
+                      // Each side writes only where its own half stands.
+                      (resource.data.status in ['approved', 'opened']
+                       && request.resource.data.status == resource.data.status
                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sides', 'updatedAt'])
                        && request.resource.data.sides.diff(resource.data.sides).affectedKeys().hasOnly([request.auth.uid]))
                     );
@@ -1445,7 +1486,7 @@ service cloud.firestore {
     function chatPeerAllowed(kind, other) {
       return kind == 'single' ? cardTie(request.auth.uid, other)
         : kind == 'partners' ? partnerOf(other)
-        : (connectedTo(other)
+        : (sharesBetween(other)
            || partnerOf(other)
            || knownPhoneInContacts(request.auth.uid, other)
            || knownPhoneInContacts(other, request.auth.uid));

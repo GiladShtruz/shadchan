@@ -60,15 +60,24 @@ abstract final class MyPhoneDialog {
     bool required = true,
     MyPhonePurpose purpose = MyPhonePurpose.cardOwner,
     Future<bool> Function(String phone)? belongsToAnotherAccount,
+
+    /// No "דילוג" at all — a matchmaker's sign-up cannot finish without the
+    /// number (2026-11-20): it is how matchmakers who know each other find
+    /// each other, and how they reach each other on WhatsApp.
+    bool mandatory = false,
   }) async {
     final MyPhoneOutcome? outcome = await showDialog<MyPhoneOutcome>(
       context: context,
-      barrierDismissible: !required,
-      builder: (BuildContext dialogContext) => _MyPhoneDialog(
-        initial: initial,
-        required: required,
-        purpose: purpose,
-        belongsToAnotherAccount: belongsToAnotherAccount,
+      barrierDismissible: !required && !mandatory,
+      builder: (BuildContext dialogContext) => PopScope(
+        canPop: !mandatory,
+        child: _MyPhoneDialog(
+          initial: initial,
+          required: required,
+          mandatory: mandatory,
+          purpose: purpose,
+          belongsToAnotherAccount: belongsToAnotherAccount,
+        ),
       ),
     );
     return outcome ?? const MyPhoneOutcome.skipped();
@@ -98,11 +107,13 @@ class _MyPhoneDialog extends StatefulWidget {
     required this.initial,
     required this.required,
     required this.purpose,
+    this.mandatory = false,
     this.belongsToAnotherAccount,
   });
 
   final String? initial;
   final bool required;
+  final bool mandatory;
   final MyPhonePurpose purpose;
   final Future<bool> Function(String phone)? belongsToAnotherAccount;
 
@@ -211,9 +222,11 @@ class _MyPhoneDialogState extends State<_MyPhoneDialog> {
       ),
       MyPhonePurpose.matchmaker => (
         'המספר שלי',
-        'אנשי קשר שלך שמנהלים כרטיס אישי ב״שדכן״ יראו אותך ברשימת החברים '
-            'שמשדכים, ויוכלו לתת לך גישה לכרטיס שלהם.',
-        'המספר משמש רק לזיהוי בין חברים ולא מוצג לאף אחד.',
+        'שדכנים מאנשי הקשר שלך יזהו אותך, יוכלו לשתף איתך כרטיסים ולפנות '
+            'אליך ב־WhatsApp. גם חברים שמנהלים כרטיס אישי יוכלו לתת לך גישה.',
+        widget.mandatory
+            ? 'שדה חובה לשדכנים. המספר משמש לזיהוי בין אנשי קשר ולא מוצג לאף אחד.'
+            : 'המספר משמש רק לזיהוי בין חברים ולא מוצג לאף אחד.',
       ),
       MyPhonePurpose.cardOwner => (
         'המספר שלי',
@@ -278,13 +291,15 @@ class _MyPhoneDialogState extends State<_MyPhoneDialog> {
                 )
               : const Text('שמירה'),
         ),
-        TextButton(
-          onPressed: _checking
-              ? null
-              : () => Navigator.of(context).pop(const MyPhoneOutcome.skipped()),
-          style: TextButton.styleFrom(foregroundColor: AppColors.mutedInk),
-          child: Text(widget.required ? 'דילוג' : 'ביטול'),
-        ),
+        if (!widget.mandatory)
+          TextButton(
+            onPressed: _checking
+                ? null
+                : () =>
+                      Navigator.of(context).pop(const MyPhoneOutcome.skipped()),
+            style: TextButton.styleFrom(foregroundColor: AppColors.mutedInk),
+            child: Text(widget.required ? 'דילוג' : 'ביטול'),
+          ),
       ],
     );
   }

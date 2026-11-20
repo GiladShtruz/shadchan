@@ -161,13 +161,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (WorkspaceStore.matchmakerEnabled)
                   SettingsRow(
                     icon: Icons.diversity_3_outlined,
-                    title: 'שיתוף כרטיסים עם שדכנים מחוברים',
-                    subtitle: switch (NetworkSharing.mode) {
-                      ShareMode.none => 'כבוי',
-                      ShareMode.all => 'כל הכרטיסים המלאים',
-                      ShareMode.selected => 'אנשים ספציפיים',
-                      ShareMode.allExcept => 'כל המאגר חוץ מכמה',
-                    },
+                    title: 'מה אני משתף/ת עם כל שדכן',
+                    subtitle: NetworkSharing.readers.isEmpty
+                        ? 'לא משתף/ת עם אף אחד'
+                        : 'משתף/ת עם ${NetworkSharing.readers.length} שדכנים',
                     onTap: () => context.push('/network/sharing'),
                   ),
                 SettingsRow(

@@ -10,7 +10,7 @@ import 'package:shadchan/models/shared_card.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/network_screen.dart';
-import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/services/shared_ideas.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -73,10 +73,26 @@ class NetworkIdeasList extends StatefulWidget {
 class _NetworkIdeasListState extends State<NetworkIdeasList> {
   int _shown = 20;
 
+  /// The newest cards shared with me — two pages, read once per visit. The
+  /// pairs are made from these, never from everybody's whole database.
+  List<SharedCard> _pool = const <SharedCard>[];
+
   @override
   void initState() {
     super.initState();
-    unawaited(MatchmakerNetwork.start());
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    await MatchmakerNetwork.start();
+    if (!MatchmakerShares.sharingWithMe.isNotEmpty) {
+      if (mounted) setState(() {});
+      return;
+    }
+    try {
+      final NetworkPage page = await MatchmakerNetwork.page(limit: 60);
+      if (mounted) setState(() => _pool = page.cards);
+    } catch (_) {}
   }
 
   @override
@@ -86,15 +102,14 @@ class _NetworkIdeasListState extends State<NetworkIdeasList> {
     final MatchRepository matches = context.watch<MatchRepository>();
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
-        MatchmakerNetwork.cards,
+        MatchmakerShares.rows,
         MatchmakerNetwork.proposals,
-        MatchmakerConnections.connections,
       ]),
       builder: (BuildContext context, _) {
-        if (MatchmakerNetwork.connectedNames.isEmpty) {
+        if (MatchmakerShares.sharingWithMe.isEmpty) {
           return _Empty(
             text:
-                'כשתתחבר/י לשדכנים שאת/ה מכיר/ה והם ישתפו כרטיסים, יופיעו כאן '
+                'כששדכנים שאת/ה מכיר/ה ישתפו איתך כרטיסים, יופיעו כאן '
                 'רעיונות שמחברים בין החברים שלך לחברים שלהם.',
             button: 'לשדכנים שאני מכיר',
             onPressed: () => context.push('/known-matchmakers'),
@@ -111,7 +126,7 @@ class _NetworkIdeasListState extends State<NetworkIdeasList> {
         };
         final List<SharedCard> pool = <SharedCard>[
           for (final SharedPoolEntry e in SharedPool.build(
-            MatchmakerNetwork.cards.value,
+            _pool,
             myIdentities: myIds,
           ))
             e.primary,
@@ -129,7 +144,7 @@ class _NetworkIdeasListState extends State<NetworkIdeasList> {
         if (pairs.isEmpty) {
           return const _Empty(
             text:
-                'עוד אין רעיונות מהמאגרים של השדכנים המחוברים. כשישותפו עוד '
+                'עוד אין רעיונות מהכרטיסים ששיתפו איתך. כשישותפו עוד '
                 'כרטיסים, הם יופיעו כאן.',
           );
         }

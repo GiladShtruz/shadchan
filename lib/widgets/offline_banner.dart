@@ -130,7 +130,7 @@ class _Strip extends StatelessWidget {
         ? (dark ? AppColors.surfaceDm : AppColors.primaryInk)
         : pairing
         ? AppColors.secondary
-        : const Color(0xFF5E8C61);
+        : AppColors.primary;
     const Color ink = Colors.white;
     return Semantics(
       liveRegion: true,

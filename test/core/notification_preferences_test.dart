@@ -36,7 +36,7 @@ void main() {
         NotificationCategory.newMatchmakers,
       );
       expect(
-        NotificationPreferences.categoryOf('connectionRequest'),
+        NotificationPreferences.categoryOf('shareRequest'),
         NotificationCategory.access,
       );
       expect(

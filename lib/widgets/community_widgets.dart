@@ -592,7 +592,7 @@ class CommunityRankRow extends StatelessWidget {
 
   /// Gold for first, and nothing louder than a tinted disc for second and
   /// third. Three medals in a row turns a community into a podium.
-  static const Color _gold = Color(0xFFD4A34B);
+  static const Color _gold = AppColors.copper;
 
   /// The ink of every number on the leaderboard: black, or white at night.
   static Color figureColor(ThemeData theme) =>

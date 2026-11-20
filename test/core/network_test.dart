@@ -153,96 +153,90 @@ void main() {
       );
     });
 
-    test('the three ways to share, and "share all" never shares a draft', () {
+    test('one decision per matchmaker: all, picked, everything except', () {
       final List<Person> people = <Person>[
         _person('a'),
         _person('b'),
         _person('c', photos: const <String>[]),
       ];
-      NetworkSharing.debugReset(since: DateTime(2026, 10, 1));
-      expect(NetworkSharing.sharedNow(people), isEmpty);
-      NetworkSharing.setMode(ShareMode.all);
-      expect(NetworkSharing.sharedNow(people).map((Person p) => p.id), <String>[
-        'a',
-        'b',
-      ]);
-      NetworkSharing.setMode(ShareMode.selected);
-      NetworkSharing.setSelected(<String>{'b', 'c'});
-      expect(NetworkSharing.sharedNow(people).map((Person p) => p.id), <String>[
-        'b',
-      ]);
-      NetworkSharing.setMode(ShareMode.allExcept);
-      NetworkSharing.setSelected(<String>{});
-      NetworkSharing.setExcluded(<String>{'a'});
-      expect(NetworkSharing.sharedNow(people).map((Person p) => p.id), <String>[
-        'b',
-      ]);
       NetworkSharing.debugReset();
-    });
-
-    test('cards from before sharing started never open by themselves', () {
-      final List<Person> people = <Person>[_person('a'), _person('b')];
-      NetworkSharing.debugReset();
-      // Sharing starts now; both friends were added on 1.11.
-      NetworkSharing.setMode(ShareMode.all);
-      expect(NetworkSharing.since, isNotNull);
       expect(NetworkSharing.sharedNow(people), isEmpty);
+      NetworkSharing.debugSetChoices(<String, ShareChoice>{
+        'yonatan': const ShareChoice(ShareMode.all),
+        'moshe': const ShareChoice(
+          ShareMode.selected,
+          selected: <String>{'b', 'c'},
+        ),
+        'rachel': const ShareChoice(
+          ShareMode.allExcept,
+          excluded: <String>{'a'},
+        ),
+      });
+      // Never an incomplete card, whatever the choice.
       expect(
-        NetworkSharing.earlierNotShared(people).map((Person p) => p.id),
+        NetworkSharing.sharedWith('yonatan', people).map((Person p) => p.id),
         <String>['a', 'b'],
       );
-      // Added by hand, in one go.
-      NetworkSharing.add(<String>['a']);
-      expect(NetworkSharing.sharedNow(people).map((Person p) => p.id), <String>[
-        'a',
-      ]);
       expect(
-        NetworkSharing.earlierNotShared(people).map((Person p) => p.id),
+        NetworkSharing.sharedWith('moshe', people).map((Person p) => p.id),
         <String>['b'],
       );
-      // A friend added after sharing started is in at once.
-      final Person fresh = Person(
-        id: 'n',
-        firstName: 'דנה',
-        lastName: 'לוי',
-        gender: Gender.female,
-        createdAt: DateTime.now().add(const Duration(minutes: 1)),
-        updatedAt: DateTime.now(),
-        description: 'כרטיס',
-        photosPaths: const <String>['/photos/n.jpg'],
+      expect(
+        NetworkSharing.sharedWith('rachel', people).map((Person p) => p.id),
+        <String>['b'],
       );
-      expect(NetworkSharing.chosen(fresh), isTrue);
-      // Taken out again.
-      NetworkSharing.remove(people.first);
-      expect(NetworkSharing.sharedNow(people), isEmpty);
+      // Sharing with one says nothing about another.
+      expect(NetworkSharing.sharedWith('stranger', people), isEmpty);
+      expect(NetworkSharing.readersOf(people.first), <String>{'yonatan'});
+      expect(NetworkSharing.readersOf(people[1]), <String>{
+        'yonatan',
+        'moshe',
+        'rachel',
+      });
+      expect(NetworkSharing.sharedNow(people).map((Person p) => p.id), <String>[
+        'a',
+        'b',
+      ]);
       NetworkSharing.debugReset();
     });
 
-    test(
-      "a single's consented personal card is in by default, unless kept out",
-      () {
-        final Person own = _person('s', cardOwnerUid: 'single');
-        CardAccess? access(String owner) => _row(owner, onward: true);
-        NetworkSharing.debugReset();
-        NetworkSharing.setMode(ShareMode.selected);
-        expect(
-          NetworkSharing.sharedNow(<Person>[own], accessTo: access),
-          hasLength(1),
-        );
-        NetworkSharing.remove(own);
-        expect(NetworkSharing.excluded, contains('s'));
-        expect(
-          NetworkSharing.sharedNow(<Person>[own], accessTo: access),
-          isEmpty,
-        );
-        // Sharing off: nothing, whatever the single said.
-        NetworkSharing.debugReset();
-        expect(
-          NetworkSharing.sharedNow(<Person>[own], accessTo: access),
-          isEmpty,
-        );
-      },
-    );
+    test('a choice survives being written and read back', () {
+      const ShareChoice choice = ShareChoice(
+        ShareMode.allExcept,
+        excluded: <String>{'x', 'y'},
+      );
+      expect(ShareChoice.fromJson(choice.toJson()), choice);
+      expect(ShareChoice.fromJson(null), ShareChoice.off);
+      expect(
+        ShareChoice.fromJson(<String, Object?>{'m': 'nonsense'}).isOn,
+        isFalse,
+      );
+    });
+
+    test("a single's consented card follows the choice like any card", () {
+      final Person own = _person('s', cardOwnerUid: 'single');
+      CardAccess? consented(String owner) => _row(owner, onward: true);
+      CardAccess? notConsented(String owner) => _row(owner);
+      NetworkSharing.debugSetChoices(<String, ShareChoice>{
+        'all': const ShareChoice(ShareMode.all),
+        'picked': const ShareChoice(ShareMode.selected),
+      });
+      expect(
+        NetworkSharing.sharedWith('all', <Person>[own], accessTo: consented),
+        hasLength(1),
+      );
+      // Under "אנשים נבחרים" only when picked.
+      expect(
+        NetworkSharing.sharedWith('picked', <Person>[own], accessTo: consented),
+        isEmpty,
+      );
+      // The single turned it off: never, even under "כל המאגר".
+      expect(
+        NetworkSharing.sharedWith('all', <Person>[own], accessTo: notConsented),
+        isEmpty,
+      );
+      NetworkSharing.debugReset();
+    });
   });
 
   group('the shared card document', () {
@@ -270,7 +264,10 @@ void main() {
         ownerUid: 'u1',
         ownerName: 'יונתן',
         photoPaths: const <String>['sharedCards/u1/a/a.jpg'],
+        readers: const <String>['u2'],
       );
+      expect(remote['readers'], <String>['u2']);
+      expect(remote['nameKey'], 'נועה כהן');
       final String rules = File('firestore.rules').readAsStringSync();
       final String block = rules.substring(
         rules.indexOf('function sharedCardOk('),

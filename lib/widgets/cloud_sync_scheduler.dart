@@ -1,4 +1,3 @@
-import 'package:shadchan/services/matchmaker_connections.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -236,11 +235,10 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       // Chats are for everybody — a single talks to the matchmakers who keep
       // their card — so they start whatever area this account works in.
       unawaited(ChatService.start());
-      // "שדכנים שאני מכיר": the connections this account is part of.
+      // Sharing between matchmakers: the share rows (metadata only) and the
+      // ideas offered between them — read once, never a listener per
+      // matchmaker; the cards themselves are read only when a screen opens.
       if (WorkspaceStore.matchmakerEnabled) {
-        unawaited(MatchmakerConnections.start());
-        // The network between connected matchmakers: the cards they share,
-        // ideas offered between them, and the chats.
         unawaited(_startNetwork());
       }
       // Reciprocal discovery needs both roles' address books. This checks
@@ -523,6 +521,10 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     }
     if (state == AppLifecycleState.resumed && FirebaseBootstrap.isReady) {
       unawaited(context.read<CardAccessProvider>().resume());
+      if (WorkspaceStore.matchmakerEnabled) {
+        // Share rows and ideas only — a delta of a few small documents.
+        unawaited(MatchmakerNetwork.resume());
+      }
       unawaited(ContactHashUpload.run());
     }
   }

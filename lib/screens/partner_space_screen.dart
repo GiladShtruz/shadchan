@@ -18,7 +18,7 @@ import 'package:shadchan/screens/network_screen.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
-import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/partner_space.dart';
@@ -233,15 +233,14 @@ abstract final class _PartnerPicker {
   static Future<KnownMatchmaker?> show(BuildContext context) {
     final CardAccessProvider access = context.read<CardAccessProvider>();
     final KnownMatchmakerGroups groups = KnownMatchmakers.build(
-      me: MatchmakerConnections.uid ?? access.uid,
+      me: MatchmakerShares.uid ?? access.uid,
       helpers: access.knownHelpers,
-      connections: MatchmakerConnections.connections.value,
+      shares: MatchmakerShares.rows.value,
       nameOf: (CardHelper h) => ContactHashUpload.nameFor(h.phoneHash),
     );
     final List<KnownMatchmaker> all = <KnownMatchmaker>[
       ...groups.connected,
-      ...groups.requests,
-      ...groups.contacts,
+      ...groups.others,
     ];
     return showModalBottomSheet<KnownMatchmaker>(
       context: context,

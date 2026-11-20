@@ -342,13 +342,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (!mounted) {
         return;
       }
-      // The number is how friends who keep a personal card find this
-      // matchmaker among their contacts. Asked once, and skippable.
-      if (profile.myPhone == null) {
+      // The number is compulsory for a matchmaker (2026-11-20): it is how
+      // matchmakers who know each other find each other, how friends who
+      // keep a personal card find them, and how they reach each other on
+      // WhatsApp. The dialog has no "דילוג"; it is asked until given.
+      while (mounted && profile.myPhone == null) {
         final MyPhoneOutcome outcome = await MyPhoneDialog.showForSignUp(
           context,
           purpose: MyPhonePurpose.matchmaker,
           belongsToAnotherAccount: _belongsToAnotherAccount,
+          mandatory: true,
         );
         CommunityPromptsStore.markMatchmakerPhoneAsked();
         if (!mounted) {

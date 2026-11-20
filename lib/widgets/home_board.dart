@@ -42,10 +42,9 @@ import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/notification_center.dart';
 import 'package:shadchan/dialogs/invite_card_friends_sheet.dart';
-import 'package:shadchan/models/matchmaker_connection.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/friends_with_cards_screen.dart';
-import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/utils/home_action_prompts.dart';
@@ -818,9 +817,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
         },
       ).length;
     }
-    final int connected = MatchmakerConnections.connections.value
-        .where((MatchmakerConnection c) => c.isConnected)
-        .length;
+    final int connected = MatchmakerShares.connectedNames.length;
     final DateTime weekStart =
         CommunityPeriods.startOf(CommunityPeriod.week) ?? DateTime.now();
     final HomeBoardStore store = HomeBoardStore.instance;

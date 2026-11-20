@@ -2,9 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadchan/models/matchmaker_connection.dart';
 import 'package:shadchan/services/chat_service.dart';
-import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -54,7 +53,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   void initState() {
     super.initState();
     unawaited(ChatService.start());
-    unawaited(MatchmakerConnections.start());
+    unawaited(MatchmakerNetwork.start());
   }
 
   @override
@@ -65,23 +64,24 @@ class _ChatsScreenState extends State<ChatsScreen> {
       body: ListenableBuilder(
         listenable: Listenable.merge(<Listenable>[
           ChatService.threads,
-          MatchmakerConnections.connections,
+          MatchmakerShares.rows,
         ]),
         builder: (BuildContext context, _) {
-          final String? me = ChatService.uid ?? MatchmakerConnections.uid;
+          final String? me = ChatService.uid ?? MatchmakerShares.uid;
           final List<ChatThread> threads = ChatService.threads.value;
-          // Connected matchmakers there is no chat with yet, so a chat can be
-          // started from here too.
+          // Matchmakers who share with this one (either way) there is no
+          // chat with yet, so a chat can be started from here too.
           final Set<String> withChat = <String>{
             if (me != null)
               for (final ChatThread t in threads) t.otherOf(me),
           };
-          final List<MatchmakerConnection> fresh = <MatchmakerConnection>[
-            if (me != null)
-              for (final MatchmakerConnection c
-                  in MatchmakerConnections.connections.value)
-                if (c.isConnected && !withChat.contains(c.otherOf(me))) c,
-          ];
+          final List<MapEntry<String, String>> fresh =
+              <MapEntry<String, String>>[
+                if (me != null)
+                  for (final MapEntry<String, String> c
+                      in MatchmakerShares.connectedNames.entries)
+                    if (!withChat.contains(c.key)) c,
+              ];
           if (threads.isEmpty && fresh.isEmpty) {
             return Center(
               child: Padding(
@@ -96,7 +96,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'צ\'אט נפתח עם שדכנים שמחוברים אליך — שיחה אחת מתמשכת '
+                      'צ\'אט נפתח עם שדכנים שאת/ה מכיר/ה — שיחה אחת מתמשכת '
                       'לכל הכרטיסים והרעיונות ביניכם.',
                       textAlign: TextAlign.center,
                     ),
@@ -118,21 +118,21 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                   child: Text(
-                    'שדכנים מחוברים',
+                    'שדכנים שמשתפים',
                     style: theme.textTheme.titleSmall,
                   ),
                 ),
-                for (final MatchmakerConnection c in fresh)
+                for (final MapEntry<String, String> c in fresh)
                   ListTile(
-                    leading: _Initial(name: c.names[c.otherOf(me!)] ?? ''),
-                    title: Text(c.names[c.otherOf(me)] ?? 'שדכן/ית'),
+                    leading: _Initial(name: c.value),
+                    title: Text(c.value.isEmpty ? 'שדכן/ית' : c.value),
                     subtitle: const Text('להתחיל שיחה'),
                     onTap: () async {
                       await context.push(
                         ChatService.routeTo(
-                          me: me,
-                          otherUid: c.otherOf(me),
-                          theirName: c.names[c.otherOf(me)],
+                          me: me!,
+                          otherUid: c.key,
+                          theirName: c.value,
                         ),
                       );
                     },
@@ -305,14 +305,36 @@ class _ChatScreenState extends State<ChatScreen> {
     ChatService.openChatId = widget.chatId;
     unawaited(ChatService.start());
     unawaited(_load());
+    unawaited(_loadTheirCards());
     _text.addListener(() {
       final bool can = _text.text.trim().isNotEmpty;
       if (can != _canSend) setState(() => _canSend = can);
     });
   }
 
+  VoidCallback? _releaseProposals;
+
+  /// While this chat is open, and only then: the ideas live, the cards the
+  /// other matchmaker sent here, and a first page of what they share — so
+  /// the "+" and a sentence like "פתח רעיון בין יעל לאורי" can find them.
+  Future<void> _loadTheirCards() async {
+    await MatchmakerNetwork.start();
+    if (!mounted) return;
+    _releaseProposals = MatchmakerNetwork.watchProposals();
+    final String other = _other;
+    if (other.isEmpty || PartnerSpace.isPartner(other)) return;
+    await MatchmakerNetwork.loadSentFrom(other);
+    if (MatchmakerShares.sharesWithMe(other)) {
+      try {
+        await MatchmakerNetwork.page(ownerUid: other, limit: 60);
+      } catch (_) {}
+    }
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _releaseProposals?.call();
     if (ChatService.openChatId == widget.chatId) ChatService.openChatId = null;
     unawaited(ChatService.markRead(widget.chatId));
     _text.dispose();
@@ -653,7 +675,7 @@ class _ChatScreenState extends State<ChatScreen> {
         return Scaffold(
           backgroundColor: dark
               ? theme.scaffoldBackgroundColor
-              : const Color(0xFFF3EFE7),
+              : AppColors.page,
           appBar: AppBar(
             titleSpacing: 0,
             title: InkWell(
@@ -804,7 +826,7 @@ class _Bubble extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color fill = mine
-        ? (dark ? const Color(0xFF2E4A57) : const Color(0xFFDCEBF2))
+        ? (dark ? AppColors.primaryLightDarkDm : AppColors.primaryLight)
         : theme.colorScheme.surface;
     final DateTime? at = message.at;
     final ChatRef? ref = message.ref;

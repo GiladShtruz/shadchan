@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/date_utils.dart';
 
@@ -26,7 +27,7 @@ class CardStatusTimestamp extends StatelessWidget {
             'עודכן לאחרונה ${AppDateUtils.timeAgoShort(time.toDate())}',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+            ).textTheme.bodySmall?.copyWith(color: AppColors.mutedInk),
           ),
         );
       },

@@ -65,228 +65,444 @@
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hidden", "order": "ASCENDING" },
-        { "fieldPath": "dayKey", "order": "ASCENDING" },
-        { "fieldPath": "dayActions", "order": "DESCENDING" }
+        {
+          "fieldPath": "hidden",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayActions",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hidden", "order": "ASCENDING" },
-        { "fieldPath": "weekKey", "order": "ASCENDING" },
-        { "fieldPath": "weekActions", "order": "DESCENDING" }
+        {
+          "fieldPath": "hidden",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekActions",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hidden", "order": "ASCENDING" },
-        { "fieldPath": "monthKey", "order": "ASCENDING" },
-        { "fieldPath": "monthActions", "order": "DESCENDING" }
+        {
+          "fieldPath": "hidden",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthActions",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hidden", "order": "ASCENDING" },
-        { "fieldPath": "allActions", "order": "DESCENDING" }
+        {
+          "fieldPath": "hidden",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "allActions",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "dayKey", "order": "ASCENDING" },
-        { "fieldPath": "dayActions", "order": "ASCENDING" }
+        {
+          "fieldPath": "dayKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayActions",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "weekKey", "order": "ASCENDING" },
-        { "fieldPath": "weekActions", "order": "ASCENDING" }
+        {
+          "fieldPath": "weekKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekActions",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "monthKey", "order": "ASCENDING" },
-        { "fieldPath": "monthActions", "order": "ASCENDING" }
+        {
+          "fieldPath": "monthKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthActions",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "dayKey", "order": "ASCENDING" },
-        { "fieldPath": "dayActions", "order": "ASCENDING" },
-        { "fieldPath": "dayFriends", "order": "ASCENDING" },
-        { "fieldPath": "dayIdeas", "order": "ASCENDING" }
+        {
+          "fieldPath": "dayKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayActions",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayFriends",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayIdeas",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "dayKey", "order": "ASCENDING" },
-        { "fieldPath": "dayActions", "order": "ASCENDING" },
-        { "fieldPath": "dayCouples", "order": "ASCENDING" },
-        { "fieldPath": "dayEngagements", "order": "ASCENDING" }
+        {
+          "fieldPath": "dayKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayActions",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayCouples",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayEngagements",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "weekKey", "order": "ASCENDING" },
-        { "fieldPath": "weekActions", "order": "ASCENDING" },
-        { "fieldPath": "weekFriends", "order": "ASCENDING" },
-        { "fieldPath": "weekIdeas", "order": "ASCENDING" }
+        {
+          "fieldPath": "weekKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekActions",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekFriends",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekIdeas",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "weekKey", "order": "ASCENDING" },
-        { "fieldPath": "weekActions", "order": "ASCENDING" },
-        { "fieldPath": "weekCouples", "order": "ASCENDING" },
-        { "fieldPath": "weekEngagements", "order": "ASCENDING" }
+        {
+          "fieldPath": "weekKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekActions",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekCouples",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekEngagements",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "monthKey", "order": "ASCENDING" },
-        { "fieldPath": "monthActions", "order": "ASCENDING" },
-        { "fieldPath": "monthFriends", "order": "ASCENDING" },
-        { "fieldPath": "monthIdeas", "order": "ASCENDING" }
+        {
+          "fieldPath": "monthKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthActions",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthFriends",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthIdeas",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "monthKey", "order": "ASCENDING" },
-        { "fieldPath": "monthActions", "order": "ASCENDING" },
-        { "fieldPath": "monthCouples", "order": "ASCENDING" },
-        { "fieldPath": "monthEngagements", "order": "ASCENDING" }
+        {
+          "fieldPath": "monthKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthActions",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthCouples",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthEngagements",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "allActions", "order": "ASCENDING" },
-        { "fieldPath": "allFriends", "order": "ASCENDING" },
-        { "fieldPath": "allIdeas", "order": "ASCENDING" }
+        {
+          "fieldPath": "allActions",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "allFriends",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "allIdeas",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "allActions", "order": "ASCENDING" },
-        { "fieldPath": "allCouples", "order": "ASCENDING" },
-        { "fieldPath": "allEngagements", "order": "ASCENDING" }
+        {
+          "fieldPath": "allActions",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "allCouples",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "allEngagements",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hidden", "order": "ASCENDING" },
-        { "fieldPath": "dayKey", "order": "ASCENDING" },
-        { "fieldPath": "dayActions", "order": "ASCENDING" }
+        {
+          "fieldPath": "hidden",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayActions",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hidden", "order": "ASCENDING" },
-        { "fieldPath": "weekKey", "order": "ASCENDING" },
-        { "fieldPath": "weekActions", "order": "ASCENDING" }
+        {
+          "fieldPath": "hidden",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekActions",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hidden", "order": "ASCENDING" },
-        { "fieldPath": "monthKey", "order": "ASCENDING" },
-        { "fieldPath": "monthActions", "order": "ASCENDING" }
+        {
+          "fieldPath": "hidden",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "monthActions",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMembers",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hidden", "order": "ASCENDING" },
-        { "fieldPath": "allActions", "order": "ASCENDING" }
+        {
+          "fieldPath": "hidden",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "allActions",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "communityMazelTov",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "toUid", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "toUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "tips",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "tips",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "supportReports",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "authorUid", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "authorUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cardAccess",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "ownerUid", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        {
+          "fieldPath": "ownerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cardAccess",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "matchmakerUid", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        {
+          "fieldPath": "matchmakerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "statusReports",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "ownerUid", "order": "ASCENDING" },
-        { "fieldPath": "resolution", "order": "ASCENDING" }
+        {
+          "fieldPath": "ownerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "resolution",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -300,6 +516,70 @@
         {
           "fieldPath": "updatedAt",
           "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "networkCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "readers",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "networkCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "readers",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "ownerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "networkCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "readers",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "nameKey",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "networkCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "readers",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "ownerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nameKey",
+          "order": "ASCENDING"
         }
       ]
     }

@@ -51,7 +51,7 @@ class NotificationService {
   /// full-bleed launcher icon used to show as a plain square). The same
   /// blue as `notification_color` in `res/values/colors.xml`, which covers the
   /// pushes the system draws itself.
-  static const Color _notificationColor = Color(0xFF377FA8);
+  static const Color _notificationColor = Color(0xFF5F91A3);
 
   static const AndroidNotificationDetails _androidMatchDetails =
       AndroidNotificationDetails(

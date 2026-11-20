@@ -5,20 +5,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/card_access.dart';
-import 'package:shadchan/models/matchmaker_connection.dart';
+import 'package:shadchan/models/matchmaker_share.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/known_matchmakers_screen.dart';
 import 'package:shadchan/services/analytics_service.dart';
-import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 
-/// "שדכנים שאני מכיר": the three groups, the compact rows, the basic profile
-/// — and that nothing on any of it says more than the matchmaker already
-/// knew.
+/// "שדכנים שאני מכיר": the two groups, the compact rows, the profile — and
+/// that nothing on any of it says more than the matchmaker already knew.
 void main() {
   late Directory directory;
   late Box<Person> people;
@@ -42,7 +41,7 @@ void main() {
   });
 
   tearDown(() async {
-    await MatchmakerConnections.stop();
+    await MatchmakerShares.stop();
   });
 
   tearDownAll(() async {
@@ -79,16 +78,18 @@ void main() {
     ),
   ];
 
-  MatchmakerConnection row(
-    String from,
-    String to,
-    MatchmakerConnectionStatus status,
-  ) => MatchmakerConnection(
-    id: MatchmakerConnection.idFor(from, to),
-    fromUid: from,
-    toUid: to,
-    status: status,
-    names: <String, String>{'x': 'יוסי'},
+  MatchmakerShare row(
+    String owner,
+    String reader,
+    MatchmakerShareMode mode, {
+    int count = 0,
+    String ownerName = '',
+  }) => MatchmakerShare(
+    ownerUid: owner,
+    readerUid: reader,
+    mode: mode,
+    count: count,
+    ownerName: ownerName,
   );
 
   Widget wrap(Widget child) {
@@ -117,45 +118,44 @@ void main() {
     );
   }
 
-  testWidgets('three groups, connected first, compact rows, no numbers', (
+  testWidgets('two groups, sharing first, compact rows, no numbers', (
     WidgetTester tester,
   ) async {
-    // Tall enough for the sharing summary above the three groups.
     tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    MatchmakerConnections.debugSet('me', <MatchmakerConnection>[
-      row('me', 'b', MatchmakerConnectionStatus.approved),
-      row('x', 'me', MatchmakerConnectionStatus.pending),
+    MatchmakerShares.debugSet('me', <MatchmakerShare>[
+      row('b', 'me', MatchmakerShareMode.all, count: 7),
+      row('me', 'x', MatchmakerShareMode.requested),
     ]);
     await tester.pumpWidget(wrap(const KnownMatchmakersScreen()));
     await tester.pump();
 
-    expect(find.text('מחוברים · 1'), findsOneWidget);
-    expect(find.text('בקשות חיבור · 1'), findsOneWidget);
-    expect(find.text('שדכנים מאנשי הקשר · 2'), findsOneWidget);
-    final double connected = tester.getTopLeft(find.text('מחוברים · 1')).dy;
-    final double requests = tester.getTopLeft(find.text('בקשות חיבור · 1')).dy;
-    final double contacts = tester
-        .getTopLeft(find.text('שדכנים מאנשי הקשר · 2'))
-        .dy;
-    expect(connected < requests && requests < contacts, isTrue);
-
-    // A compact row: name, then activity and database size.
-    expect(find.text('בתיה לוי'), findsOneWidget);
-    // A connected matchmaker also says how many cards they share with me.
+    expect(find.text('משתפים איתי / מחוברים · 1'), findsOneWidget);
     expect(
-      find.text(
-        'מחוברים · לפני 3 ימים · 12 חברים במאגר · לא משתף/ת איתך כרטיסים',
-      ),
+      find.text('עדיין לא משתפים · 1 ביקשו ממך שיתוף · 3'),
       findsOneWidget,
     );
-    expect(find.text('פעיל היום · 40 חברים במאגר'), findsOneWidget);
-    // A request from somebody outside the contacts carries their own name.
-    expect(find.text('יוסי'), findsOneWidget);
-    expect(find.text('אישור'), findsOneWidget);
-    // Two contacts to connect with — never connected without a yes.
-    expect(find.text('להתחבר'), findsNWidgets(2));
+    final double connected = tester
+        .getTopLeft(find.text('משתפים איתי / מחוברים · 1'))
+        .dy;
+    final double others = tester
+        .getTopLeft(find.text('עדיין לא משתפים · 1 ביקשו ממך שיתוף · 3'))
+        .dy;
+    expect(connected < others, isTrue);
+
+    // A sharing matchmaker: activity and database size, and what each shares.
+    expect(find.text('בתיה לוי'), findsOneWidget);
+    expect(find.text('לפני 3 ימים · 12 חברים במאגר'), findsOneWidget);
+    expect(find.text('משתף/ת איתך 7 · את/ה 0'), findsOneWidget);
+    expect(find.text('למאגר'), findsOneWidget);
+    // Not sharing yet: the database size is not shown, and the action is
+    // to open a share — never a vague "connect".
+    expect(find.text('פעיל היום'), findsOneWidget);
+    expect(find.text('להתחבר'), findsNothing);
+    expect(find.text('פתיחת שיתוף'), findsNWidgets(2));
+    // The one who asked me is answered with a share, never a yes/no.
+    expect(find.text('לשתף בחזרה'), findsOneWidget);
 
     // No phone number anywhere on the screen.
     for (final Text text in tester.widgetList<Text>(find.byType(Text))) {
@@ -168,42 +168,42 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the basic profile offers "להתחבר" and shares nothing', (
+  testWidgets('before sharing, the profile shows only who and how active', (
     WidgetTester tester,
   ) async {
-    MatchmakerConnections.debugSet('me', const <MatchmakerConnection>[]);
+    MatchmakerShares.debugSet('me', const <MatchmakerShare>[]);
     await tester.pumpWidget(wrap(const KnownMatchmakerProfileScreen(uid: 'a')));
     await tester.pump();
     expect(find.text('אבי כהן'), findsOneWidget);
     expect(find.text('פעיל היום'), findsOneWidget);
-    expect(find.text('40 חברים במאגר'), findsOneWidget);
-    expect(find.text('להתחבר'), findsOneWidget);
-    expect(find.textContaining('החיבור לבדו לא משתף אף כרטיס'), findsOneWidget);
+    expect(find.text('40 חברים במאגר'), findsNothing);
+    expect(find.text('בקשת שיתוף מאבי'), findsOneWidget);
+    expect(find.text('מה אני משתף/ת עם אבי'), findsOneWidget);
   });
 
-  testWidgets('a request waiting for me is answered from the profile', (
+  testWidgets('once they share, the profile adds the figures and the way in', (
     WidgetTester tester,
   ) async {
-    MatchmakerConnections.debugSet('me', <MatchmakerConnection>[
-      row('a', 'me', MatchmakerConnectionStatus.pending),
+    MatchmakerShares.debugSet('me', <MatchmakerShare>[
+      row('a', 'me', MatchmakerShareMode.selected, count: 5),
     ]);
     await tester.pumpWidget(wrap(const KnownMatchmakerProfileScreen(uid: 'a')));
     await tester.pump();
-    expect(find.text('אישור החיבור'), findsOneWidget);
-    expect(find.text('לא עכשיו'), findsOneWidget);
-    expect(find.text('להתחבר'), findsNothing);
+    expect(find.text('40 חברים במאגר'), findsOneWidget);
+    expect(find.text('משתף/ת איתך 5 כרטיסים'), findsOneWidget);
+    expect(find.text('למאגר של אבי · 5'), findsOneWidget);
   });
 
   testWidgets('a stranger\'s profile shows nothing about them', (
     WidgetTester tester,
   ) async {
-    MatchmakerConnections.debugSet('me', const <MatchmakerConnection>[]);
+    MatchmakerShares.debugSet('me', const <MatchmakerShare>[]);
     await tester.pumpWidget(
       wrap(const KnownMatchmakerProfileScreen(uid: 'stranger')),
     );
     await tester.pump();
     expect(find.text('השדכן/ית לא נמצא/ת באנשי הקשר שלך.'), findsOneWidget);
-    expect(find.text('להתחבר'), findsNothing);
+    expect(find.text('פתיחת שיתוף'), findsNothing);
   });
 
   test(
@@ -216,11 +216,11 @@ void main() {
       addTearDown(() => Analytics.debugSink = null);
       await Hive.box<dynamic>('settings').clear();
 
-      MatchmakerConnections.noteContactsFound(<String>['a', 'b']);
+      MatchmakerShares.noteContactsFound(<String>['a', 'b']);
       await Future<void>.delayed(const Duration(milliseconds: 10));
-      MatchmakerConnections.noteContactsFound(<String>['a', 'b']);
+      MatchmakerShares.noteContactsFound(<String>['a', 'b']);
       await Future<void>.delayed(const Duration(milliseconds: 10));
-      MatchmakerConnections.noteContactsFound(<String>['a', 'b', 'c']);
+      MatchmakerShares.noteContactsFound(<String>['a', 'b', 'c']);
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
       expect(events.map((e) => e.$1), <String>[

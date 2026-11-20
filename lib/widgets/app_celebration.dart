@@ -319,8 +319,8 @@ class _ConfettiPainter extends CustomPainter {
   static const List<Color> _colors = <Color>[
     AppColors.secondary,
     AppColors.primaryDark,
-    Color(0xFFD4A34B),
-    Color(0xFF8FB6C9),
+    AppColors.rose,
+    AppColors.teal,
   ];
 
   static const int _count = 18;

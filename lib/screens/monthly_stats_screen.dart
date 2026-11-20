@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -536,7 +537,7 @@ class _RiseChip extends StatelessWidget {
 
   final int delta;
 
-  static const Color _riseColor = Color(0xFF2E9E5B);
+  static const Color _riseColor = AppColors.blue;
 
   @override
   Widget build(BuildContext context) {

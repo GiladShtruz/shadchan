@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -151,6 +153,10 @@ class _CardObject extends StatelessWidget {
       valueListenable: MatchmakerNetwork.cards,
       builder: (BuildContext context, _, _) {
         final SharedCard? card = MatchmakerNetwork.cardOf(owner, chatRef.id);
+        if (card == null && !MatchmakerNetwork.isGone(owner, chatRef.id)) {
+          // One read of this one card, the first time the chat draws it.
+          unawaited(MatchmakerNetwork.fetchCard(owner, chatRef.id));
+        }
         if (card == null) {
           return _ObjectFrame(
             child: _row(
@@ -261,6 +267,8 @@ class _ProposalObject extends StatelessWidget {
       case IdeaProposalStatus.pending:
         return p.isIncomingFor(me) ? 'ממתין לתשובה שלך' : 'ממתין לתשובה';
       case IdeaProposalStatus.approved:
+        return 'אושר · ייפתח כשתחליטו לשאול את החברים';
+      case IdeaProposalStatus.opened:
         final String partner = p.partnerStatusFor(me)?.displayName ?? '';
         return partner.isEmpty
             ? 'הרעיון נפתח'
@@ -287,6 +295,8 @@ class _ProposalObject extends StatelessWidget {
             p != null &&
             p.status == IdeaProposalStatus.pending &&
             p.isIncomingFor(me);
+        final bool canOpen =
+            p != null && p.status == IdeaProposalStatus.approved;
         return _ObjectFrame(
           onTap: p == null
               ? null
@@ -346,12 +356,12 @@ class _ProposalObject extends StatelessWidget {
                           AppNotice.show(
                             context,
                             ok
-                                ? 'הרעיון נפתח אצל שניכם ב"הרעיונות שלי"'
+                                ? 'אישרת. הרעיון ייפתח כשתחליטו לשאול את החברים.'
                                 : 'לא הצלחנו לאשר. נסו שוב.',
                             isError: !ok,
                           );
                         },
-                        child: const Text('פותחים'),
+                        child: const Text('אישור'),
                       ),
                       TextButton(
                         style: TextButton.styleFrom(
@@ -361,9 +371,31 @@ class _ProposalObject extends StatelessWidget {
                           if (!OfflineGuard.allow(context)) return;
                           await MatchmakerNetwork.answer(p, approve: false);
                         },
-                        child: const Text('לא הפעם'),
+                        child: const Text('דחייה'),
                       ),
                     ],
+                  ),
+                )
+              else if (canOpen)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: FilledButton.tonal(
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () async {
+                      if (!OfflineGuard.allow(context)) return;
+                      final bool ok = await MatchmakerNetwork.open(p);
+                      if (!context.mounted) return;
+                      AppNotice.show(
+                        context,
+                        ok
+                            ? 'הרעיון נפתח אצל שניכם ב"הרעיונות שלי"'
+                            : 'לא הצלחנו לפתוח. נסו שוב.',
+                        isError: !ok,
+                      );
+                    },
+                    child: const Text('פותחים — שואלים את החברים'),
                   ),
                 )
               else if (link != null)

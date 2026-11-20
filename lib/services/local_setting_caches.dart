@@ -19,6 +19,7 @@ import 'package:shadchan/services/card_link_consent.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/widgets/first_visit_tip.dart';
 import 'package:shadchan/services/network_sharing.dart';
+import 'package:shadchan/widgets/home_partner_matchmakers.dart';
 import 'package:shadchan/services/shared_ideas.dart';
 
 /// The stores that keep a setting in memory, made to read it again.
@@ -54,6 +55,7 @@ abstract final class LocalSettingCaches {
     OwnCardMirror.forgetCache();
     CardLinkConsent.forgetCache();
     NetworkSharing.forgetCache();
+    PartnerCarouselHidden.forgetCache();
     SharedIdeas.forgetCache();
   }
 }

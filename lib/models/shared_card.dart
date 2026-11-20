@@ -5,8 +5,9 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_tags.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 
-/// A card another matchmaker made visible to the matchmakers they are
-/// connected with — `sharedCards/{ownerUid}/cards/{personId}`.
+/// A card another matchmaker shares with this one —
+/// `networkCards/{ownerUid}_{personId}`, one published view naming its
+/// `readers` (2026-11-20).
 ///
 /// **View only, and only what a card is.** Photos, the card's own fields,
 /// "מה מחפש" and tags. Never a phone number, a note, a go-between or a
@@ -115,6 +116,25 @@ class SharedCard {
 /// The one mapping from a friend in the matchmaker's database to what other
 /// matchmakers may see of them.
 abstract final class SharedCardCodec {
+  /// Where the published cards live — one document per shared friend.
+  static const String collection = 'networkCards';
+
+  static String docId(String ownerUid, String personId) =>
+      '${ownerUid}_$personId';
+
+  /// A name folded for a prefix search on the server: lower case, niqqud,
+  /// punctuation and repeated spaces gone. The same fold for what is stored
+  /// and what is typed.
+  static String nameKey(String name) {
+    final String folded = name
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\u0591-\u05C7]'), '')
+        .replaceAll(RegExp('[-_.,\'"׳״`]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return folded.length > 80 ? folded.substring(0, 80) : folded;
+  }
+
   /// The most photos a shared card carries — also in `firestore.rules`.
   static const int maxPhotos = 6;
 
@@ -150,15 +170,21 @@ abstract final class SharedCardCodec {
     };
   }
 
-  /// The document written to `sharedCards/{ownerUid}/cards/{personId}`.
+  /// The document written to `networkCards/{ownerUid}_{personId}` — with
+  /// [readers] — or, without them, a card sent to one matchmaker in a chat
+  /// (`sentCards`).
   static Map<String, Object?> toRemote(
     Person person, {
     required String ownerUid,
     required String ownerName,
     required List<String> photoPaths,
+    List<String>? readers,
   }) => <String, Object?>{
     ...values(person, ownerUid: ownerUid, ownerName: ownerName),
     'photoPaths': photoPaths,
+    if (readers != null) 'readers': readers,
+    if (readers != null)
+      'nameKey': nameKey('${person.firstName} ${person.lastName}'),
     'updatedAt': FieldValue.serverTimestamp(),
   };
 

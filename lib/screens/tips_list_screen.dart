@@ -148,15 +148,15 @@ enum _TipTone {
   Color wash(bool dark) {
     if (dark) {
       return switch (this) {
-        _TipTone.sand => const Color(0xFF2A2520),
-        _TipTone.sky => const Color(0xFF1F272C),
-        _TipTone.olive => const Color(0xFF222720),
+        _TipTone.sand => AppColors.secondaryLightDarkDm,
+        _TipTone.sky => AppColors.surfaceDm,
+        _TipTone.olive => AppColors.primaryLightDarkDm,
       };
     }
     return switch (this) {
       _TipTone.sand => AppColors.cardCream,
-      _TipTone.sky => const Color(0xFFF0F5F7),
-      _TipTone.olive => const Color(0xFFF2F4EA),
+      _TipTone.sky => AppColors.softGreen,
+      _TipTone.olive => AppColors.softRose,
     };
   }
 
@@ -165,13 +165,13 @@ enum _TipTone {
       return switch (this) {
         _TipTone.sand => AppColors.secondaryDarkDm,
         _TipTone.sky => AppColors.primaryDarkDm,
-        _TipTone.olive => const Color(0xFFA9BB8E),
+        _TipTone.olive => AppColors.femaleAccentDm,
       };
     }
     return switch (this) {
       _TipTone.sand => AppColors.secondaryInk,
       _TipTone.sky => AppColors.primaryInk,
-      _TipTone.olive => const Color(0xFF5C6B45),
+      _TipTone.olive => AppColors.femaleInk,
     };
   }
 }

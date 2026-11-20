@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_colors.dart';
 
 /// The photo strip used while adding or editing a person: a horizontal row of
 /// thumbnails where the first one is the card's main photo, plus buttons to add
@@ -188,7 +189,7 @@ class _PhotoThumb extends StatelessWidget {
               onPressed: isPrimary ? null : onSetPrimary,
               icon: Icon(
                 isPrimary ? Icons.star : Icons.star_border,
-                color: isPrimary ? Colors.amber : Colors.white,
+                color: isPrimary ? AppColors.copper : Colors.white,
               ),
             ),
           ),

@@ -239,7 +239,7 @@ class _MyTipRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color tone = switch (tip.status) {
-      TipStatus.approved => const Color(0xFF2E9E5B),
+      TipStatus.approved => AppColors.blue,
       TipStatus.rejected => theme.colorScheme.onSurfaceVariant,
       TipStatus.pending => AppColors.secondary,
     };

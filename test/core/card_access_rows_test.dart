@@ -23,20 +23,20 @@ void main() {
         <CardAccess>[approved, pending],
         <CardAccess>[pending, approved],
       ]) {
-        final Map<String, CardAccess> best =
-            CardAccessProvider.bestRowPerOwner(rows);
+        final Map<String, CardAccess> best = CardAccessProvider.bestRowPerOwner(
+          rows,
+        );
         expect(best['owner']!.status, CardAccessStatus.approved);
         expect(best['owner']!.canReadCard, isTrue);
       }
     });
 
     test('a grant that opens the card beats one that does not', () {
-      final Map<String, CardAccess> best = CardAccessProvider.bestRowPerOwner(
-        <CardAccess>[
-          _row('a', CardAccessStatus.approved, cardGranted: false),
-          _row('b', CardAccessStatus.approved),
-        ],
-      );
+      final Map<String, CardAccess> best =
+          CardAccessProvider.bestRowPerOwner(<CardAccess>[
+            _row('a', CardAccessStatus.approved, cardGranted: false),
+            _row('b', CardAccessStatus.approved),
+          ]);
       expect(best['owner']!.matchmakerUid, 'b');
     });
 

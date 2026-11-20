@@ -724,7 +724,7 @@ void main() {
   );
 
   testWidgets(
-    'home: "החברים שלך במאגר" shows full cards with a photo as suggestion cards, on a narrow phone with large text',
+    'home: "החברים שלך" shows full cards with a photo as suggestion cards, on a narrow phone with large text',
     (tester) async {
       final DateTime now = DateTime.now();
       final String photo = '${directory.path}/dana.jpg';

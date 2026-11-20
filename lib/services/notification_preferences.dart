@@ -28,7 +28,7 @@ enum NotificationCategory {
     'מזל טוב וימי הולדת עבריים של חברים שנתנו לך גישה',
   ),
   network(
-    'רעיונות משדכנים מחוברים',
+    'רעיונות משדכנים שותפים',
     'שדכן/ית שמחובר/ת אליך מציע/ה רעיון, או אישר/ה רעיון שהצעת',
   ),
   chats('הודעות בצ\'אט', 'הודעה חדשה משדכן/ית בצ\'אט'),
@@ -117,8 +117,9 @@ class NotificationPreferences extends ChangeNotifier {
     'accessRequest' ||
     'accessApproved' ||
     'accessDeclined' ||
-    'connectionRequest' ||
-    'connectionApproved' ||
+    'shareRequest' ||
+    'shareOpened' ||
+    'shareStopped' ||
     'shareOnwardRequest' ||
     'statusReport' => NotificationCategory.access,
     'ideaProposal' ||

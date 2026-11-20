@@ -32,6 +32,7 @@ import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:shadchan/widgets/home_action_area.dart';
 import 'package:shadchan/widgets/home_week_block.dart';
 import 'package:shadchan/widgets/home_card_friends.dart';
+import 'package:shadchan/widgets/home_partner_matchmakers.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
 import 'package:shadchan/widgets/home_greeting_avatar.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
@@ -423,9 +424,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         const SliverToBoxAdapter(child: SizedBox(height: 10)),
         HomeActionArea.pinnedSliver(context, inset: inset()),
 
-        // 4. "החברים שלך בשדכן": a carousel of the friends whose card is open
-        // to this matchmaker, newest activity first, and the way to the rest.
+        // 4. Two circles, side by side in meaning: "החברים שלך" — the friends
+        // this matchmaker thinks about — and "שדכנים שותפים" — the
+        // matchmakers they think with.
         block(const HomeCardFriendsSection()),
+        block(const HomePartnerMatchmakers()),
 
         // 5. "הפעילות שלי" | "פעילות הקהילה", large, under השבוע | החודש |
         // כל הזמנים — and the community's weekly target under them. No

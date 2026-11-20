@@ -33,7 +33,7 @@ abstract final class AppTheme {
         onSurfaceVariant: AppColors.mutedInk,
         outlineVariant: AppColors.divider,
       ),
-      // The page is white; see [AppColors.page].
+      // The page is cream and cards are white; see [AppColors.page].
       scaffoldBackgroundColor: AppColors.page,
       // Every bar is the page itself — cream paper, the heading ink — the way
       // the three tabs' own banner is drawn. The wide blue-grey band this used
@@ -61,7 +61,7 @@ abstract final class AppTheme {
       primaryContainer: AppColors.primaryLightDarkDm,
       onPrimaryContainer: AppColors.onSurfaceDm,
       secondary: AppColors.secondaryDarkDm,
-      onSecondary: AppColors.onSecondary,
+      onSecondary: AppColors.darkBlue,
       secondaryContainer: AppColors.secondaryLightDarkDm,
       onSecondaryContainer: AppColors.onSurfaceDm,
       surface: AppColors.surfaceDm,

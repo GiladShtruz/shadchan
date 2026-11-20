@@ -12,7 +12,7 @@ import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/chat_service.dart';
-import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/services/offline_guard.dart';
@@ -24,6 +24,7 @@ import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/utils/shared_pool.dart';
 import 'package:shadchan/utils/share_utils.dart';
+import 'package:shadchan/utils/screen_perf.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -318,6 +319,8 @@ abstract final class NetworkActions {
       person,
       accessTo: access.accessTo,
     );
+    await MatchmakerShares.refresh();
+    if (!context.mounted) return;
     final Map<String, String> connected = MatchmakerNetwork.connectedNames;
     final String? choice = await showModalBottomSheet<String>(
       context: context,
@@ -337,7 +340,7 @@ abstract final class NetworkActions {
               ),
               const SizedBox(height: 4),
               Text(
-                'הכרטיס יגיע בצ\'אט, לצפייה בלבד — גם אם הוא לא במאגר המשותף.',
+                'הכרטיס יגיע בצ\'אט, לצפייה בלבד — גם אם הוא לא בשיתוף איתו/ה.',
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -357,7 +360,7 @@ abstract final class NetworkActions {
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Text(
-                    'עוד אין שדכנים מחוברים — אפשר לשלוח ב־WhatsApp.',
+                    'עוד אין שדכנים שאתם משתפים איתם — אפשר לשלוח ב־WhatsApp.',
                     textAlign: TextAlign.center,
                   ),
                 )
@@ -525,7 +528,8 @@ class _ProposeSheetState extends State<_ProposeSheet> {
           Text(
             '$owner יקבל/תקבל את הכרטיס של ${widget.candidate.firstName} — תמונות, '
             'פרטי הכרטיס, "מה מחפש/ת" ותגיות. בלי טלפון ובלי ההערות שלך. '
-            'אם יאשר/תאשר, הרעיון ייפתח אצל שניכם וכל אחד ימשיך מול החבר/ה שלו.',
+            'אם יאשר/תאשר, הרעיון ייפתח אצל שניכם ברגע שתחליטו לשאול את החברים, '
+            'וכל אחד ימשיך מול החבר/ה שלו.',
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 12),
@@ -587,17 +591,28 @@ class _MiniPerson extends StatelessWidget {
   }
 }
 
-/// "המאגר המשותף" — the cards the connected matchmakers share, each person
-/// once, with search and every filter of "המאגר שלי" plus the source.
+/// The cards other matchmakers share with this one — **page by page, never
+/// a downloaded pool.**
 ///
-/// With [forPersonId]: "התאמות מהשדכנים המחוברים" for one of this matchmaker's
-/// friends — the pool narrowed by the app's own matching rules.
+/// With [ownerUid]: "המאגר של יונתן" — only what that one matchmaker shares
+/// with this one. Without: every card shared by anybody, with a chip per
+/// source ("מהמאגר של יונתן") and a search by name that runs on the server.
+/// With [forPersonId]: matches for one of this matchmaker's friends among
+/// what was loaded.
+///
+/// Thirty cards at a time ([MatchmakerNetwork.pageSize]); the next thirty
+/// when the list nears its end. Photos are small, decoded at the size drawn,
+/// and fetched only for the rows on screen. Nothing here keeps a listener.
 class NetworkScreen extends StatefulWidget {
-  const NetworkScreen({super.key, this.forPersonId});
+  const NetworkScreen({super.key, this.forPersonId, this.ownerUid});
 
   static const String route = '/network';
 
+  /// The route of one matchmaker's shared database.
+  static String routeFor(String ownerUid) => '$route?owner=$ownerUid';
+
   final String? forPersonId;
+  final String? ownerUid;
 
   @override
   State<NetworkScreen> createState() => _NetworkScreenState();
@@ -605,21 +620,103 @@ class NetworkScreen extends StatefulWidget {
 
 class _NetworkScreenState extends State<NetworkScreen> {
   final TextEditingController _search = TextEditingController();
+  final ScrollController _scroll = ScrollController();
   String _query = '';
   String? _source;
   PeopleFilterState? _filters;
+  Timer? _debounce;
+
+  final List<SharedCard> _cards = <SharedCard>[];
+  Object? _cursor;
+  bool _hasMore = true;
+  bool _loading = false;
+  bool _failed = false;
+  int _generation = 0;
+  late final ScreenPerf _perf;
+  VoidCallback? _releaseShares;
+  VoidCallback? _releaseProposals;
 
   @override
   void initState() {
     super.initState();
-    unawaited(MatchmakerNetwork.start());
-    unawaited(ChatService.start());
+    _source = widget.ownerUid;
+    _perf = ScreenPerf(
+      'network${widget.ownerUid == null ? '' : '-owner'}',
+      listeners: () =>
+          MatchmakerShares.listenerCount + MatchmakerNetwork.listenerCount,
+    );
+    _scroll.addListener(_onScroll);
+    unawaited(_start());
+  }
+
+  Future<void> _start() async {
+    await MatchmakerNetwork.start();
+    if (!mounted) return;
+    _releaseShares = MatchmakerShares.watch();
+    _releaseProposals = MatchmakerNetwork.watchProposals();
+    await _reload();
   }
 
   @override
   void dispose() {
+    _perf.leave();
+    _debounce?.cancel();
+    _releaseShares?.call();
+    _releaseProposals?.call();
+    _scroll.dispose();
     _search.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients || _loading || !_hasMore) return;
+    if (_scroll.position.extentAfter < 600) unawaited(_loadMore());
+  }
+
+  Future<void> _reload() async {
+    _generation++;
+    setState(() {
+      _cards.clear();
+      _cursor = null;
+      _hasMore = true;
+      _failed = false;
+    });
+    await _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
+    final int generation = _generation;
+    setState(() => _loading = true);
+    try {
+      final NetworkPage page = await MatchmakerNetwork.page(
+        ownerUid: _source,
+        nameQuery: _query,
+        cursor: _cursor,
+      );
+      _perf.read();
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _cards.addAll(page.cards);
+        _cursor = page.cursor;
+        _hasMore = page.hasMore;
+      });
+    } catch (_) {
+      if (mounted && generation == _generation) setState(() => _failed = true);
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _loading = false);
+        _perf.contentReady();
+      }
+    }
+  }
+
+  void _onQuery(String v) {
+    _query = v;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) unawaited(_reload());
+    });
   }
 
   List<SharedPoolEntry> _entries(PersonRepository repo) {
@@ -636,7 +733,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       if (MatchmakerNetwork.uid != null) MatchmakerNetwork.uid!,
     };
     List<SharedPoolEntry> entries = SharedPool.build(
-      MatchmakerNetwork.cards.value,
+      _cards,
       myIdentities: myIdentities,
       myCardOwners: myCardOwners,
     );
@@ -653,37 +750,31 @@ class _NetworkScreenState extends State<NetworkScreen> {
             e,
       ];
     }
-    final String q = _query.trim();
     return <SharedPoolEntry>[
       for (final SharedPoolEntry e in entries)
-        if ((_source == null ||
-                e.holders.any((SharedCard c) => c.ownerUid == _source)) &&
-            (_filters == null || _filters!.matches(e.primary.person)) &&
-            (q.isEmpty ||
-                e.cards.any(
-                  (SharedCard c) =>
-                      c.person.fullName.contains(q) ||
-                      (c.person.city ?? '').contains(q) ||
-                      (c.person.description ?? '').contains(q) ||
-                      c.person.tags.any((String t) => t.contains(q)),
-                )))
-          e,
+        if (_filters == null || _filters!.matches(e.primary.person)) e,
     ];
   }
 
   @override
   Widget build(BuildContext context) {
+    _perf.build();
     final ThemeData theme = Theme.of(context);
     final PersonRepository repo = context.watch<PersonRepository>();
     final Person? source = widget.forPersonId == null
         ? null
         : repo.getById(widget.forPersonId!);
+    final String? ownerName = widget.ownerUid == null
+        ? null
+        : (MatchmakerShares.theirs(widget.ownerUid!)?.ownerName ?? '');
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          source == null
-              ? 'המאגר המשותף'
-              : 'התאמות ל${source.firstName} מהשדכנים המחוברים',
+          source != null
+              ? 'התאמות ל${source.firstName} אצל השדכנים שלך'
+              : ownerName != null
+              ? 'המאגר של ${_first(ownerName)}'
+              : 'כרטיסים ששיתפו איתי',
         ),
         actions: <Widget>[
           ValueListenableBuilder<int>(
@@ -698,163 +789,201 @@ class _NetworkScreenState extends State<NetworkScreen> {
               ),
             ),
           ),
-          IconButton(
-            tooltip: 'שיתוף הכרטיסים שלי',
-            onPressed: () => context.push(SharingSettingsRoute.path),
-            icon: const Icon(Icons.ios_share_rounded),
-          ),
         ],
       ),
       body: ListenableBuilder(
         listenable: Listenable.merge(<Listenable>[
-          MatchmakerNetwork.cards,
+          MatchmakerShares.rows,
           MatchmakerNetwork.proposals,
-          MatchmakerNetwork.loaded,
-          MatchmakerConnections.connections,
         ]),
         builder: (BuildContext context, _) {
-          final Map<String, String> connected =
-              MatchmakerNetwork.connectedNames;
-          if (connected.isEmpty) {
+          final Map<String, String> sharing = MatchmakerShares.sharingWithMe;
+          if (MatchmakerShares.loaded.value &&
+              sharing.isEmpty &&
+              _cards.isEmpty &&
+              !_loading) {
             return _EmptyNetwork(
-              title: 'עוד אין שדכנים מחוברים',
+              title: 'עוד אף שדכן לא משתף איתך כרטיסים',
               text:
-                  'המאגר המשותף מורכב מהכרטיסים שהשדכנים שמחוברים אליך בחרו לשתף. '
-                  'זו לא רשת ציבורית — רק שדכנים מאנשי הקשר שלך, שאישרו חיבור.',
+                  'כל שדכן/ית מחליט/ה מה לשתף עם כל שדכן/ית אחר/ת. זו לא רשת '
+                  'ציבורית — רק שדכנים מאנשי הקשר שלך. אפשר לפתוח שיתוף מצדך '
+                  'או לבקש מהם לשתף.',
               button: 'לשדכנים שאני מכיר',
               onPressed: () => context.push('/known-matchmakers'),
             );
           }
           final List<SharedPoolEntry> entries = _entries(repo);
-          final Map<String, int> bySource = <String, int>{};
-          for (final SharedCard c in MatchmakerNetwork.cards.value) {
-            bySource[c.ownerUid] = (bySource[c.ownerUid] ?? 0) + 1;
-          }
           final List<IdeaProposal> incoming = MatchmakerNetwork.incomingPending;
-          return CustomScrollView(
-            slivers: <Widget>[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    'כרטיסים ש־${connected.length} שדכנים מחוברים שיתפו איתך · '
-                    'צפייה בלבד, כל פנייה עוברת דרך השדכן/ית',
-                    style: theme.textTheme.bodySmall,
+          return RefreshIndicator(
+            onRefresh: _reload,
+            child: CustomScrollView(
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: <Widget>[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text(
+                      widget.ownerUid != null
+                          ? '${_first(ownerName ?? '')} משתף/ת איתך '
+                                '${MatchmakerShares.sharedWithMeCount(widget.ownerUid!)} כרטיסים · '
+                                'צפייה בלבד, כל פנייה עוברת דרכו/ה'
+                          : '${sharing.length} שדכנים משתפים איתך '
+                                '${MatchmakerShares.totalSharedWithMe} כרטיסים · '
+                                'צפייה בלבד, כל פנייה עוברת דרך השדכן/ית',
+                      style: theme.textTheme.bodySmall,
+                    ),
                   ),
                 ),
-              ),
-              if (incoming.isNotEmpty)
+                if (incoming.isNotEmpty && widget.ownerUid == null)
+                  SliverToBoxAdapter(
+                    child: _IncomingProposals(proposals: incoming),
+                  ),
                 SliverToBoxAdapter(
-                  child: _IncomingProposals(proposals: incoming),
-                ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: TextField(
-                          controller: _search,
-                          onChanged: (String v) => setState(() => _query = v),
-                          decoration: const InputDecoration(
-                            hintText: 'חיפוש בשם, עיר, תגית או טקסט',
-                            prefixIcon: Icon(Icons.search_rounded),
-                            isDense: true,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: TextField(
+                            controller: _search,
+                            onChanged: _onQuery,
+                            decoration: const InputDecoration(
+                              hintText: 'חיפוש לפי שם',
+                              prefixIcon: Icon(Icons.search_rounded),
+                              isDense: true,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        tooltip: 'סינון',
-                        onPressed: () async {
-                          final PeopleFilterState? next =
-                              await showPeopleFiltersSheet(
-                                context,
-                                repository: repo,
-                                initial: _filters,
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          tooltip: 'סינון',
+                          onPressed: () async {
+                            final PeopleFilterState? next =
+                                await showPeopleFiltersSheet(
+                                  context,
+                                  repository: repo,
+                                  initial: _filters,
+                                );
+                            if (next != null && mounted) {
+                              setState(
+                                () => _filters = next.isEmpty ? null : next,
                               );
-                          if (next != null && mounted) {
-                            setState(
-                              () => _filters = next.isEmpty ? null : next,
-                            );
-                          }
-                        },
-                        icon: Badge(
-                          isLabelVisible: _filters != null,
-                          smallSize: 8,
-                          child: const Icon(Icons.tune_rounded),
+                            }
+                          },
+                          icon: Badge(
+                            isLabelVisible: _filters != null,
+                            smallSize: 8,
+                            child: const Icon(Icons.tune_rounded),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 48,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    children: <Widget>[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: ChoiceChip(
-                          label: const Text('כל השדכנים'),
-                          selected: _source == null,
-                          onSelected: (_) => setState(() => _source = null),
-                        ),
-                      ),
-                      for (final MapEntry<String, String> c
-                          in connected.entries)
-                        if ((bySource[c.key] ?? 0) > 0)
+                if (widget.ownerUid == null && sharing.length > 1)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 48,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        children: <Widget>[
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: ChoiceChip(
-                              label: Text(
-                                'מהמאגר של ${_first(c.value)} · ${bySource[c.key]}',
-                              ),
-                              selected: _source == c.key,
-                              onSelected: (bool on) =>
-                                  setState(() => _source = on ? c.key : null),
+                              label: const Text('כל השדכנים'),
+                              selected: _source == null,
+                              onSelected: (_) {
+                                _source = null;
+                                unawaited(_reload());
+                              },
                             ),
                           ),
-                    ],
+                          for (final MapEntry<String, String> c
+                              in sharing.entries)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: ChoiceChip(
+                                label: Text(
+                                  'מהמאגר של ${_first(c.value)} · '
+                                  '${MatchmakerShares.sharedWithMeCount(c.key)}',
+                                ),
+                                selected: _source == c.key,
+                                onSelected: (bool on) {
+                                  _source = on ? c.key : null;
+                                  unawaited(_reload());
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              if (!MatchmakerNetwork.loaded.value)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (MatchmakerNetwork.cards.value.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _EmptyNetwork(
-                    title: 'עוד לא שותפו כרטיסים',
-                    text:
-                        'השדכנים המחוברים אליך עוד לא בחרו כרטיסים לשתף. '
-                        'אפשר להתחיל ולשתף את שלך — זה מה שמגדיל את המאגר לכולם.',
-                    button: 'שיתוף הכרטיסים שלי',
-                    onPressed: () => context.push(SharingSettingsRoute.path),
+                if (_cards.isEmpty && _loading)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_cards.isEmpty && _failed)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _EmptyNetwork(
+                      title: 'לא הצלחנו לטעון',
+                      text: 'המאגרים של שדכנים אחרים דורשים חיבור לאינטרנט.',
+                      button: 'ניסיון חוזר',
+                      onPressed: () => unawaited(_reload()),
+                    ),
+                  )
+                else if (entries.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          _query.trim().isNotEmpty || _filters != null
+                              ? 'אין כרטיסים שמתאימים לחיפוש'
+                              : 'עוד לא שותפו כאן כרטיסים',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                    sliver: SliverList.separated(
+                      itemCount: entries.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (BuildContext context, int i) =>
+                          _PoolRow(entry: entries[i]),
+                    ),
                   ),
-                )
-              else if (entries.isEmpty)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: Text('אין כרטיסים שמתאימים לחיפוש')),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-                  sliver: SliverList.separated(
-                    itemCount: entries.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (BuildContext context, int i) =>
-                        _PoolRow(entry: entries[i]),
+                if (_cards.isNotEmpty && (_loading || _hasMore))
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Center(
+                        child: _loading
+                            ? const SizedBox.square(
+                                dimension: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : TextButton(
+                                onPressed: () => unawaited(_loadMore()),
+                                child: const Text('עוד כרטיסים'),
+                              ),
+                      ),
+                    ),
                   ),
-                ),
-            ],
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              ],
+            ),
           );
         },
       ),
@@ -1004,7 +1133,7 @@ class _PoolRow extends StatelessWidget {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 6),
                           child: Text(
-                            '${entry.sourceLabel} · בחירה למי לפנות',
+                            'מופיע אצל ${entry.holders.length} שדכנים · בחירה למי לפנות',
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: theme.colorScheme.primary,
                             ),
@@ -1081,12 +1210,18 @@ class SharedCardScreen extends StatelessWidget {
       valueListenable: MatchmakerNetwork.cards,
       builder: (BuildContext context, List<SharedCard> cards, _) {
         final SharedCard? card = MatchmakerNetwork.cardOf(ownerUid, personId);
+        if (card == null && !MatchmakerNetwork.isGone(ownerUid, personId)) {
+          // Not read this session yet: one read of this one card.
+          unawaited(MatchmakerNetwork.fetchCard(ownerUid, personId));
+          const Widget wait = Center(child: CircularProgressIndicator());
+          return inSheet ? wait : Scaffold(appBar: AppBar(), body: wait);
+        }
         if (card == null) {
           const Widget gone = Center(
             child: Padding(
               padding: EdgeInsets.all(24),
               child: Text(
-                'הכרטיס כבר לא משותף איתך.',
+                'השדכן/ית הסיר/ה את הגישה לכרטיס.',
                 textAlign: TextAlign.center,
               ),
             ),
@@ -1151,7 +1286,7 @@ class SharedCardScreen extends StatelessWidget {
               InkWell(
                 onTap: () => NetworkActions.chooseHolder(context, entry),
                 child: Text(
-                  '${entry.sourceLabel} · בחירה למי לפנות',
+                  'מופיע אצל ${entry.holders.length} שדכנים · בחירה למי לפנות',
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: theme.colorScheme.primary,
                   ),
@@ -1556,13 +1691,13 @@ class ProposalScreen extends StatelessWidget {
                 AppNotice.show(
                   context,
                   ok
-                      ? 'הרעיון נפתח אצל שניכם ב"הרעיונות שלי"'
+                      ? 'אישרת. הרעיון ייפתח אצל שניכם כשתחליטו לשאול את החברים.'
                       : 'לא הצלחנו לאשר. נסו שוב.',
                   isError: !ok,
                 );
               },
               icon: const Icon(Icons.check_rounded),
-              label: const Text('פותחים — שואלים את שני הצדדים'),
+              label: const Text('אישור'),
             ),
             const SizedBox(height: 8),
             OutlinedButton(
@@ -1582,6 +1717,31 @@ class ProposalScreen extends StatelessWidget {
           ),
         ];
       case IdeaProposalStatus.approved:
+        return <Widget>[
+          const Text(
+            'סיכמתם על הרעיון. הוא ייפתח אצל שניכם ב"הרעיונות שלי" '
+            'ברגע שמחליטים לשאול את החברים.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: () async {
+              if (!OfflineGuard.allow(context)) return;
+              final bool ok = await MatchmakerNetwork.open(p);
+              if (!context.mounted) return;
+              AppNotice.show(
+                context,
+                ok
+                    ? 'הרעיון נפתח אצל שניכם ב"הרעיונות שלי"'
+                    : 'לא הצלחנו לפתוח. נסו שוב.',
+                isError: !ok,
+              );
+            },
+            icon: const Icon(Icons.lightbulb_outline_rounded),
+            label: const Text('פותחים — שואלים את שני הצדדים'),
+          ),
+        ];
+      case IdeaProposalStatus.opened:
         final MatchStatus? partner = p.partnerStatusFor(me);
         return <Widget>[
           Text(
@@ -1607,8 +1767,8 @@ class ProposalScreen extends StatelessWidget {
   }
 }
 
-/// The route of [SharingSettingsScreen], kept here so the network screens can
-/// point at it without importing the settings file.
+/// The route of [SharingSettingsScreen] (what I share with each matchmaker),
+/// kept here so the network screens can point at it without importing it.
 abstract final class SharingSettingsRoute {
   static const String path = '/network/sharing';
 }
