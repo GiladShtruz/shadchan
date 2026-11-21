@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -227,7 +228,7 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
     // outlined, gradient-filled box with a tinted corner — the one shape on
     // the page that was drawn its own way.
     final Widget card = HomePaperCard(
-      stripe: dark ? AppColors.femaleAccentDm : AppColors.femaleAccent,
+      stripe: dark ? AppColors.femaleAccentDm : context.tokens.femaleAccent,
       radius: 22,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       child: Column(

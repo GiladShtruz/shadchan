@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
@@ -54,12 +55,54 @@ class CardFriendSlide {
 /// the same ten faces. Only [maxSlides] are ever built, and the row builds
 /// lazily as it scrolls.
 ///
-/// Under it, always: "חברים שלי שמנהלים כרטיס אישי".
+/// **"עודכן לאחרונה"** — a small, quiet line — marks only a few cards
+/// ([recentlyUpdated]): never the whole row, or the mark would say nothing.
+///
+/// Under it, always, a text link: "לחברים שמנהלים כרטיס אישי".
 class HomeCardFriendsSection extends StatefulWidget {
   const HomeCardFriendsSection({super.key});
 
   static const String title = 'החברים שלך';
-  static const String cardOwnersLink = 'חברים שלי שמנהלים כרטיס אישי';
+  static const String cardOwnersLink = 'לחברים שמנהלים כרטיס אישי';
+  static const String updatedLabel = 'עודכן לאחרונה';
+
+  /// At most this many cards carry "עודכן לאחרונה".
+  static const int maxUpdatedMarks = 5;
+
+  /// Which of [shown] carry "עודכן לאחרונה": the friends updated in the last
+  /// seven days; when more than [maxUpdatedMarks] were, those of the last 24
+  /// hours come first, and the newest [maxUpdatedMarks] of them are marked.
+  /// Pure, for tests.
+  static Set<String> recentlyUpdated(
+    Iterable<CardFriendSlide> shown, {
+    DateTime? now,
+  }) {
+    final DateTime at = now ?? DateTime.now();
+    final List<CardFriendSlide> week =
+        shown
+            .where(
+              (CardFriendSlide s) =>
+                  at.difference(s.lastActivityAt) < const Duration(days: 7),
+            )
+            .toList()
+          ..sort(
+            (CardFriendSlide a, CardFriendSlide b) =>
+                b.lastActivityAt.compareTo(a.lastActivityAt),
+          );
+    if (week.length <= maxUpdatedMarks) {
+      return <String>{for (final CardFriendSlide s in week) s.person.id};
+    }
+    bool today(CardFriendSlide s) =>
+        at.difference(s.lastActivityAt) < const Duration(hours: 24);
+    final List<CardFriendSlide> ordered = <CardFriendSlide>[
+      ...week.where(today),
+      ...week.where((CardFriendSlide s) => !today(s)),
+    ];
+    return <String>{
+      for (final CardFriendSlide s in ordered.take(maxUpdatedMarks))
+        s.person.id,
+    };
+  }
 
   /// How many slides the carousel holds at most.
   static const int maxSlides = 20;
@@ -169,6 +212,7 @@ class _HomeCardFriendsSectionState extends State<HomeCardFriendsSection>
 
   Object? _key;
   List<CardFriendSlide> _shown = const <CardFriendSlide>[];
+  Set<String> _updated = const <String>{};
 
   @override
   void initState() {
@@ -215,6 +259,7 @@ class _HomeCardFriendsSectionState extends State<HomeCardFriendsSection>
         ),
         seed: _seed,
       );
+      _updated = HomeCardFriendsSection.recentlyUpdated(_shown);
     }
     final ThemeData theme = Theme.of(context);
 
@@ -229,7 +274,7 @@ class _HomeCardFriendsSectionState extends State<HomeCardFriendsSection>
             ),
           ),
           const SizedBox(height: 10),
-          _Carousel(slides: _shown),
+          _Carousel(slides: _shown, updated: _updated),
           const SizedBox(height: 6),
         ],
         const _CardOwnersButton(),
@@ -247,9 +292,10 @@ T? _maybeRead<T>(BuildContext context) {
 }
 
 class _Carousel extends StatelessWidget {
-  const _Carousel({required this.slides});
+  const _Carousel({required this.slides, required this.updated});
 
   final List<CardFriendSlide> slides;
+  final Set<String> updated;
 
   static const double _width = 132;
 
@@ -273,6 +319,7 @@ class _Carousel extends StatelessWidget {
             key: ValueKey<String>(slides[index].person.id),
             slide: slides[index],
             width: _width,
+            updated: updated.contains(slides[index].person.id),
           ),
         ),
       ),
@@ -284,10 +331,18 @@ class _Carousel extends StatelessWidget {
 /// "התאמות" at the foot. The card opens the friend's profile; the button
 /// opens their matches.
 class _Slide extends StatelessWidget {
-  const _Slide({super.key, required this.slide, required this.width});
+  const _Slide({
+    super.key,
+    required this.slide,
+    required this.width,
+    required this.updated,
+  });
 
   final CardFriendSlide slide;
   final double width;
+
+  /// Carries the quiet "עודכן לאחרונה" line.
+  final bool updated;
 
   static const double _photo = 86;
 
@@ -299,9 +354,6 @@ class _Slide extends StatelessWidget {
     final String path = slide.photoPath!;
     final int cache = (_photo * MediaQuery.devicePixelRatioOf(context)).round();
     final Color accent = AppColors.genderAccent(person.gender, dark: dark);
-    final bool fresh =
-        DateTime.now().difference(slide.lastActivityAt) <
-        const Duration(days: 3);
 
     return SizedBox(
       width: width,
@@ -353,45 +405,35 @@ class _Slide extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (fresh)
-                      PositionedDirectional(
-                        top: -4,
-                        end: -10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: dark
-                                ? AppColors.secondaryDarkDm
-                                : AppColors.secondary,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            'עודכן',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Expanded(
-                  child: Center(
-                    child: Text(
-                      person.fullName.trim(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        height: 1.2,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        person.fullName.trim(),
+                        maxLines: updated ? 1 : 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          height: 1.2,
+                        ),
                       ),
-                    ),
+                      if (updated)
+                        Text(
+                          HomeCardFriendsSection.updatedLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 10.5,
+                            color: AppColors.muted(dark: dark),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -404,8 +446,8 @@ class _Slide extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       backgroundColor: dark
                           ? AppColors.primaryDarkDm
-                          : AppColors.primaryDark,
-                      foregroundColor: Colors.white,
+                          : context.tokens.maleAccent,
+                      foregroundColor: context.tokens.onAccent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -425,33 +467,18 @@ class _Slide extends StatelessWidget {
   }
 }
 
-/// "חברים שלי שמנהלים כרטיס אישי" — always under the row, to the page of
-/// the friends who keep their own card.
+/// "לחברים שמנהלים כרטיס אישי" — always under the row: a plain text link,
+/// no frame and no icon, the same as "לכל השדכנים" under the partners' row.
 class _CardOwnersButton extends StatelessWidget {
   const _CardOwnersButton();
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color link = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
     return Align(
       alignment: AlignmentDirectional.centerStart,
-      child: OutlinedButton.icon(
+      child: TextButton(
         onPressed: () => context.push(FriendsWithCardsScreen.route),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: link,
-          side: BorderSide(color: link.withValues(alpha: 0.45)),
-          visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          textStyle: theme.textTheme.bodySmall?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        icon: const Icon(Icons.badge_outlined, size: 18),
-        label: const Text(HomeCardFriendsSection.cardOwnersLink),
+        child: const Text(HomeCardFriendsSection.cardOwnersLink),
       ),
     );
   }

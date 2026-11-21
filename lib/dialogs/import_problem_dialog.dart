@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
@@ -79,7 +80,9 @@ class _ImportProblemDialogState extends State<_ImportProblemDialog> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color slate = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color slate = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
 
     return AlertDialog(
       title: const Text('הייבוא לא הצליח'),

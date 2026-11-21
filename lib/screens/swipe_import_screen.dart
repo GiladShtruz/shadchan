@@ -5,12 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/live_card_offer.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
-import 'package:shadchan/models/person.dart';
-import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -253,31 +251,20 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
         session.recordAdded();
         entry.importedPersonId = staged.person.id;
         if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
-          // The full card comes back to the deck with a confirmation. Pushing
-          // the profile from here — above the tabs — drew a blank screen.
+          // The full card comes back to the deck, then the same short
+          // window as a quick add.
           final bool kept = await openExtendedPersonEditor(
             context,
             staged.person.id,
             isNewFriend: true,
           );
           if (mounted && kept) {
-            ContactsAddedCelebration.showNewFriend(context, staged.person);
+            await ContactsAddedCelebration.askNext(context, staged.person);
           }
         } else if (mounted) {
-          // The deck carries on, so a short line rather than the large card —
-          // with the friend's matches one tap away.
-          final Person added = staged.person;
-          final BuildContext root = Navigator.of(
-            context,
-            rootNavigator: true,
-          ).context;
-          AppNotice.show(
-            context,
-            '${added.fullName.trim()} '
-            '${added.gender == Gender.female ? 'נוספה' : 'נוסף'} למאגר',
-            actionLabel: 'לראות התאמות',
-            onAction: () => openSuggestionsFor(root, added.id),
-          );
+          // "מעבר להתאמות" | "המשך הוספה" — the deck stays where it is
+          // underneath, so carrying on is simply closing the window.
+          await ContactsAddedCelebration.askNext(context, staged.person);
         }
         return;
       }
@@ -480,7 +467,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           value: _addedCount,
           color: theme.brightness == Brightness.dark
               ? AppColors.femaleAccentDm
-              : AppColors.femaleAccent,
+              : context.tokens.femaleAccent,
         ),
         AddContactsStat(
           icon: Icons.schedule,
@@ -574,8 +561,8 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           diameter: 62,
           iconSize: 28,
           filled: true,
-          color: dark ? theme.colorScheme.primary : AppColors.primaryDark,
-          foregroundColor: dark ? AppColors.onSurface : AppColors.onPrimary,
+          color: dark ? theme.colorScheme.primary : context.tokens.maleAccent,
+          foregroundColor: context.tokens.onAccent,
           onPressed: () => _controller.swipe(CardSwiperDirection.right),
         ),
         // Come back to this contact once the deck is done.
@@ -621,7 +608,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
               size: 72,
               color: theme.brightness == Brightness.dark
                   ? theme.colorScheme.primary
-                  : AppColors.primaryDark,
+                  : context.tokens.maleAccent,
             ),
             const SizedBox(height: 16),
             Text('סיימנו!', style: theme.textTheme.titleLarge),
@@ -782,6 +769,8 @@ class _SwipeActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     final ThemeData theme = Theme.of(context);
     final bool disabled = onPressed == null;
     final Color background = filled

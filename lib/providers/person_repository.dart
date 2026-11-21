@@ -20,6 +20,7 @@ import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/services/self_identity.dart';
 import 'package:uuid/uuid.dart';
 
 class PersonRepository extends ChangeNotifier {
@@ -27,6 +28,9 @@ class PersonRepository extends ChangeNotifier {
     // Offline, the friends' cards last confirmed by the server are shown as
     // they were; the line between shown and hidden moves with the connection.
     ConnectivityStatus.offline.addListener(_onConnectivityChanged);
+    // The user is never one of their own friends; who they are can become
+    // known after the first frame (the account, "המספר שלי").
+    SelfIdentity.revision.addListener(notifyListeners);
     // A write that reaches the box without passing through this repository
     // (the account sync, a migration) drops the sorted copy too.
     _boxWatch = _box.watch().listen((_) => _allCache = null);
@@ -55,7 +59,13 @@ class PersonRepository extends ChangeNotifier {
   final Uuid _uuid = const Uuid();
 
   Set<String>? _verifiedCardOwners;
-  Iterable<Person> get _readableValues => _box.values.where(_mayRead);
+
+  /// Everything the lists may show: readable, and never the user themselves
+  /// ([SelfIdentity]) — the old mirror of their own card, or a record with
+  /// their own number. Such a record is still found by [getById], so an idea
+  /// or a note naming it opens; it is only kept out of the database's lists.
+  Iterable<Person> get _readableValues =>
+      _box.values.where((Person p) => _mayRead(p) && !SelfIdentity.isSelf(p));
   bool _mayRead(Person person) =>
       person.cardOwnerUid == null ||
       _verifiedCardOwners == null ||
@@ -91,6 +101,7 @@ class PersonRepository extends ChangeNotifier {
   void dispose() {
     unawaited(_boxWatch?.cancel());
     ConnectivityStatus.offline.removeListener(_onConnectivityChanged);
+    SelfIdentity.revision.removeListener(notifyListeners);
     super.dispose();
   }
 
@@ -550,7 +561,10 @@ class PersonRepository extends ChangeNotifier {
     _recordActivity(person.id, HomeActivityAction.createdPerson);
     _measureFriendAdded(person, sourceOverride: 'contacts');
     notifyListeners();
-    await onPersonStatusChanged?.call(person.id);
+    // Not awaited: a friend just added from the contacts has no idea to move
+    // yet, and the next screen (the full card, the "מעבר להתאמות" window)
+    // must not wait on the ideas being walked.
+    unawaited(onPersonStatusChanged?.call(person.id));
     _refreshBirthdayNotificationsInBackground();
   }
 

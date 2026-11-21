@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/community_links.dart';
 
 /// One answer per thing people actually get stuck on, and nothing else.
@@ -149,7 +149,9 @@ class _HelpTile extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            iconColor: dark ? theme.colorScheme.primary : AppColors.primaryDark,
+            iconColor: dark
+                ? theme.colorScheme.primary
+                : context.tokens.maleAccent,
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             expandedCrossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[

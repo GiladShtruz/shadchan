@@ -10,6 +10,7 @@ import 'package:shadchan/services/contact_hash_upload.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/user_scrolling.dart';
 import 'package:shadchan/services/partner_space.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/community_tags_service.dart';
@@ -160,13 +161,39 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     context.read<CommunityProvider>().noteReconnected();
   }
 
+  /// Collections another phone changed whose screens have not redrawn yet.
+  final Set<SyncCollection> _pendingRemote = <SyncCollection>{};
+  Timer? _remoteFlush;
+
   /// Something changed on another phone signed in to the same account. The
   /// boxes already hold it; whoever reads them redraws.
+  ///
+  /// **Not in the middle of a scroll, and once per burst.** A sync arrives in
+  /// many small batches, and each used to redraw every screen that reads the
+  /// database — while the matchmaker was flinging through a list, that is a
+  /// rebuild of the page under their finger several times a second. The
+  /// batches are gathered for a quarter of a second and the redraw waits for
+  /// the scroll to settle ([UserScrolling.whenIdle]; never more than a few
+  /// seconds).
   void _onRemoteApplied(AccountSyncChanges changes) {
     if (!mounted) {
       return;
     }
-    final Set<SyncCollection> collections = changes.collections;
+    _pendingRemote.addAll(changes.collections);
+    _remoteFlush?.cancel();
+    _remoteFlush = Timer(const Duration(milliseconds: 250), () {
+      UserScrolling.whenIdle(_flushRemote);
+    });
+  }
+
+  void _flushRemote() {
+    if (!mounted || _pendingRemote.isEmpty) {
+      return;
+    }
+    final Set<SyncCollection> collections = Set<SyncCollection>.of(
+      _pendingRemote,
+    );
+    _pendingRemote.clear();
     if (collections.contains(SyncCollection.people) ||
         collections.contains(SyncCollection.personNotes) ||
         collections.contains(SyncCollection.personEvents)) {
@@ -361,6 +388,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
 
   @override
   void dispose() {
+    _remoteFlush?.cancel();
     _account?.removeListener(_refreshSupportInbox);
     _people?.removeListener(_noteActivity);
     _matches?.removeListener(_noteActivity);

@@ -1514,12 +1514,26 @@ service cloud.firestore {
     // Asked only when the conversation is created. **Once it exists it stays
     // a conversation**: a card access revoked or a share stopped changes the
     // card's permissions, not the chat (2026-11-21).
+    //
+    // **Ten document reads at most.** Firestore refuses a rule that reads more
+    // than ten documents, and the old order — card tie, shares, partners, then
+    // a phone-book check each way — reached eleven when only the last clause
+    // was true, so a matchmaker could never start a chat with somebody who
+    // had *them* saved but not the other way round. Now the server's own
+    // reading of each side's phone book (`users/{uid}/private/helpers.uids`,
+    // one document per side) comes first, and the expensive phone-book check
+    // is asked one way only: 2 + 2 + 2 + 1 + 3 = 10.
+    function knowsFromContacts(owner, other) {
+      let path = /databases/$(database)/documents/users/$(owner)/private/helpers;
+      return exists(path) && get(path).data.get('uids', []).hasAny([other]);
+    }
     function chatPeerAllowed(other) {
-      return cardTie(request.auth.uid, other)
+      return knowsFromContacts(request.auth.uid, other)
+        || knowsFromContacts(other, request.auth.uid)
+        || cardTie(request.auth.uid, other)
         || sharesBetween(other)
         || partnerOf(other)
-        || knownPhoneInContacts(request.auth.uid, other)
-        || knownPhoneInContacts(other, request.auth.uid);
+        || knownPhoneInContacts(request.auth.uid, other);
     }
 
     // The per-member unread counters: the sender adds one for the other side

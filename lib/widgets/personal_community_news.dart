@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/personal_area_provider.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 class PersonalCommunityNews extends StatefulWidget {
@@ -97,7 +97,7 @@ class _PersonalCommunityNewsState extends State<PersonalCommunityNews>
     if (items.isEmpty) return const SizedBox.shrink();
     final item = items[_index % items.length];
     final card = HomePaperCard(
-      stripe: AppColors.primary,
+      stripe: context.tokens.maleAccent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

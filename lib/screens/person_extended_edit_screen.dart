@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/photo_share_switch.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
@@ -169,6 +171,15 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   /// whether matchmaker friends should hear about it.
   bool _firstCard = false;
 
+  /// When the page opened: a record that is not readable yet (just written
+  /// by the flow that opened this page) is waited for with a spinner for a
+  /// moment, never shown as "not found" or as an empty page.
+  final DateTime _openedAt = DateTime.now();
+  Timer? _waitForRecord;
+
+  /// Whether the fields were filled from a record yet.
+  bool _hadRecord = false;
+
   @override
   void initState() {
     super.initState();
@@ -196,6 +207,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       _openedCardOwnerUid = person?.cardOwnerUid;
     }
     _loadFrom(person);
+    _hadRecord = person != null;
     if (_owner && CardPhotoChoiceDialog.needed(_photoPaths)) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _askWhichPhotosToKeep(),
@@ -256,6 +268,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
 
   @override
   void dispose() {
+    _waitForRecord?.cancel();
     for (final FocusNode node in _focusNodes.values) {
       node
         ..removeListener(_handleFocusChanged)
@@ -810,6 +823,30 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     }
     final Person? person = _readPerson();
 
+    // Waiting for a record that is about to land — never for one that was
+    // here and went (a revoked card), which is answered at once below.
+    if (person == null &&
+        !_hadRecord &&
+        DateTime.now().difference(_openedAt) < const Duration(seconds: 3)) {
+      _waitForRecord ??= Timer(const Duration(seconds: 3), () {
+        if (mounted) setState(() {});
+      });
+      return Scaffold(
+        backgroundColor: ProfilePalette.canvas(theme),
+        appBar: AppBar(title: Text(_owner ? 'הכרטיס שלי' : 'עריכת כרטיס')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (person != null && !_hadRecord) {
+      // The record arrived after the page opened: fill the fields from it
+      // once, after this frame (filling a field runs its listeners).
+      _hadRecord = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _loadFrom(_readPerson()));
+      });
+    }
+
     if (person == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('עריכת כרטיס')),
@@ -1096,7 +1133,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
                 _ => 'הטלפון של החבר/ה',
               },
               style: theme.textTheme.bodySmall?.copyWith(
-                color: AppColors.mutedInk,
+                color: context.tokens.textSecondary,
               ),
             ),
             const SizedBox(height: 8),
@@ -1209,7 +1246,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             Text(
               'לסידור וסינון המאגר שלך. לא מופיעות בכרטיס שנשלח.',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: AppColors.mutedInk,
+                color: context.tokens.textSecondary,
               ),
             ),
             const SizedBox(height: 8),
@@ -1227,7 +1264,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             Text(
               'עד ${TagCatalog.maxChosen} תגיות. יופיעו אצל השדכנים שקיבלו גישה לכרטיס.',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: AppColors.mutedInk,
+                color: context.tokens.textSecondary,
               ),
             ),
             const SizedBox(height: 8),
@@ -1428,7 +1465,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
               ),
               OutlinedButton.icon(
                 onPressed: () => recordVoiceNote(context, widget.personId),
-                icon: const Icon(Icons.mic_none_rounded, size: 18),
+                icon: const Icon(Icons.mic_rounded, size: 18),
                 label: const Text('הקלטה'),
               ),
             ],
@@ -1980,7 +2017,7 @@ class _PhotoThumb extends StatelessWidget {
             start: 3,
             child: _ThumbBadge(
               icon: Icons.star_border_rounded,
-              color: AppColors.secondary,
+              color: context.tokens.ctaAccent,
               tooltip: 'קביעה כתמונה ראשית',
               onTap: onMakePrimary,
             ),
@@ -2006,6 +2043,8 @@ class _ThumbBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     final ThemeData theme = Theme.of(context);
     return Tooltip(
       message: tooltip,

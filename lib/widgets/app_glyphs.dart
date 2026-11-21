@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:shadchan/utils/app_tokens.dart';
 
 import 'package:flutter/material.dart';
 
@@ -14,6 +15,10 @@ class MatchCardsIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color? color = this.color == null
+        ? null
+        : context.tokens.adapt(this.color!);
     final Color ink = color ?? IconTheme.of(context).color ?? Colors.black;
     return SizedBox.square(
       dimension: size,
@@ -95,6 +100,10 @@ class IdeaBulbIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color? color = this.color == null
+        ? null
+        : context.tokens.adapt(this.color!);
     final Color ink = color ?? IconTheme.of(context).color ?? Colors.black;
     return SizedBox.square(
       dimension: size,

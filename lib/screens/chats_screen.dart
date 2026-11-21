@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -87,7 +89,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 20,
@@ -143,45 +144,22 @@ class _ChatsScreenState extends State<ChatsScreen> {
             if (!ChatService.loaded.value && ChatService.uid != null) {
               return const Center(child: CircularProgressIndicator());
             }
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      Icons.chat_bubble_outline_rounded,
-                      size: 48,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'כאן יופיעו כל השיחות שלך — עם השדכנים שלך, עם חברים '
-                      'שמנהלים כרטיס ועם שדכנים שאת/ה מכיר/ה. שיחה אחת קבועה עם '
-                      'כל אחד.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: () => NewChatSheet.show(context),
-                      icon: const Icon(Icons.add_comment_outlined),
-                      label: const Text('שיחה חדשה'),
-                    ),
-                  ],
-                ),
-              ),
-            );
+            return _EmptyChats(candidates: NewChatSheet.candidatesOf(context));
           }
           if (shown.isEmpty) {
             return const Center(child: Text('לא נמצאו שיחות'));
           }
-          return ListView.builder(
-            padding: const EdgeInsets.only(bottom: 88),
-            itemCount: shown.length,
-            itemBuilder: (BuildContext context, int i) => _ThreadRow(
-              key: ValueKey<String>(shown[i].id),
-              thread: shown[i],
-              me: me,
+          return AppRefreshIndicator(
+            scope: RefreshScope.chats,
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 88),
+              itemCount: shown.length,
+              itemBuilder: (BuildContext context, int i) => _ThreadRow(
+                key: ValueKey<String>(shown[i].id),
+                thread: shown[i],
+                me: me,
+              ),
             ),
           );
         },
@@ -190,7 +168,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 }
 
-/// A face for a conversation: their picture, else their initial.
+/// A face for a conversation: their picture, else a plain figure.
 class ChatAvatar extends StatelessWidget {
   const ChatAvatar({
     super.key,
@@ -205,21 +183,106 @@ class ChatAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String n = name.trim();
     final String? url = photoUrl;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.softBlue,
+      backgroundColor: context.tokens.maleWash,
       foregroundImage: url == null
           ? null
           : avatarImage(context, url, diameter: radius * 2),
-      child: Text(
-        n.isEmpty ? '?' : n.characters.first,
-        style: TextStyle(
-          color: AppColors.primaryInk,
-          fontWeight: FontWeight.w800,
-          fontSize: radius * 0.8,
-        ),
+      // No picture: a plain flat figure of a person, the same everywhere a
+      // matchmaker or a friend has no photo.
+      child: Icon(
+        Icons.person_rounded,
+        size: radius * 1.3,
+        color: AppColors.white,
+      ),
+    );
+  }
+}
+
+/// No conversation yet: what the list is for, and the people a first one can
+/// be started with right here — a tap opens the conversation, ready to
+/// write; nothing is created until the first message is sent.
+class _EmptyChats extends StatelessWidget {
+  const _EmptyChats({required this.candidates});
+
+  final List<ChatCandidate> candidates;
+
+  static const int shown = 8;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<ChatCandidate> first = candidates.take(shown).toList();
+    return AppRefreshIndicator(
+      scope: RefreshScope.chats,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 28, 20, 96),
+        children: <Widget>[
+          Icon(
+            Icons.chat_bubble_outline_rounded,
+            size: 44,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'עדיין אין שיחות',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'כאן יופיעו כל השיחות שלך — עם שדכנים ועם חברים שמנהלים כרטיס. '
+            'שיחה אחת קבועה עם כל אחד.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 20),
+          if (first.isNotEmpty) ...<Widget>[
+            Text(
+              'אפשר להתחיל שיחה עם',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final ChatCandidate c in first)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: ChatAvatar(name: c.name, radius: 22),
+                title: Text(
+                  c.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(c.why),
+                trailing: const Icon(Icons.chat_bubble_outline_rounded),
+                onTap: () => ChatLauncher.open(
+                  context,
+                  otherUid: c.uid,
+                  otherName: c.name,
+                ),
+              ),
+            if (candidates.length > shown)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: () => NewChatSheet.show(context),
+                  child: Text('לכל ${candidates.length} האנשים'),
+                ),
+              ),
+          ] else
+            Text(
+              'אפשר לפתוח שיחה עם השדכנים שרואים את הכרטיס שלך, עם חברים '
+              'שהכרטיס האישי שלהם אצלך, ועם שדכנים שמורים אצלך באנשי הקשר.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall,
+            ),
+        ],
       ),
     );
   }
@@ -342,6 +405,9 @@ abstract final class NewChatSheet {
         add(row.matchmakerUid, friend.name, 'משדכ/ת · הכרטיס שלך');
       }
     }
+    final String? partner = PartnerSpace.partnerUid;
+    if (partner != null)
+      add(partner, PartnerSpace.partnerFirstName, 'מרחב זוגי');
     if (WorkspaceStore.matchmakerEnabled) {
       final PersonRepository? people = _maybeRead<PersonRepository>(context);
       for (final Person p in people?.getAll() ?? const <Person>[]) {
@@ -353,6 +419,15 @@ abstract final class NewChatSheet {
       for (final MapEntry<String, String> c
           in MatchmakerShares.connectedNames.entries) {
         add(c.key, c.value, 'שדכן/ית');
+      }
+    }
+    // Matchmakers saved in this phone who use the app — for a single as
+    // much as for a matchmaker: one conversation with each, whoever writes
+    // first.
+    if (access != null) {
+      for (final CardHelper h in access.knownHelpers) {
+        if (h.granteeUids.length > 1) continue;
+        add(h.uid, access.nameInContacts(h.uid, h.name), 'שדכן/ית מאנשי הקשר');
       }
     }
     final List<ChatCandidate> list = out.values.toList()
@@ -375,7 +450,7 @@ abstract final class NewChatSheet {
                 padding: EdgeInsets.all(24),
                 child: Text(
                   'אפשר לפתוח שיחה עם השדכנים שרואים את הכרטיס שלך, עם חברים '
-                  'שהכרטיס האישי שלהם אצלך, ועם שדכנים שמשתפים איתך.',
+                  'שהכרטיס האישי שלהם אצלך, ועם שדכנים שמורים אצלך באנשי הקשר.',
                   textAlign: TextAlign.center,
                 ),
               )
@@ -486,9 +561,9 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _ref = widget.initialRef ?? _ideaRef(widget.contextIdeaId);
     ChatService.openChatId = widget.chatId;
-    unawaited(ChatService.start());
-    unawaited(_loadTheirCards());
+    unawaited(_startService());
     _messages.addListener(_onMessages);
+    ChatService.threads.addListener(_onThreads);
     _scroll.addListener(_onScroll);
     _text.addListener(() {
       final bool can = _text.text.trim().isNotEmpty;
@@ -504,6 +579,28 @@ class _ChatScreenState extends State<ChatScreen> {
         ? 'רעיון משותף'
         : '${p.candidateFirstName} × ${p.targetFirstName}';
     return ChatRef(kind: 'proposal', id: id, label: label);
+  }
+
+  /// The account is known before anything about the other side is read
+  /// (a conversation opened from a push on a cold start comes here before
+  /// the chat service has started).
+  Future<void> _startService() async {
+    await ChatService.me();
+    unawaited(ChatService.start());
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_loadTheirCards());
+  }
+
+  /// A conversation opened before it existed — its listener was refused —
+  /// starts listening the moment the list shows it exists: the other side
+  /// wrote first while this one was open, and their message must arrive at
+  /// once, not on the next visit.
+  void _onThreads() {
+    if (_messages.refused && ChatService.thread(widget.chatId) != null) {
+      _messages.resubscribe();
+    }
+    if (mounted) setState(() {});
   }
 
   void _onMessages() {
@@ -548,6 +645,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _releaseProposals?.call();
+    ChatService.threads.removeListener(_onThreads);
     if (ChatService.openChatId == widget.chatId) ChatService.openChatId = null;
     unawaited(ChatService.markRead(widget.chatId));
     _messages.removeListener(_onMessages);
@@ -1036,7 +1134,7 @@ class _ChatScreenState extends State<ChatScreen> {
         return Scaffold(
           backgroundColor: dark
               ? theme.scaffoldBackgroundColor
-              : AppColors.page,
+              : context.tokens.background,
           appBar: AppBar(
             titleSpacing: 0,
             title: InkWell(
@@ -1237,7 +1335,7 @@ class _Bubble extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color fill = mine
-        ? (dark ? AppColors.primaryLightDarkDm : AppColors.primaryLight)
+        ? (dark ? AppColors.primaryLightDarkDm : context.tokens.maleWash)
         : theme.colorScheme.surface;
     final DateTime? at = message.at;
     final ChatRef? ref = message.ref;
@@ -1453,7 +1551,7 @@ class _OfferBlock extends StatelessWidget {
           Text(
             mine ? '✓ אישר/ה את הרעיון' : '✓ אישרת את הרעיון',
             style: theme.textTheme.labelLarge?.copyWith(
-              color: AppColors.primaryDark,
+              color: context.tokens.maleAccent,
             ),
           )
         else if (answer == 'declined') ...<Widget>[
@@ -1818,7 +1916,7 @@ class _Composer extends StatelessWidget {
               IconButton.filledTonal(
                 tooltip: 'הודעה קולית',
                 onPressed: busy ? null : onRecord,
-                icon: const Icon(Icons.mic_none_rounded),
+                icon: const Icon(Icons.mic_rounded),
               )
             else
               IconButton.filled(

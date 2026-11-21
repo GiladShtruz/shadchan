@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/screens/known_matchmakers_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -59,7 +60,7 @@ abstract final class PartnerCarouselHidden {
 /// knows from the phone book, as a horizontal row — a big photo, the full
 /// name and one action ([KnownMatchmakerAction]): "למאגר" (with "X
 /// כרטיסים") for one who shares with me, "צ'אט" when only I share, else
-/// "פתיחת שיתוף". New ones (joined this week) lead with a mark; then the
+/// "שיתוף מאגר". New ones (joined this week) lead with a mark; then the
 /// most recently active. A small arrow on each card offers "הסתרה מהבית".
 /// "לכל השדכנים" under the row opens "שדכנים שאני מכיר".
 ///
@@ -192,13 +193,15 @@ class _Card extends StatelessWidget {
     final KnownMatchmaker m = matchmaker;
     final String name = m.name.trim().isEmpty ? 'שדכן/ית' : m.name.trim();
     final String? photo = m.photoUrl?.trim();
-    final Color ring = m.sharesWithMe ? AppColors.primary : AppColors.teal;
+    final Color ring = m.sharesWithMe
+        ? context.tokens.maleAccent
+        : context.tokens.lightAccent;
     return SizedBox(
       width: width,
       child: Material(
         color: theme.colorScheme.surface,
         elevation: 1,
-        shadowColor: AppColors.darkBlue.withValues(alpha: 0.18),
+        shadowColor: context.tokens.textPrimary.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -206,6 +209,10 @@ class _Card extends StatelessWidget {
             context,
             KnownMatchmakersScreen.profileRoute(m.uid),
           ),
+          // The card's other choices — the profile, "הסתרה מהבית" — on a long
+          // press. A small arrow used to hang off the card's corner for them,
+          // and the card's own clip cut it into a stray "L" above the photo.
+          onLongPress: () => _CardMenu.show(context, m),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
             child: Column(
@@ -221,18 +228,17 @@ class _Card extends StatelessWidget {
                         shape: BoxShape.circle,
                         border: Border.all(color: ring, width: 2),
                       ),
+                      // No photo: a plain, flat figure of a person — never
+                      // a first letter.
                       child: CircleAvatar(
-                        backgroundColor: AppColors.primaryLight,
+                        backgroundColor: context.tokens.maleWash,
                         foregroundImage: photo == null || photo.isEmpty
                             ? null
                             : avatarImage(context, photo, diameter: _photo),
-                        child: Text(
-                          name.characters.first,
-                          style: const TextStyle(
-                            color: AppColors.darkBlue,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        child: const Icon(
+                          Icons.person_rounded,
+                          size: _photo * 0.62,
+                          color: AppColors.white,
                         ),
                       ),
                     ),
@@ -242,11 +248,6 @@ class _Card extends StatelessWidget {
                         end: -10,
                         child: NewMark(),
                       ),
-                    PositionedDirectional(
-                      top: -10,
-                      start: -14,
-                      child: _CardMenu(matchmaker: m),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -275,39 +276,43 @@ class _Card extends StatelessWidget {
   }
 }
 
-/// The small arrow on a card: the profile, and "הסתרה מהבית".
-class _CardMenu extends StatelessWidget {
-  const _CardMenu({required this.matchmaker});
-  final KnownMatchmaker matchmaker;
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      tooltip: 'עוד',
-      padding: EdgeInsets.zero,
-      iconSize: 20,
-      icon: const Icon(
-        Icons.keyboard_arrow_down_rounded,
-        color: AppColors.mutedInk,
+/// A card's other choices, on a long press: the profile, "הסתרה מהבית".
+abstract final class _CardMenu {
+  static Future<void> show(BuildContext context, KnownMatchmaker m) async {
+    final String? value = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.person_outline_rounded),
+              title: const Text('לפרופיל'),
+              onTap: () => Navigator.pop(context, 'profile'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.visibility_off_outlined),
+              title: const Text('הסתרה מהבית'),
+              onTap: () => Navigator.pop(context, 'hide'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.group_outlined),
+              title: const Text('לכל השדכנים'),
+              onTap: () => Navigator.pop(context, 'all'),
+            ),
+          ],
+        ),
       ),
-      onSelected: (String value) {
-        switch (value) {
-          case 'profile':
-            AppNavigation.open(
-              context,
-              KnownMatchmakersScreen.profileRoute(matchmaker.uid),
-            );
-          case 'hide':
-            PartnerCarouselHidden.hide(matchmaker.uid);
-          case 'all':
-            context.push(KnownMatchmakersScreen.route);
-        }
-      },
-      itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(value: 'profile', child: Text('לפרופיל')),
-        PopupMenuItem<String>(value: 'hide', child: Text('הסתרה מהבית')),
-        PopupMenuItem<String>(value: 'all', child: Text('לכל השדכנים')),
-      ],
     );
+    if (!context.mounted || value == null) return;
+    switch (value) {
+      case 'profile':
+        AppNavigation.open(context, KnownMatchmakersScreen.profileRoute(m.uid));
+      case 'hide':
+        PartnerCarouselHidden.hide(m.uid);
+      case 'all':
+        context.push(KnownMatchmakersScreen.route);
+    }
   }
 }

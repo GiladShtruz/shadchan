@@ -1,5 +1,6 @@
 import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/branch_gate.dart';
 import 'package:shadchan/widgets/cream_page.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/screens/partner_space_screen.dart';
@@ -1310,8 +1311,12 @@ class _SwipeableBranchesState extends State<_SwipeableBranches>
         child: Transform.translate(
           offset: Offset(dx, 0),
           // Its own layer: a swipe between tabs moves the page, it does not
-          // repaint it on every frame of the drag.
-          child: RepaintBoundary(child: widget.children[index]),
+          // repaint it on every frame of the drag. A hidden tab does not
+          // rebuild on every change to the database; it catches up when it
+          // is shown. See [BranchGate].
+          child: RepaintBoundary(
+            child: BranchGate(active: visible, child: widget.children[index]),
+          ),
         ),
       ),
     );

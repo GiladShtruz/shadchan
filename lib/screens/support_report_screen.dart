@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/device_facts.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/support_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
@@ -200,7 +200,7 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: theme.brightness == Brightness.dark
                             ? theme.colorScheme.primary
-                            : AppColors.primaryDark,
+                            : context.tokens.maleAccent,
                         foregroundColor: theme.colorScheme.onPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: const StadiumBorder(),
@@ -245,14 +245,14 @@ class _Intro extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         color: dark
             ? theme.colorScheme.primary.withValues(alpha: 0.14)
-            : AppColors.primaryLight.withValues(alpha: 0.5),
+            : context.tokens.maleWash.withValues(alpha: 0.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Icon(
             Icons.forum_outlined,
-            color: dark ? theme.colorScheme.primary : AppColors.primaryDark,
+            color: dark ? theme.colorScheme.primary : context.tokens.maleAccent,
           ),
           const SizedBox(width: 12),
           Expanded(

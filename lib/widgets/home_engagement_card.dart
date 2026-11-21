@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/mazel_tov_sheet.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -7,7 +8,6 @@ import 'package:shadchan/services/community_engagements_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/mazel_tov_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
 /// "מזל טוב! זוג חדש התחתן" — on the home screen, for one launch, and then
@@ -119,7 +119,9 @@ class _HomeEngagementCardState extends State<HomeEngagementCard> {
 
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color tone = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color tone = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     // Who did it. The matchmaker's name is on the record only if they were
     // asked and said yes; without one the line still says everything that

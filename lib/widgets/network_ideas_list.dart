@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/idea_proposal.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
@@ -186,7 +187,7 @@ class _NetworkIdeasListState extends State<NetworkIdeasList> {
                         ),
                         Icon(
                           Icons.favorite_rounded,
-                          color: AppColors.femaleAccent,
+                          color: context.tokens.femaleAccent,
                           size: 20,
                         ),
                         Expanded(

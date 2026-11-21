@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -217,7 +217,7 @@ class _RecipientRow extends StatelessWidget {
     final Color accent = failed
         ? theme.colorScheme.error
         : done
-        ? AppColors.statusDating
+        ? context.tokens.femaleAccent
         : theme.colorScheme.primary;
 
     return Material(
@@ -265,7 +265,7 @@ class _RecipientRow extends StatelessWidget {
                       Text(
                         'הצ׳אט נפתח',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: AppColors.statusDating,
+                          color: context.tokens.femaleInk,
                         ),
                       ),
                   ],

@@ -4,8 +4,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
 /// Viewing and lightly fixing one photo.
@@ -659,7 +659,7 @@ class _Slider extends StatelessWidget {
             value: value,
             min: min,
             max: max,
-            activeColor: AppColors.primaryLight,
+            activeColor: context.tokens.maleWash,
             onChanged: onChanged,
           ),
         ),

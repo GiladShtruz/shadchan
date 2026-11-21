@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/privacy_policy_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
@@ -372,7 +372,7 @@ class _BarAddIcon extends StatelessWidget {
       child: Icon(
         Icons.add,
         size: 20,
-        color: dark ? theme.colorScheme.onSurface : AppColors.primaryInk,
+        color: dark ? theme.colorScheme.onSurface : context.tokens.textPrimary,
       ),
     );
   }
@@ -389,7 +389,9 @@ class _MenuRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color ink = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return Row(
       children: <Widget>[
@@ -447,7 +449,7 @@ class _BarMenuIcon extends StatelessWidget {
       child: Icon(
         Icons.more_vert,
         size: 22,
-        color: dark ? theme.colorScheme.onSurface : AppColors.primaryInk,
+        color: dark ? theme.colorScheme.onSurface : context.tokens.textPrimary,
       ),
     );
   }

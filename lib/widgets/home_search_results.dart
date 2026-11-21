@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/home_search.dart';
@@ -96,7 +97,9 @@ class _ContentHitRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color mark = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color mark = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
     final TextStyle? base = theme.textTheme.bodyMedium?.copyWith(height: 1.35);
 
     return Material(

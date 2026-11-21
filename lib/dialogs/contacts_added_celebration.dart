@@ -79,4 +79,51 @@ abstract final class ContactsAddedCelebration {
         ),
     ];
   }
+
+  /// The short window after one friend was added from the contacts: the
+  /// friend's name, and exactly two ways on — "מעבר להתאמות" (that friend's
+  /// matches) and "המשך הוספה" (straight back to the list, at the same
+  /// place: nothing under the window was rebuilt or scrolled).
+  ///
+  /// Shown where the add happened, so closing it leaves the list exactly as
+  /// it was; no intermediate page, no empty screen.
+  static Future<void> askNext(BuildContext context, Person person) async {
+    final String name = person.fullName.trim();
+    final String joined = person.gender == Gender.female ? 'נוספה' : 'נוסף';
+    final bool canMatch = person.gender != Gender.unknown;
+    final BuildContext root = Navigator.of(
+      context,
+      rootNavigator: true,
+    ).context;
+    final bool? toMatches = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialog) => AlertDialog(
+        icon: const Icon(Icons.check_circle_rounded, size: 36),
+        title: Text(
+          name.isEmpty ? 'נוסף למאגר' : '$name $joined למאגר',
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actionsOverflowButtonSpacing: 8,
+        actions: <Widget>[
+          if (canMatch)
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialog).pop(true),
+              icon: const Icon(Icons.favorite_border_rounded),
+              label: const Text(continueToMatchesLabel),
+            ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(dialog).pop(false),
+            child: const Text(continueAddingLabel),
+          ),
+        ],
+      ),
+    );
+    if (toMatches == true && root.mounted) {
+      await openSuggestionsFor(root, person.id);
+    }
+  }
+
+  static const String continueToMatchesLabel = 'מעבר להתאמות';
+  static const String continueAddingLabel = 'המשך הוספה';
 }

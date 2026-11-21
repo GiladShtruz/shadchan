@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -195,105 +197,110 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
           ),
         ],
       ),
-      body: CustomScrollView(
-        slivers: <Widget>[
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            sliver: SliverList.list(
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-                  child: Text(
-                    'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן. עם כל אחד מחליטים '
-                    'בנפרד מה לשתף — כל המאגר, אנשים נבחרים או כלום — ואפשר '
-                    'לדבר בצ\'אט או ב־WhatsApp גם בלי לשתף.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-                if (!NetworkSharing.sharesAnything &&
-                    !NetworkSharing.onboardingDone)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 10),
-                    child: NetworkOnboardingCard(),
-                  ),
-                const _SharingSummary(),
-                if (noContacts)
-                  _Notice(
-                    text:
-                        'כדי למצוא שדכנים שאת/ה מכיר/ה, צריך גישה לאנשי הקשר. '
-                        'רק אנשים ששמורים אצלך בטלפון יופיעו כאן.',
-                    action:
-                        _permission == ContactsPermissionState.permanentlyDenied
-                        ? 'פתיחת הגדרות הטלפון'
-                        : 'לאפשר גישה לאנשי קשר',
-                    onAction: _askForContacts,
-                  ),
-                if (myPhone == null)
-                  _Notice(
-                    text:
-                        'כדי ששדכנים שמכירים אותך ימצאו אותך כאן, צריך להוסיף '
-                        'את המספר שלך. הוא לא מוצג לאף אחד.',
-                    action: 'הוספת המספר שלי',
-                    onAction: () async {
-                      final UserProfileProvider profile = context
-                          .read<UserProfileProvider>();
-                      final String? phone = await MyPhoneDialog.show(
-                        context,
-                        purpose: MyPhonePurpose.matchmaker,
-                      );
-                      if (phone != null) await profile.setMyPhone(phone);
-                    },
-                  ),
-                if (_scanning || (loading && !noContacts))
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (groups.isEmpty)
+      body: AppRefreshIndicator(
+        scope: RefreshScope.matchmakers,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: <Widget>[
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              sliver: SliverList.list(
+                children: <Widget>[
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
                     child: Text(
-                      noContacts
-                          ? 'הרשימה תופיע אחרי שתאפשר/י גישה לאנשי הקשר.'
-                          : 'עוד לא מצאנו שדכנים מאנשי הקשר שלך בשדכן. '
-                                'כשמישהו מהם יצטרף, נעדכן אותך.',
-                      style: theme.textTheme.bodyMedium,
+                      'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן. עם כל אחד מחליטים '
+                      'בנפרד מה לשתף — כל המאגר, אנשים נבחרים או כלום — ואפשר '
+                      'לדבר בצ\'אט או ב־WhatsApp גם בלי לשתף.',
+                      style: theme.textTheme.bodySmall,
                     ),
                   ),
-              ],
+                  if (!NetworkSharing.sharesAnything &&
+                      !NetworkSharing.onboardingDone)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 10),
+                      child: NetworkOnboardingCard(),
+                    ),
+                  const _SharingSummary(),
+                  if (noContacts)
+                    _Notice(
+                      text:
+                          'כדי למצוא שדכנים שאת/ה מכיר/ה, צריך גישה לאנשי הקשר. '
+                          'רק אנשים ששמורים אצלך בטלפון יופיעו כאן.',
+                      action:
+                          _permission ==
+                              ContactsPermissionState.permanentlyDenied
+                          ? 'פתיחת הגדרות הטלפון'
+                          : 'לאפשר גישה לאנשי קשר',
+                      onAction: _askForContacts,
+                    ),
+                  if (myPhone == null)
+                    _Notice(
+                      text:
+                          'כדי ששדכנים שמכירים אותך ימצאו אותך כאן, צריך להוסיף '
+                          'את המספר שלך. הוא לא מוצג לאף אחד.',
+                      action: 'הוספת המספר שלי',
+                      onAction: () async {
+                        final UserProfileProvider profile = context
+                            .read<UserProfileProvider>();
+                        final String? phone = await MyPhoneDialog.show(
+                          context,
+                          purpose: MyPhonePurpose.matchmaker,
+                        );
+                        if (phone != null) await profile.setMyPhone(phone);
+                      },
+                    ),
+                  if (_scanning || (loading && !noContacts))
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (groups.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
+                      child: Text(
+                        noContacts
+                            ? 'הרשימה תופיע אחרי שתאפשר/י גישה לאנשי הקשר.'
+                            : 'עוד לא מצאנו שדכנים מאנשי הקשר שלך בשדכן. '
+                                  'כשמישהו מהם יצטרף, נעדכן אותך.',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (groups.connected.isNotEmpty)
-            ..._group(
-              'משתפים איתי / מחוברים',
-              AppColors.primary,
-              groups.connected,
-              groups.connected.length,
-            ),
-          if (groups.others.isNotEmpty)
-            ..._group(
-              groups.requestCount > 0
-                  ? 'עדיין לא משתפים · ${groups.requestCount} ביקשו ממך שיתוף'
-                  : 'עדיין לא משתפים',
-              AppColors.rose,
-              others,
-              groups.others.length,
-            ),
-          if (groups.others.length > _shownOthers)
-            SliverToBoxAdapter(
-              child: Center(
-                child: TextButton(
-                  onPressed: () => setState(
-                    () => _shownOthers += KnownMatchmakersScreen.pageSize,
-                  ),
-                  child: Text(
-                    'עוד ${groups.others.length - _shownOthers} שדכנים',
+            if (groups.connected.isNotEmpty)
+              ..._group(
+                'משתפים איתי / מחוברים',
+                context.tokens.maleAccent,
+                groups.connected,
+                groups.connected.length,
+              ),
+            if (groups.others.isNotEmpty)
+              ..._group(
+                groups.requestCount > 0
+                    ? 'עדיין לא משתפים · ${groups.requestCount} ביקשו ממך שיתוף'
+                    : 'עדיין לא משתפים',
+                context.tokens.femaleAccent,
+                others,
+                groups.others.length,
+              ),
+            if (groups.others.length > _shownOthers)
+              SliverToBoxAdapter(
+                child: Center(
+                  child: TextButton(
+                    onPressed: () => setState(
+                      () => _shownOthers += KnownMatchmakersScreen.pageSize,
+                    ),
+                    child: Text(
+                      'עוד ${groups.others.length - _shownOthers} שדכנים',
+                    ),
                   ),
                 ),
               ),
-            ),
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
-        ],
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          ],
+        ),
       ),
     );
   }
@@ -339,7 +346,7 @@ class _SharingSummary extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: HomePaperCard(
-        stripe: AppColors.teal,
+        stripe: context.tokens.lightAccent,
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
         onTap: theirs > 0 ? () => context.push(NetworkScreen.route) : null,
         child: Text(
@@ -372,7 +379,7 @@ class _Notice extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: HomePaperCard(
-        stripe: AppColors.secondary,
+        stripe: context.tokens.ctaAccent,
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -424,6 +431,8 @@ class _GroupRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     const Radius r = Radius.circular(20);
@@ -458,7 +467,8 @@ class _GroupRow extends StatelessWidget {
   }
 }
 
-/// A matchmaker's face: their published photo, else an initial.
+/// A matchmaker's face: their published photo, else a plain flat figure of a
+/// person — never a first letter.
 class KnownMatchmakerFace extends StatelessWidget {
   const KnownMatchmakerFace({
     super.key,
@@ -474,22 +484,16 @@ class KnownMatchmakerFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final String? photo = photoUrl?.trim();
     final bool hasPhoto = photo != null && photo.isNotEmpty;
-    final String initial = name.trim().isEmpty
-        ? ''
-        : name.trim().characters.first;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.primaryLight,
+      backgroundColor: context.tokens.maleWash,
       foregroundImage: hasPhoto
           ? avatarImage(context, photo, diameter: radius * 2)
           : null,
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: AppColors.darkBlue,
-          fontWeight: FontWeight.w900,
-          fontSize: radius * 0.8,
-        ),
+      child: Icon(
+        Icons.person_rounded,
+        size: radius * 1.3,
+        color: AppColors.white,
       ),
     );
   }
@@ -574,7 +578,7 @@ class NewMark extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
-        color: AppColors.rose,
+        color: context.tokens.femaleAccent,
         borderRadius: BorderRadius.circular(8),
       ),
       child: const Text(
@@ -594,8 +598,9 @@ class NewMark extends StatelessWidget {
 ///
 ///  - they share with me → "למאגר" (and "X כרטיסים");
 ///  - only I share with them → "צ'אט";
-///  - nothing yet → "פתיחת שיתוף" — straight to choosing what to share with
-///    them (never a vague "connect").
+///  - nothing yet → "שיתוף מאגר" — straight to choosing what to share with
+///    them (never a vague "connect"). Always one line: scaled down, never
+///    wrapped.
 class KnownMatchmakerAction extends StatelessWidget {
   const KnownMatchmakerAction({
     super.key,
@@ -641,7 +646,14 @@ class KnownMatchmakerAction extends StatelessWidget {
       button = FilledButton.tonal(
         style: style,
         onPressed: () => KnownMatchmakerActions.openSharing(context, m),
-        child: Text(m.askedMe ? 'לשתף בחזרה' : 'פתיחת שיתוף'),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            m.askedMe ? 'לשתף בחזרה' : 'שיתוף מאגר',
+            maxLines: 1,
+            softWrap: false,
+          ),
+        ),
       );
     }
     if (!m.sharesWithMe || compact) return button;
@@ -959,7 +971,7 @@ class _KnownMatchmakerProfileScreenState
           ),
           const SizedBox(height: 20),
           HomePaperCard(
-            stripe: AppColors.copper,
+            stripe: context.tokens.ctaAccent,
             onTap: () => KnownMatchmakerActions.openSharing(context, k),
             child: Row(
               children: <Widget>[
@@ -1013,7 +1025,7 @@ class _Facts extends StatelessWidget {
     if (facts.isEmpty) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
     return HomePaperCard(
-      stripe: AppColors.primary,
+      stripe: context.tokens.maleAccent,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1023,7 +1035,7 @@ class _Facts extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: <Widget>[
-                  Icon(icon, size: 18, color: AppColors.primary),
+                  Icon(icon, size: 18, color: context.tokens.maleAccent),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(text, style: theme.textTheme.bodyMedium),

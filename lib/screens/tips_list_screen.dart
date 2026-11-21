@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/support_service.dart';
@@ -184,7 +185,7 @@ class _TipsWelcome extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.secondaryDarkDm : AppColors.secondaryInk;
+    final Color ink = dark ? AppColors.secondaryDarkDm : context.tokens.ctaInk;
 
     return Container(
       clipBehavior: Clip.antiAlias,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
@@ -301,9 +302,10 @@ class _Heading extends StatelessWidget {
 
 /// The tone one card wears at a time.
 ///
-/// Brand tones the app already wears — the stone blue, the amber, the olive and
-/// the copper. Lightened in the dark theme, where the saturated originals are
-/// too dark to read as ink on their own wash.
+/// Brand tones the app already wears — the blue, the copper, the rose. At
+/// night each is its own night twin ([AppTokens.adapt]) — the lifted blue,
+/// the terracotta, the bordeaux — never the light colour washed toward white,
+/// which is what made the page grey.
 ///
 /// **One at a time is the whole rule.** These are used by the opening card,
 /// which shows exactly one story and takes its colour from it. "הנתונים שלך"
@@ -311,9 +313,8 @@ class _Heading extends StatelessWidget {
 /// two-by-two grid read as four unrelated widgets borrowed from four different
 /// apps, however carefully each one was picked. That card wears one warm wash
 /// for all four figures — see [_numbersWash].
-Color _tone(Color base, ThemeData theme) => theme.brightness == Brightness.dark
-    ? Color.lerp(base, Colors.white, 0.45)!
-    : base;
+Color _tone(Color base, ThemeData theme) =>
+    theme.brightness == Brightness.dark ? AppTokens.dark.adapt(base) : base;
 
 /// The matchmaker's own figures on this page: the palette's copper.
 Color _mineTone(ThemeData theme) => theme.brightness == Brightness.dark
@@ -675,7 +676,7 @@ class _WeeklyBestLine extends StatelessWidget {
     // The light blue of the palette — a record is good news, not a warning.
     final Color lead = theme.brightness == Brightness.dark
         ? AppColors.metricCouplesDm
-        : AppColors.primary;
+        : context.tokens.maleAccent;
 
     return Padding(
       padding: const EdgeInsets.only(top: 10),

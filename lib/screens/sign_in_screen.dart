@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'dart:async';
 
@@ -12,7 +13,6 @@ import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -293,7 +293,7 @@ class _SignInScreenState extends State<SignInScreen> {
                     size: 52,
                     color: theme.brightness == Brightness.dark
                         ? theme.colorScheme.primary
-                        : AppColors.primaryDark,
+                        : context.tokens.maleAccent,
                   ),
                   const SizedBox(height: 20),
                   Text(

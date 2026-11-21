@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/app_icons.dart';
@@ -227,12 +228,17 @@ class SuggestionRow extends StatelessWidget {
     this.nameColor,
     this.mutedColor,
     this.frameColor,
+    this.reason,
   });
 
   final Person person;
 
   /// "גיל 25 · דתי לאומי".
   final String summary;
+
+  /// Why this candidate is offered, in plain words — "מתאים בטווח הגילאים ·
+  /// סגנון דתי מתאים · 3 תגיות משותפות". Never a score. Null draws nothing.
+  final String? reason;
 
   /// The row itself — the person's details.
   final VoidCallback onTap;
@@ -323,6 +329,25 @@ class SuggestionRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(color: muted),
                   ),
+                  if (reason != null && reason!.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 1),
+                    // One line, whole: scaled down rather than cut, so the
+                    // shared-tags count at its end is never the part lost.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        reason!,
+                        maxLines: 1,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.brightness == Brightness.dark
+                              ? AppColors.primaryDarkDm
+                              : context.tokens.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -399,7 +424,7 @@ class SuggestionFrame extends StatelessWidget {
     // The ground live idea cards share (`MatchIdeaCard`'s `_CardTone`).
     final Color ground = dark
         ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.03), paper)
-        : AppColors.cardCream;
+        : context.tokens.surface;
     return Material(
       color: ground,
       elevation: 2,

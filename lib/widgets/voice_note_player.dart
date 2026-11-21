@@ -149,7 +149,7 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
       return Row(
         children: <Widget>[
           Icon(
-            Icons.mic_off_outlined,
+            Icons.mic_off_rounded,
             size: 18,
             color: theme.colorScheme.onSurfaceVariant,
           ),

@@ -165,6 +165,7 @@ Person _person(String id, String name, Gender gender, DateTime now) {
     lastName: 'לוי',
     gender: gender,
     manualAge: 26,
+    religiousLevel: ReligiousLevel.datiLeumi,
     phone: '0501234567',
     createdAt: now,
     updatedAt: now,

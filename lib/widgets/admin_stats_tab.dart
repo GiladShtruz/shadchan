@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -250,12 +251,12 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
           _AlertsCard(alerts: AdminAlertView.listFrom(_current)),
           _Section(
             title: 'מדדי ליבה',
-            accent: AppColors.primaryDark,
+            accent: context.tokens.maleAccent,
             children: _coreTiles(),
           ),
           _Section(
             title: 'השבוע בשדכן',
-            accent: AppColors.secondary,
+            accent: context.tokens.ctaAccent,
             children: <Widget>[
               _Tile(
                 'משתמשים חדשים',
@@ -275,7 +276,7 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
           ),
           _Section(
             title: 'רווקים וכרטיסים אישיים',
-            accent: AppColors.femaleAccent,
+            accent: context.tokens.femaleAccent,
             children: <Widget>[
               _Tile(
                 'התחילו כרטיס',
@@ -294,7 +295,7 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
           ),
           _Section(
             title: 'גישה וקשרי אמון',
-            accent: AppColors.primary,
+            accent: context.tokens.maleAccent,
             children: <Widget>[
               _Tile(
                 'קשרי אמון פעילים',
@@ -315,7 +316,7 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
           ),
           _Section(
             title: 'רעיונות',
-            accent: AppColors.secondary,
+            accent: context.tokens.ctaAccent,
             children: <Widget>[
               _Tile('רעיונות (כל הזמנים)', _n('ideas', 'ideasAll')),
               _Tile('זוגות שיצאו (כל הזמנים)', _n('ideas', 'datingAll')),
@@ -329,7 +330,7 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
           ),
           _Section(
             title: 'צמיחת מאגרים',
-            accent: AppColors.primaryDark,
+            accent: context.tokens.maleAccent,
             children: <Widget>[
               _Tile('מאגרים', _n('databases', 'count')),
               _Tile('ממוצע חברים', _n('databases', 'average')),
@@ -349,7 +350,7 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
           ),
           _Section(
             title: 'טעינת אנשי קשר',
-            accent: AppColors.femaleAccent,
+            accent: context.tokens.femaleAccent,
             children: <Widget>[
               _Tile('מכשירים שדיווחו (30 ימים)', _n('contacts', 'devices')),
               _Tile('קראו בהצלחה השבוע', _n('contacts', 'readers7')),
@@ -367,7 +368,7 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
           if (_history.length >= 2)
             _Section(
               title: 'מגמות (90 ימים)',
-              accent: AppColors.primary,
+              accent: context.tokens.maleAccent,
               children: <Widget>[
                 _Trend('משתמשים', _series('users', 'total')),
                 _Trend('פעילים בשבוע', _series('activity', 'wau')),
@@ -661,7 +662,7 @@ class _AlertsCard extends StatelessWidget {
                       size: 18,
                       color: alert.high
                           ? theme.colorScheme.error
-                          : AppColors.secondary,
+                          : context.tokens.ctaAccent,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -854,6 +855,8 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -903,7 +906,7 @@ class _Tile extends StatelessWidget {
       final double pct = (value - before) / before * 100;
       change = '${pct >= 0 ? '+' : ''}${pct.round()}%';
       changeColor = pct >= 0
-          ? AppColors.statusMarried
+          ? context.tokens.adapt(AppColors.statusMarried)
           : theme.colorScheme.error;
     }
     final String shown = value is int || value == value.roundToDouble()

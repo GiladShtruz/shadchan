@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -214,7 +215,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
             label: const Text('שמירה'),
             shape: const StadiumBorder(),
             backgroundColor: theme.colorScheme.secondary,
-            foregroundColor: AppColors.surface,
+            foregroundColor: theme.colorScheme.onSecondary,
           ),
           floatingActionButtonLocation:
               FloatingActionButtonLocation.centerFloat,
@@ -568,7 +569,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   const _FormSectionDivider(),
                   _FormSectionHeading(
                     icon: Icons.contact_phone_outlined,
-                    accent: AppColors.femaleAccent,
+                    accent: context.tokens.femaleAccent,
                     title: 'יצירת קשר',
                     subtitle: _friendPhoneLabel(_selectedGender),
                   ),
@@ -1384,9 +1385,12 @@ class _FormSectionHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color tone = dark ? Color.lerp(accent, Colors.white, 0.35)! : accent;
+    // [accent] is already the night twin at night (see build); no wash.
+    final Color tone = accent;
     return Row(
       children: <Widget>[
         Container(

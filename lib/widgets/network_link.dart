@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -21,7 +22,9 @@ class NetworkLink extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color ink = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
         MatchmakerShares.rows,

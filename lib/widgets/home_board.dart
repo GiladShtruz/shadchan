@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/board_add_sheet.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
@@ -728,7 +729,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
                         style: TextButton.styleFrom(
                           foregroundColor: dark
                               ? AppColors.secondaryDarkDm
-                              : AppColors.secondaryInk,
+                              : context.tokens.ctaInk,
                           visualDensity: VisualDensity.compact,
                           textStyle: theme.textTheme.labelLarge?.copyWith(
                             fontWeight: FontWeight.w800,
@@ -890,9 +891,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     }
     final int shown = rows.length < _actionsShown ? rows.length : _actionsShown;
     final bool more = rows.length > shown;
-    final Color link = dark
-        ? AppColors.secondaryDarkDm
-        : AppColors.secondaryInk;
+    final Color link = dark ? AppColors.secondaryDarkDm : context.tokens.ctaInk;
     final Divider hairline = Divider(
       height: 1,
       thickness: 0.6,
@@ -1009,7 +1008,9 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
         .getAll()
         .where((MatchIdea match) => match.status == MatchStatus.dating)
         .length;
-    final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color warm = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
 
     if (widget.mode == HomeBoardMode.home) {
       return _buildHome(
@@ -1143,7 +1144,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
                 style: TextButton.styleFrom(
                   foregroundColor: dark
                       ? AppColors.secondaryDarkDm
-                      : AppColors.secondaryInk,
+                      : context.tokens.ctaInk,
                   visualDensity: VisualDensity.compact,
                   textStyle: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w800,
@@ -1180,7 +1181,7 @@ class _ChipRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.secondaryDarkDm : AppColors.secondaryInk;
+    final Color ink = dark ? AppColors.secondaryDarkDm : context.tokens.ctaInk;
     return Row(
       children: <Widget>[
         Expanded(
@@ -1721,7 +1722,7 @@ class _BoardRow extends StatelessWidget {
           reminder != null &&
           reminder.isNotEmpty &&
           reminder != MatchRepository.defaultReminderNote;
-      // Who first — "הודיה × אבי" — then one short line of what to do: the
+      // Who first — "אבי ❤️ הודיה" — then one short line of what to do: the
       // matchmaker's own words, else how long it has been quiet, else the
       // step it waits on.
       return _row(
@@ -1742,9 +1743,8 @@ class _BoardRow extends StatelessWidget {
                     male: male,
                     female: female,
                   ),
-        mark: reminder != null
-            ? Icons.notifications_none_rounded
-            : Icons.lightbulb_outline_rounded,
+        // No bulb: the two faces already say it is an idea.
+        mark: reminder != null ? Icons.notifications_none_rounded : null,
         startAccent: AppColors.genderAccent(Gender.male, dark: dark),
         endAccent: AppColors.genderAccent(Gender.female, dark: dark),
         onTap: () {
@@ -1761,7 +1761,7 @@ class _BoardRow extends StatelessWidget {
         personB: female,
         radius: _r2,
       ),
-      title: '${_firstName(male)} & ${_firstName(female)}',
+      title: HomeActionLines.couple(male: male, female: female),
       // What the matchmaker wrote wins the line, then the reminder, then the
       // next step the ideas page would offer.
       subtitle: (note != null && note.isNotEmpty)
@@ -1906,7 +1906,7 @@ class _BoardRow extends StatelessWidget {
       subtitle: notice.body,
       mark: Icons.notifications_active_outlined,
       startAccent: person == null
-          ? (dark ? AppColors.secondaryDarkDm : AppColors.secondary)
+          ? (dark ? AppColors.secondaryDarkDm : context.tokens.ctaAccent)
           : AppColors.genderAccent(person.gender, dark: dark),
       onTap: () {
         _seen();
@@ -1948,7 +1948,7 @@ class _BoardRow extends StatelessWidget {
       title: title,
       subtitle: report.text,
       mark: Icons.notifications_active_outlined,
-      startAccent: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+      startAccent: dark ? AppColors.secondaryDarkDm : context.tokens.ctaAccent,
       onTap: () {
         _seen();
         SupportChatSheet.show(context, report, asAdmin: item.asAdmin);
@@ -1971,7 +1971,7 @@ class _BoardRow extends StatelessWidget {
       ),
       title: flat
           ? HomeActionLines.pair(male: pair.male, female: pair.female)
-          : '${_firstName(pair.male)} & ${_firstName(pair.female)}',
+          : HomeActionLines.couple(male: pair.male, female: pair.female),
       mark: Icons.auto_awesome_outlined,
       subtitle: flat
           ? HomeActionLines.pairNext(
@@ -2063,7 +2063,9 @@ class _PromptRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
+    final Color blue = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
     final List<_MenuChoice> menu = <_MenuChoice>[
       _MenuChoice('הסרה מהלוח שלי', () {
         HomeBoardActions.removeFromBoard(context, prompt.key);
@@ -2152,12 +2154,4 @@ class _MenuButton extends StatelessWidget {
       ),
     );
   }
-}
-
-String _firstName(Person? person) {
-  if (person == null) {
-    return '—';
-  }
-  final String first = person.firstName.trim();
-  return first.isNotEmpty ? first : person.fullName.trim();
 }

@@ -24,6 +24,10 @@ Person person({
     firstName: firstName,
     lastName: 'כהן',
     gender: gender,
+    // Age and style are hard conditions for a match (2026-11-21).
+    manualAge: 26,
+    manualAgeUpdatedAt: now,
+    religiousLevel: ReligiousLevel.datiLeumi,
     profileStatus: status,
     hidden: hidden,
     needsReview: needsReview,

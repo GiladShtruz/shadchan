@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 
 /// One page of the welcome.
 class IntroPage {
@@ -99,7 +99,9 @@ class _IntroScreensState extends State<IntroScreens> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color lead = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color lead = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return Scaffold(
       body: SafeArea(
@@ -179,6 +181,8 @@ class _IntroPageView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color lead = context.tokens.adapt(this.lead);
     final ThemeData theme = Theme.of(context);
 
     return SingleChildScrollView(

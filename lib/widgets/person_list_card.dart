@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -263,7 +264,9 @@ class PersonListCard extends StatelessWidget {
                         person.isFavorite
                             ? Icons.favorite
                             : Icons.favorite_border,
-                        color: person.isFavorite ? AppColors.favorite : accent,
+                        color: person.isFavorite
+                            ? context.tokens.femaleAccent
+                            : accent,
                       ),
                       onPressed: onToggleFavorite,
                     ),
@@ -404,7 +407,7 @@ extension on PersonListCard {
                                 ? Icons.favorite
                                 : Icons.favorite_border,
                             color: person.isFavorite
-                                ? AppColors.favorite
+                                ? context.tokens.femaleAccent
                                 : accent,
                           ),
                           onPressed: onToggleFavorite,

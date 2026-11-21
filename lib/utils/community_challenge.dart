@@ -154,14 +154,14 @@ class CommunityChallenge {
 
   /// The invitation, in the plural, with no name in it — and always the
   /// same figure the bar under it is measured against ([aim]):
-  /// "בשבוע שעבר הגענו ל־120, השבוע מגיעים ל־132".
+  /// "שבוע שעבר הגענו ל־120 רעיונות. השבוע שוברים את השיא ומגיעים ל־140."
   String get headline {
     if (title.isNotEmpty) return title;
     final int? last = record;
     if (last != null && last > 0) {
       final String reached = 'שבוע שעבר הגענו ל־$last ${metric.shortNoun}.';
       if (beatsRecord) return '$reached השבוע כבר שברנו את השיא! 🎉';
-      return '$reached השבוע היעד הוא $aim — שוברים את השיא.';
+      return '$reached השבוע שוברים את השיא ומגיעים ל־$aim.';
     }
     return 'השבוע היעד הוא $aim ${metric.shortNoun}.';
   }
@@ -242,9 +242,13 @@ class CommunityChallenge {
     final int? record = metric.valueInSnapshot(previousWeek);
     return CommunityChallenge(
       metric: metric,
-      // A shared target cannot depend on which phone saw last week's total.
-      // The remembered record remains useful as encouragement, never as config.
-      target: configured?.target ?? metric.openingTarget,
+      // The administrator's target when there is one. Otherwise the week is
+      // measured against last week — a tenth above it, rounded ([targetFor])
+      // — so "השבוע מגיעים ל־Y" is always a step from "הגענו ל־X", never a
+      // number unrelated to it. Only a device that never saw last week falls
+      // back to the opening target.
+      target:
+          configured?.target ?? CommunityChallenge.targetFor(metric, record),
       current: metric.valueIn(week),
       record: record,
       title: configured?.title.trim() ?? '',

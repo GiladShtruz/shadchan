@@ -260,8 +260,11 @@ class _PrivateAudioPlayerState extends State<PrivateAudioPlayer> {
       children: [
         TextButton.icon(
           onPressed: _busy ? null : _act,
-          icon: Icon(_player.playing ? Icons.pause : Icons.play_arrow),
-          label: const Text('הקלטה'),
+          icon: Icon(
+            _player.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+          ),
+          // A play triangle is "listen", never "record" — the label says so.
+          label: Text(_player.playing ? 'השהיה' : 'השמעת ההקלטה'),
         ),
         if (widget.shareable)
           Builder(
@@ -564,12 +567,12 @@ class _LookingEditorState extends State<_LookingEditor> {
         Wrap(
           children: [
             TextButton.icon(
-              icon: const Icon(Icons.mic),
+              icon: const Icon(Icons.mic_rounded),
               label: const Text('הקלטה עד 10 דקות'),
               onPressed: _busy ? null : _record,
             ),
             TextButton.icon(
-              icon: const Icon(Icons.audio_file_outlined),
+              icon: const Icon(Icons.download_rounded),
               label: const Text('ייבוא הקלטה מ־WhatsApp'),
               onPressed: _busy ? null : _pick,
             ),

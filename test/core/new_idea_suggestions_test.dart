@@ -8,8 +8,10 @@ Person person({
   required String id,
   required String firstName,
   required Gender gender,
-  int? age,
-  ReligiousLevel? level,
+  // Age and religious style are hard conditions for a pair (2026-11-21), so
+  // a fixture that is not about them carries ordinary ones.
+  int? age = 26,
+  ReligiousLevel? level = ReligiousLevel.datiLeumi,
   String? city,
   String? description,
   ProfileStatus status = ProfileStatus.available,

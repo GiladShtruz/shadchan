@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -11,7 +12,6 @@ import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/couple_recovery.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
 /// The shape the three account gates share: an icon, a heading, a sentence
@@ -50,7 +50,7 @@ class _GateScaffold extends StatelessWidget {
                       size: 52,
                       color: theme.brightness == Brightness.dark
                           ? theme.colorScheme.primary
-                          : AppColors.primaryDark,
+                          : context.tokens.maleAccent,
                     ),
                     const SizedBox(height: 20),
                     Text(

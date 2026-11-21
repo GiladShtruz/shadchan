@@ -153,7 +153,7 @@ void main() {
     // to open a share — never a vague "connect".
     expect(find.text('פעיל היום'), findsOneWidget);
     expect(find.text('להתחבר'), findsNothing);
-    expect(find.text('פתיחת שיתוף'), findsNWidgets(2));
+    expect(find.text('שיתוף מאגר'), findsNWidgets(2));
     // The one who asked me is answered with a share, never a yes/no.
     expect(find.text('לשתף בחזרה'), findsOneWidget);
 
@@ -203,7 +203,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text('השדכן/ית לא נמצא/ת באנשי הקשר שלך.'), findsOneWidget);
-    expect(find.text('פתיחת שיתוף'), findsNothing);
+    expect(find.text('שיתוף מאגר'), findsNothing);
   });
 
   test(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
 /// The white, softly shadowed card the add-contacts screens are built from.
@@ -80,7 +81,7 @@ class AddContactsProgressHeader extends StatelessWidget {
                 size: 18,
                 color: theme.brightness == Brightness.dark
                     ? AppColors.femaleAccentDm
-                    : AppColors.femaleAccent,
+                    : context.tokens.femaleAccent,
               ),
               const SizedBox(width: 8),
               Flexible(
@@ -125,7 +126,7 @@ class AddContactsProgressHeader extends StatelessWidget {
                           valueColor: AlwaysStoppedAnimation<Color>(
                             theme.brightness == Brightness.dark
                                 ? theme.colorScheme.primary
-                                : AppColors.primaryDark,
+                                : context.tokens.maleAccent,
                           ),
                         ),
                       ),

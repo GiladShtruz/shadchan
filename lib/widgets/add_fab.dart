@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
 /// The "+" in the thumb's corner, the same on בית, המאגר שלי and הרעיונות
@@ -20,9 +21,13 @@ class AddFab extends StatelessWidget {
       tooltip: tooltip,
       heroTag: tooltip,
       onPressed: onPressed,
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      elevation: 3,
+      // At night the "+" is the action colour, the terracotta; by day the
+      // light blue it always was.
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? context.tokens.ctaAccent
+          : context.tokens.maleAccent,
+      foregroundColor: context.tokens.onAccent,
+      elevation: Theme.of(context).brightness == Brightness.dark ? 1 : 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: const HeartPlusIcon(),
     );
@@ -40,18 +45,26 @@ class HeartPlusIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox.square(
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final AppTokens tokens = context.tokens;
+    return SizedBox.square(
       dimension: 28,
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
-          Icon(Icons.favorite_rounded, color: Colors.white, size: 28),
+          Icon(
+            Icons.favorite_rounded,
+            color: dark ? tokens.onAccent : Colors.white,
+            size: 28,
+          ),
           // The heart's body sits a touch above the glyph's centre.
           Padding(
-            padding: EdgeInsets.only(bottom: 2),
+            padding: const EdgeInsets.only(bottom: 2),
             child: CustomPaint(
-              size: Size.square(10),
-              painter: _BoldPlusPainter(AppColors.primary),
+              size: const Size.square(10),
+              painter: _BoldPlusPainter(
+                dark ? tokens.ctaAccent : AppColors.primary,
+              ),
             ),
           ),
         ],

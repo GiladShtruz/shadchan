@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/face_crop_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
 import 'package:shadchan/models/person.dart';
 
@@ -43,10 +43,10 @@ class PersonAvatar extends StatelessWidget {
     // Unknown gender keeps a simple, neutral standard person icon.
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.primaryLight,
+      backgroundColor: context.tokens.maleWash,
       child: Icon(
         Icons.person_outline,
-        color: AppColors.primary,
+        color: context.tokens.maleAccent,
         size: radius * 1.15,
       ),
     );
@@ -163,11 +163,11 @@ class _FaceCenteredPhotoState extends State<FaceCenteredPhoto> {
           return Container(
             width: widget.diameter,
             height: widget.diameter,
-            color: AppColors.primaryLight,
+            color: context.tokens.maleWash,
             alignment: Alignment.center,
             child: Icon(
               Icons.person_outline,
-              color: AppColors.primary,
+              color: context.tokens.maleAccent,
               size: widget.diameter * 0.575,
             ),
           );

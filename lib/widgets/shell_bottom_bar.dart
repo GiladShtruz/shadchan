@@ -1,16 +1,26 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/chat_service.dart';
 import 'package:shadchan/widgets/app_glyphs.dart';
 
 /// The one bottom bar of the app.
 ///
-/// Read right to left: בית | צ'אטים | פרופיל | המאגר שלי | הרעיונות שלי, with
+/// Read right to left: בית | צ'אטים | פרופיל | המאגר | רעיונות, with
 /// "פרופיל" in the middle, drawn as the user's own face in a circle that
-/// floats a little above the bar. A single who does not matchmake has a
+/// rises a little above the bar.
+///
+/// **The bar itself is the ordinary height of a navigation bar.** It used to
+/// reserve the circle's full height, and since the strip above the bar was
+/// painted in the page colour the bar read as tall as the circle. Now the
+/// Scaffold reserves only [barHeight]; the circle is painted [lift] above the
+/// bar's top edge over the page, and [_OverflowStack] lets a tap on that
+/// raised part still reach it (a tap beside the circle there goes to the
+/// page, as it should). A single who does not matchmake has a
 /// short bar — בית | צ'אטים | פרופיל | השדכנים שלי — and never the database
 /// or the ideas.
 ///
@@ -28,16 +38,16 @@ class ShellBottomBar extends StatelessWidget {
   final int selected;
   final ValueChanged<int> onSelected;
 
-  static const double barHeight = 62;
+  static const double barHeight = 58;
 
   /// How far the profile circle rises above the bar's top edge.
-  static const double lift = 16;
+  static const double lift = 18;
 
-  static const double faceRadius = 23;
+  static const double faceRadius = 21;
 
   /// The labels in order, for tests and screen readers.
   static List<String> labelsFor({required bool matchmaker}) => matchmaker
-      ? const <String>['בית', 'צ\'אטים', 'פרופיל', 'המאגר שלי', 'הרעיונות שלי']
+      ? const <String>['בית', 'צ\'אטים', 'פרופיל', 'המאגר', 'רעיונות']
       : const <String>['בית', 'צ\'אטים', 'פרופיל', 'השדכנים שלי'];
 
   @override
@@ -50,9 +60,25 @@ class ShellBottomBar extends StatelessWidget {
         bar.unselectedItemColor ?? theme.colorScheme.onSurfaceVariant;
     final List<String> labels = labelsFor(matchmaker: matchmaker);
     final double bottom = MediaQuery.viewPaddingOf(context).bottom;
+    final bool dark = theme.brightness == Brightness.dark;
+    final AppTokens tokens = context.tokens;
+
+    /// At night the active tab takes the accent of what it holds — the
+    /// action colour for בית and רעיונות, the blue for the people and the
+    /// conversations, the bordeaux for a single's matchmakers — not only a
+    /// lighter grey. The light theme keeps its one blue.
+    Color onFor(int index) {
+      if (!dark) return on;
+      if (!matchmaker && index == 3) return tokens.femaleAccent;
+      return switch (index) {
+        0 || 4 => tokens.ctaAccent,
+        _ => tokens.maleAccent,
+      };
+    }
 
     Widget item(int index, Widget icon, Widget activeIcon) {
       final bool active = index == selected;
+      final Color on = onFor(index);
       return Expanded(
         child: Semantics(
           button: true,
@@ -97,7 +123,7 @@ class ShellBottomBar extends StatelessWidget {
       _ProfileItem(
         label: labels[2],
         active: selected == 2,
-        on: on,
+        on: dark ? tokens.textPrimary : on,
         off: off,
         ring: background,
         onTap: () => onSelected(2),
@@ -113,36 +139,93 @@ class ShellBottomBar extends StatelessWidget {
         ),
     ];
 
-    return SizedBox(
-      height: barHeight + bottom + lift,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: barHeight + bottom,
-            child: Material(
+    // The stack is the outermost box of the bar, sized by its first child
+    // to the bar alone; the row of items hangs [lift] above it.
+    return _OverflowStack(
+      overflow: lift,
+      children: <Widget>[
+        SizedBox(
+          height: barHeight + bottom,
+          width: double.infinity,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
               color: background,
-              elevation: 8,
-              shadowColor: Colors.black26,
-              child: const SizedBox.expand(),
+              // At night a hairline marks the bar's edge; a shadow on a dark
+              // page is only more dark.
+              border: dark
+                  ? Border(top: BorderSide(color: tokens.outline, width: 0.6))
+                  : null,
+              boxShadow: dark
+                  ? null
+                  : const <BoxShadow>[
+                      BoxShadow(
+                        color: Color(0x14000000),
+                        blurRadius: 10,
+                        offset: Offset(0, -2),
+                      ),
+                    ],
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: bottom,
-            height: barHeight + lift,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: items,
-            ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottom,
+          top: -lift,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: items,
           ),
-        ],
-      ),
+        ),
+      ],
     );
+  }
+}
+
+/// A [Stack] that answers taps up to [overflow] pixels above its own top
+/// edge, where the profile circle is painted.
+///
+/// Every [RenderBox] refuses a position outside its own size before asking
+/// its children, so the stack has to be the bar's outermost box and has to
+/// make the exception itself; its children are then asked as usual, and a
+/// tap above the bar that lands on no item (beside the circle) is refused and
+/// goes to the page.
+class _OverflowStack extends Stack {
+  const _OverflowStack({required this.overflow, super.children})
+    : super(clipBehavior: Clip.none);
+
+  final double overflow;
+
+  @override
+  RenderStack createRenderObject(BuildContext context) => _RenderOverflowStack(
+    overflow: overflow,
+    textDirection: Directionality.maybeOf(context),
+  );
+
+  @override
+  void updateRenderObject(BuildContext context, RenderStack renderObject) {
+    super.updateRenderObject(context, renderObject);
+    (renderObject as _RenderOverflowStack).overflow = overflow;
+  }
+}
+
+class _RenderOverflowStack extends RenderStack {
+  _RenderOverflowStack({required this.overflow, super.textDirection})
+    : super(clipBehavior: Clip.none);
+
+  double overflow;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final Rect area = Rect.fromLTRB(0, -overflow, size.width, size.height);
+    if (!area.contains(position)) {
+      return false;
+    }
+    if (hitTestChildren(result, position: position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
   }
 }
 
@@ -155,12 +238,12 @@ class _ChatsIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     return ValueListenableBuilder<int>(
       valueListenable: ChatService.unread,
       builder: (BuildContext context, int unread, _) => Badge(
         isLabelVisible: unread > 0,
-        backgroundColor: theme.colorScheme.secondary,
+        backgroundColor: context.tokens.badge,
+        textColor: context.tokens.onBadge,
         label: Text(unread > 99 ? '99+' : '$unread'),
         child: Icon(
           filled
@@ -194,6 +277,8 @@ class _ProfileItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final AppTokens tokens = context.tokens;
     String? path;
     try {
       path = context.select<UserProfileProvider, String?>(
@@ -227,26 +312,31 @@ class _ProfileItem extends StatelessWidget {
                 children: <Widget>[
                   Container(
                     key: const ValueKey<String>('shell-profile-face'),
-                    padding: const EdgeInsets.all(3),
+                    padding: const EdgeInsets.all(2.5),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: ring,
+                      // A soft frame, never a glow: at night the blue when
+                      // active and a quiet cream when not.
                       border: Border.all(
-                        color: active ? on : off.withValues(alpha: 0.35),
+                        color: dark
+                            ? (active
+                                  ? tokens.maleAccent
+                                  : tokens.textPrimary.withValues(alpha: 0.45))
+                            : (active ? on : off.withValues(alpha: 0.35)),
                         width: active ? 2.4 : 1.4,
                       ),
-                      boxShadow: const <BoxShadow>[
+                      boxShadow: <BoxShadow>[
                         BoxShadow(
-                          color: Color(0x29000000),
-                          blurRadius: 8,
-                          offset: Offset(0, 3),
+                          color: Color(dark ? 0x40000000 : 0x29000000),
+                          blurRadius: dark ? 6 : 8,
+                          offset: const Offset(0, 3),
                         ),
                       ],
                     ),
                     child: CircleAvatar(
                       radius: r,
-                      backgroundColor:
-                          theme.colorScheme.surfaceContainerHighest,
+                      backgroundColor: tokens.surfaceActive,
                       foregroundImage: hasPhoto
                           ? ResizeImage(
                               FileImage(File(path)),
@@ -263,7 +353,7 @@ class _ProfileItem extends StatelessWidget {
                             ),
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     label,
                     style: theme.textTheme.labelSmall?.copyWith(
@@ -272,7 +362,7 @@ class _ProfileItem extends StatelessWidget {
                       fontWeight: active ? FontWeight.w800 : FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),

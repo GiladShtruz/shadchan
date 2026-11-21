@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/screens/personal_home_screen.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:go_router/go_router.dart';
@@ -34,7 +35,7 @@ import 'package:shadchan/widgets/home_week_block.dart';
 import 'package:shadchan/widgets/home_card_friends.dart';
 import 'package:shadchan/widgets/home_partner_matchmakers.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
-import 'package:shadchan/widgets/home_greeting_avatar.dart';
+import 'package:shadchan/widgets/home_my_matchmakers.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/home_search_results.dart';
@@ -383,91 +384,97 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final String greetingName =
         userProfile.firstName ?? '{שדכן|שדכנית}'.forGender(userGender);
 
-    return CustomScrollView(
-      controller: _homeScrollController,
-      slivers: <Widget>[
-        // 1. The greeting. A matchmaker who also keeps a card of their own
-        // finds the way into it in the far corner of the same line.
-        block(
-          HomeGreeting(
-            greeting: _timeOfDayGreeting(
-              TimeOfDay.fromDateTime(DateTime.now()),
-            ),
-            name: greetingName,
-            leading: const HomeGreetingAvatar(),
-            line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
-          ),
-          top: 8,
-        ),
-
-        // 2. The four all-time figures, back in their squares — smaller and
-        // closer together than they once were, each still a tap into its list.
-        if (friends > 0)
+    return AppRefreshIndicator(
+      scope: RefreshScope.records,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        controller: _homeScrollController,
+        slivers: <Widget>[
+          // 1. The greeting. A matchmaker who also keeps a card of their own
+          // finds the way into it in the far corner of the same line.
           block(
-            ActivityFigureRow(
-              people: personRepository,
-              matches: matchRepository,
-              compact: true,
+            HomeGreeting(
+              greeting: _timeOfDayGreeting(
+                TimeOfDay.fromDateTime(DateTime.now()),
+              ),
+              name: greetingName,
+              // No photo beside the greeting: the user's face is the profile
+              // circle in the middle of the bottom bar.
+              line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
             ),
             top: 8,
           ),
 
-        // 3. "הוספת חברים" | "הוספת רעיון" — the page's two main buttons.
-        // Pinned: the greeting and the figures scroll away, the search bar
-        // and these two stay at the top of the page.
-        const SliverToBoxAdapter(child: SizedBox(height: 10)),
-        HomeActionArea.pinnedSliver(context, inset: inset()),
+          // 2. The four all-time figures, back in their squares — smaller and
+          // closer together than they once were, each still a tap into its list.
+          if (friends > 0)
+            block(
+              ActivityFigureRow(
+                people: personRepository,
+                matches: matchRepository,
+                compact: true,
+              ),
+              top: 8,
+            ),
 
-        // 3.5. The user's own card, for a matchmaker who keeps one: the way
-        // to it and to "השדכנים שלי", anything new around it and who sees it
-        // — part of the same home, with no heading of its own.
-        if (hasOwnCard) block(const PersonalHomeBlock()),
+          // 3. "הוספת חברים" | "הוספת רעיון" — the page's two main buttons.
+          // Pinned: the greeting and the figures scroll away, the search bar
+          // and these two stay at the top of the page.
+          const SliverToBoxAdapter(child: SizedBox(height: 10)),
+          HomeActionArea.pinnedSliver(context, inset: inset()),
 
-        // 4. Two circles, side by side in meaning: "החברים שלך" — the friends
-        // this matchmaker thinks about — and "שדכנים שותפים" — the
-        // matchmakers they think with.
-        block(const HomeCardFriendsSection()),
-        block(const HomePartnerMatchmakers()),
-
-        // 5. "הפעילות שלי" | "פעילות הקהילה", large, under השבוע | החודש |
-        // כל הזמנים — and the community's weekly target under them. No
-        // heading of its own.
-        block(
-          HomeWeekBlock(onOpen: () => AppNavigation.open(context, '/activity')),
-        ),
-
-        // Somebody else's good news, for one launch. It draws nothing at all
-        // when there is none, which is nearly always.
-        block(const HomeEngagementCard()),
-
-        // The tip moved to the activity page (/activity): one block fewer
-        // between the figures and "הפעולה הבאה שלך".
-
-        // 7. Last on the page and open-ended: "הפעולה הבאה שלך" — the
-        // progress line, then what to do next, ten more at a time, and under
-        // "הצג עוד" the quiet WhatsApp / share line.
-        block(const HomeNextStepTitle(), top: 22),
-        block(const HomeWeeklyProgress(), top: 6),
-        const SliverToBoxAdapter(child: SizedBox(height: 6)),
-        HomeBoardSection(
-          focusKey: _boardSectionKey,
-          mode: HomeBoardMode.actions,
-          entries: board.entries,
-          openIdeas: openIdeas,
-          personRepository: personRepository,
-          matchRepository: matchRepository,
-          refresh: _boardRefresh,
-        ),
-
-        SliverToBoxAdapter(
-          child: SizedBox(
-            height:
-                MediaQuery.viewPaddingOf(context).bottom +
-                kBottomNavigationBarHeight +
-                16,
+          // 4. "הפעולה הבאה שלך" — the progress line, then what to do next,
+          // five rows and "הצג עוד". First after the greeting: it is what the
+          // page is opened for.
+          block(const HomeNextStepTitle(), top: 22),
+          block(const HomeWeeklyProgress(), top: 6),
+          const SliverToBoxAdapter(child: SizedBox(height: 6)),
+          HomeBoardSection(
+            focusKey: _boardSectionKey,
+            mode: HomeBoardMode.actions,
+            entries: board.entries,
+            openIdeas: openIdeas,
+            personRepository: personRepository,
+            matchRepository: matchRepository,
+            refresh: _boardRefresh,
           ),
-        ),
-      ],
+
+          // 5. "החברים שלך" — the friends this matchmaker thinks about — and
+          // "שדכנים שותפים" — the matchmakers they think with.
+          block(const HomeCardFriendsSection(), top: 22),
+          block(const HomePartnerMatchmakers()),
+
+          // 6. "השדכנים שלי" — only for somebody who keeps a card of their own:
+          // the matchmakers among their friends, as one more row of faces, and
+          // under it what is new around the card and the one step worth doing
+          // for it. The card itself lives on the profile, not on a button here.
+          if (hasOwnCard) ...<Widget>[
+            block(const HomeMyMatchmakers()),
+            block(const PersonalHomeBlock()),
+          ],
+
+          // 7. "הפעילות שלי" | "פעילות הקהילה" and the community's weekly
+          // target under them.
+          block(
+            HomeWeekBlock(
+              onOpen: () => AppNavigation.open(context, '/activity'),
+            ),
+          ),
+
+          // Somebody else's good news, for one launch. It draws nothing at all
+          // when there is none, which is nearly always.
+          block(const HomeEngagementCard()),
+
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height:
+                  MediaQuery.viewPaddingOf(context).bottom +
+                  kBottomNavigationBarHeight +
+                  16,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

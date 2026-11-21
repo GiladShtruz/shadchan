@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -537,22 +538,23 @@ class _RiseChip extends StatelessWidget {
 
   final int delta;
 
-  static const Color _riseColor = AppColors.blue;
+  static const Color _riseColorLight = AppColors.blue;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Color riseColor = context.tokens.adapt(_riseColorLight);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: _riseColor.withValues(alpha: 0.14),
+        color: riseColor.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const Icon(Icons.trending_up_rounded, size: 15, color: _riseColor),
+          Icon(Icons.trending_up_rounded, size: 15, color: riseColor),
           const SizedBox(width: 4),
           Flexible(
             child: FittedBox(
@@ -562,7 +564,7 @@ class _RiseChip extends StatelessWidget {
                 '+$delta מהחודש שעבר',
                 maxLines: 1,
                 style: theme.textTheme.labelMedium?.copyWith(
-                  color: _riseColor,
+                  color: riseColor,
                   fontWeight: FontWeight.w700,
                 ),
               ),

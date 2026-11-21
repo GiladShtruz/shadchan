@@ -112,28 +112,72 @@ abstract final class MatchSuggestionUtils {
       return false;
     }
 
+    // **Two hard conditions, both required (2026-11-21): the age range and
+    // the religious style.** A side whose age or style was never recorded
+    // cannot be said to fit either, so it is not offered — however many tags
+    // the two share. Tags only order what passes ([byTagsThenRecency]).
     final bool ownerWishes = followsOwnerWishes(source);
-    if (!(ownerWishes && _choseStyles(source))) {
-      final List<ReligiousLevel> levels =
-          MatchPreferences.defaultReligiousLevelsFor(source.religiousLevel);
-      final List<String> otherLabels = MatchPreferences.defaultOtherLabelsFor(
-        source,
-      );
-      if ((levels.isNotEmpty || otherLabels.isNotEmpty) &&
-          !_styleIn(candidate, levels, otherLabels)) {
-        return false;
-      }
+    if (!styleFits(source: source, candidate: candidate)) {
+      return false;
     }
+    if (ownerWishes && !fitsOwnerWishes(source: source, candidate: candidate)) {
+      return false;
+    }
+    return ageFits(source: source, candidate: candidate);
+  }
 
-    if (ownerWishes) {
-      if (!fitsOwnerWishes(source: source, candidate: candidate)) {
-        return false;
-      }
-      if (_statesAgeRange(source)) {
-        return true;
-      }
+  /// The religious-style condition, strictly: [candidate]'s recorded style
+  /// is one [source] is matched with — the styles a personal card chose under
+  /// "מה אני מחפש/ת", else the automatic table ([MatchPreferences]). An
+  /// unknown style on either side never fits.
+  static bool styleFits({required Person source, required Person candidate}) {
+    if (candidate.religiousLevel == null) return false;
+    if (followsOwnerWishes(source) && _choseStyles(source)) {
+      return _styleIn(
+        candidate,
+        source.preferredReligiousLevels,
+        source.preferredReligiousLevelOtherLabels,
+      );
     }
+    final List<ReligiousLevel> levels =
+        MatchPreferences.defaultReligiousLevelsFor(source.religiousLevel);
+    final List<String> otherLabels = MatchPreferences.defaultOtherLabelsFor(
+      source,
+    );
+    if (levels.isEmpty && otherLabels.isEmpty) return false;
+    return _styleIn(candidate, levels, otherLabels);
+  }
+
+  /// The age condition, strictly: [candidate]'s recorded age is in the range
+  /// [source] asked for on a personal card, else in the automatic age rule
+  /// between the two ([AutoMatchRules]). An unknown age never fits.
+  static bool ageFits({required Person source, required Person candidate}) {
+    final int? age = candidate.age;
+    if (age == null) return false;
+    if (followsOwnerWishes(source) && _statesAgeRange(source)) {
+      final int? minAge = source.preferredMinAge;
+      final int? maxAge = source.preferredMaxAge;
+      return (minAge == null || age >= minAge) &&
+          (maxAge == null || age <= maxAge);
+    }
+    if (source.age == null) return false;
     return areAgesCompatible(source: source, candidate: candidate);
+  }
+
+  /// Why [candidate] is offered for [source], in a few short words for the
+  /// row: "מתאים בטווח הגילאים", "סגנון דתי מתאים", and "3 תגיות משותפות"
+  /// when there are some. No score, no rule.
+  static List<String> reasons({
+    required Person source,
+    required Person candidate,
+  }) {
+    final int tags = sharedTags(source, candidate).length;
+    return <String>[
+      if (ageFits(source: source, candidate: candidate)) 'מתאים בטווח הגילאים',
+      if (styleFits(source: source, candidate: candidate)) 'סגנון דתי מתאים',
+      if (tags == 1) 'תגית משותפת אחת',
+      if (tags > 1) '$tags תגיות משותפות',
+    ];
   }
 
   /// Whether [source]'s automatic matches follow what they themselves asked
@@ -246,21 +290,28 @@ abstract final class MatchSuggestionUtils {
     required Person source,
     required Iterable<Person> people,
   }) {
-    final List<Person> sorted = people.toList()
-      ..sort((Person a, Person b) => byTagsThenRecency(source, a, b));
-    final List<Person> preferred = <Person>[];
-    final List<Person> basic = <Person>[];
-    for (final Person candidate in sorted) {
-      if (matchesOwnPreferences(source: source, candidate: candidate)) {
-        preferred.add(candidate);
-      } else if (matchesBasicPreferences(
-        source: source,
-        candidate: candidate,
-      )) {
-        basic.add(candidate);
-      }
-    }
-    return <Person>[...preferred, ...basic];
+    // 1. The hard filter: age and religious style, both.
+    final List<Person> eligible = <Person>[
+      for (final Person candidate in people)
+        if (matchesBasicPreferences(source: source, candidate: candidate))
+          candidate,
+    ];
+    // 2. More shared tags first; 3. then everything the full card asks for,
+    // then the most recently edited.
+    final Map<String, int> tags = <String, int>{
+      for (final Person c in eligible) c.id: sharedTags(source, c).length,
+    };
+    final Map<String, bool> full = <String, bool>{
+      for (final Person c in eligible)
+        c.id: matchesOwnPreferences(source: source, candidate: c),
+    };
+    eligible.sort((Person a, Person b) {
+      final int byTags = tags[b.id]!.compareTo(tags[a.id]!);
+      if (byTags != 0) return byTags;
+      if (full[a.id] != full[b.id]) return full[a.id]! ? -1 : 1;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
+    return eligible;
   }
 
   /// The tags [a] and [b] both carry (compared as [PersonTags.sameTag]), in
@@ -379,6 +430,15 @@ abstract final class MatchSuggestionUtils {
 
     final bool sourceWishes = followsOwnerWishes(source);
     final bool candidateWishes = followsOwnerWishes(candidate);
+
+    // Both conditions are hard here too: nobody of unknown age or style is
+    // offered as half of a pair.
+    if (source.age == null ||
+        candidate.age == null ||
+        source.religiousLevel == null ||
+        candidate.religiousLevel == null) {
+      return false;
+    }
 
     if (!(sourceWishes && _choseStyles(source))) {
       final List<ReligiousLevel> allowedLevels = religiousLevelsFor(

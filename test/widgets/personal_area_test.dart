@@ -771,17 +771,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('חברים שמנהלים כרטיס אישי'), findsOneWidget);
       expect(find.text('להזמין חברים להוסיף כרטיס אישי'), findsOneWidget);
-      // Three tabs, "אישרו לי גישה" open by default.
+      // Two tabs, "אישרו לי גישה" open by default.
       expect(find.text('אישרו לי גישה · 1'), findsOneWidget);
-      expect(find.textContaining('אפשר לבקש גישה'), findsOneWidget);
-      expect(find.text('ביקשתי ומחכה'), findsOneWidget);
+      expect(find.textContaining('בקשות גישה'), findsOneWidget);
+      expect(find.text('ביקשתי ומחכה'), findsNothing);
       expect(find.text('דנה כהן'), findsOneWidget);
       expect(find.text('נועה'), findsNothing);
       // The friends still to ask are on the second tab.
-      await tester.tap(find.textContaining('אפשר לבקש גישה'));
+      await tester.tap(find.textContaining('בקשות גישה'));
       await tester.pumpAndSettle();
       expect(find.text('נועה'), findsOneWidget);
-      expect(find.text('בקשת גישה'), findsOneWidget);
+      expect(find.textContaining('גישה'), findsWidgets);
       // A friend who has not given access is a name and a button: the row
       // opens nothing.
       expect(

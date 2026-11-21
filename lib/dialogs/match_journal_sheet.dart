@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:flutter/material.dart';
@@ -560,7 +561,7 @@ class _JournalLine extends StatelessWidget {
 
     final Color rail = theme.colorScheme.outlineVariant;
     final Color dot = from != null
-        ? (dark ? AppColors.secondaryDarkDm : AppColors.secondary)
+        ? (dark ? AppColors.secondaryDarkDm : context.tokens.ctaAccent)
         : mine
         ? theme.colorScheme.primary
         : theme.colorScheme.outlineVariant;
@@ -671,6 +672,8 @@ class _Rail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     return Container(width: 1.5, color: color);
   }
 }

@@ -60,7 +60,7 @@ void main() {
     });
 
     test(
-      'devices with different remembered records share the same default target',
+      'without a goal the target follows last week, never a fixed number',
       () {
         final withRecord = CommunityChallenge.build(
           weekKey: 'W2026-08-16',
@@ -76,7 +76,14 @@ void main() {
           weekKey: 'W2026-08-16',
           week: _totals(),
         );
-        expect(withRecord.target, withoutRecord.target);
+        // "שבוע שעבר הגענו ל־900 … מגיעים ל־Y": Y is a step above 900.
+        expect(withRecord.target, greaterThan(900));
+        expect(
+          withRecord.target,
+          CommunityChallenge.targetFor(ChallengeMetric.ideas, 900),
+        );
+        // A device that never saw last week starts from the opening target.
+        expect(withoutRecord.target, ChallengeMetric.ideas.openingTarget);
       },
     );
 
@@ -158,7 +165,7 @@ void main() {
       expect(behind.progress, closeTo(20 / 90, 0.001));
       expect(
         behind.headline,
-        'שבוע שעבר הגענו ל־80 רעיונות. השבוע היעד הוא 90 — שוברים את השיא.',
+        'שבוע שעבר הגענו ל־80 רעיונות. השבוע שוברים את השיא ומגיעים ל־90.',
       );
       expect(behind.progressLabel, '20/90 רעיונות');
 
@@ -182,8 +189,34 @@ void main() {
         record: 128,
       );
       expect(high.aim, 150);
-      expect(high.headline, contains('השבוע היעד הוא 150'));
+      expect(high.headline, contains('ומגיעים ל־150'));
     });
+
+    test(
+      'without an administrator goal, this week aims a step above last week',
+      () {
+        final CommunityChallenge challenge = CommunityChallenge.build(
+          weekKey: 'W2026-08-16',
+          week: _totals(friends: 3, ideas: 7, couples: 0),
+          previousWeek: const CommunityWeekSnapshot(
+            weekKey: 'W2026-08-09',
+            friends: 30,
+            ideas: 60,
+            couples: 4,
+          ),
+        );
+        expect(challenge.record, 60);
+        expect(
+          challenge.aim,
+          CommunityChallenge.targetFor(ChallengeMetric.ideas, 60),
+        );
+        expect(
+          challenge.headline,
+          'שבוע שעבר הגענו ל־60 רעיונות. השבוע שוברים את השיא ומגיעים ל־${challenge.aim}.',
+        );
+        expect(challenge.progressLabel, '7/${challenge.aim} רעיונות');
+      },
+    );
 
     test('claims no record when this device never saw last week', () {
       final CommunityChallenge challenge = CommunityChallenge.build(

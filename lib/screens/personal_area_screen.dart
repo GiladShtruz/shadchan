@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/widgets/private_looking.dart';
 import 'package:shadchan/services/personal_area_service.dart';
@@ -171,7 +172,7 @@ class _RestoreCardPrompt extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return HomePaperCard(
-      stripe: AppColors.secondary,
+      stripe: context.tokens.ctaAccent,
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -214,7 +215,7 @@ class _CreateCardPrompt extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return HomePaperCard(
-      stripe: AppColors.secondary,
+      stripe: context.tokens.ctaAccent,
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,7 +286,15 @@ class _MyCardSummary extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: Text('הכרטיס שלי', style: theme.textTheme.labelMedium),
+                // The way into the card is here, on the profile — no longer a
+                // shortcut on בית — so its heading reads as one.
+                child: Text(
+                  'הכרטיס שלי',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: accent,
+                  ),
+                ),
               ),
               ProfileStatusTag(
                 status: card.profileStatus,
@@ -316,7 +325,7 @@ class _MyCardSummary extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               backgroundColor: dark
                   ? theme.colorScheme.surfaceContainerHighest
-                  : AppColors.cardCream,
+                  : context.tokens.surface,
             )
           else
             Center(child: PersonAvatar(person: card, radius: 44)),

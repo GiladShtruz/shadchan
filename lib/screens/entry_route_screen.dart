@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/workspace_store.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 /// "ברוך הבא! איך תרצה להשתמש בשדכן?" — the first screen of a fresh install,
@@ -65,7 +65,7 @@ class EntryRouteScreen extends StatelessWidget {
                     title: 'רווק/ה',
                     subtitle:
                         'כרטיס אישי שרק את/ה מעדכן/ת, והחברים שמשדכים רואים אותו',
-                    accent: AppColors.secondary,
+                    accent: context.tokens.ctaAccent,
                     onTap: () => _choose(context, EntryRoute.cardOwner),
                   ),
                   const SizedBox(height: 12),
@@ -73,7 +73,7 @@ class EntryRouteScreen extends StatelessWidget {
                     icon: Icons.diversity_1_outlined,
                     title: 'שדכן/ית',
                     subtitle: 'לנהל את החברים שלך ולחשוב על רעיונות לשידוכים',
-                    accent: AppColors.primary,
+                    accent: context.tokens.maleAccent,
                     onTap: () => _choose(context, EntryRoute.matchmaker),
                   ),
                   const SizedBox(height: 12),
@@ -82,7 +82,7 @@ class EntryRouteScreen extends StatelessWidget {
                     title: 'רווק/ה וגם שדכן/ית',
                     subtitle:
                         'הכרטיס האישי שלך וגם המאגר והרעיונות — באותה אפליקציה',
-                    accent: AppColors.femaleAccent,
+                    accent: context.tokens.femaleAccent,
                     onTap: () => _choose(context, EntryRoute.both),
                   ),
                 ],
@@ -112,6 +112,8 @@ class _RouteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     return HomePaperCard(
       stripe: accent,

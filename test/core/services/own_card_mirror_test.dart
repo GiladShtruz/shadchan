@@ -90,7 +90,10 @@ void main() {
   test('the card lands in the database once, with its details', () async {
     final Person? mirror = await sync(card());
     expect(mirror, isNotNull);
-    expect(repository.getAll().length, 1);
+    // Since 2026-11-21 the user is never one of their own friends: an old
+    // mirror stays on the device (nothing is deleted) but out of every list.
+    expect(people.length, 1);
+    expect(repository.getAll(), isEmpty);
     final Person saved = repository.getById(OwnCardMirror.defaultId)!;
     expect(saved.fullName, 'נועה לוי');
     expect(saved.gender, Gender.female);
@@ -102,7 +105,7 @@ void main() {
     expect(saved.photosPaths, <String>['/photos/own_card_1.jpg']);
 
     await sync(card());
-    expect(repository.getAll().length, 1);
+    expect(people.length, 1);
   });
 
   test(
@@ -145,7 +148,8 @@ void main() {
     );
     final Person? mirror = await sync(card());
     expect(mirror!.id, 'manual-me');
-    expect(repository.getAll().length, 1);
+    expect(people.length, 1);
+    expect(repository.getAll(), isEmpty);
     expect(repository.getById('manual-me')!.description, startsWith('בחורה'));
     expect(OwnCardMirror.mirrorId, 'manual-me');
     expect(OwnCardMirror.isMirror('manual-me'), isTrue);

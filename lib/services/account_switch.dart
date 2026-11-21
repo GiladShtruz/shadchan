@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:hive/hive.dart';
 
+import 'package:shadchan/services/self_identity.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -271,6 +272,8 @@ abstract final class AccountSwitch {
   /// Only ever called with the sync stopped: a running sync would read these
   /// deletions as the matchmaker's own and pass them on.
   static Future<void> clearAccountCopy() async {
+    // The next account is somebody else.
+    SelfIdentity.clear();
     // Measurement forgets the account and this device's measurement id.
     await Analytics.forget();
     // What the server last told this account — its community figures and

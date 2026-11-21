@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/matchmaker_rank.dart';
@@ -24,7 +25,9 @@ class MatchmakerRankBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color warm = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
     final String title = MatchmakerRanks.titleAt(ideas, gender);
     return Semantics(
       button: true,
@@ -143,7 +146,7 @@ class _LadderRow extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final Color warm = theme.brightness == Brightness.dark
         ? AppColors.secondaryDarkDm
-        : AppColors.secondary;
+        : context.tokens.ctaAccent;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 1),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),

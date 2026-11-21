@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 
 /// "סינון מורחב" — the one control that narrows a list of candidates from
 /// everybody who fits the basics to everybody who fits the whole card.
@@ -29,7 +29,9 @@ class ExtendedFilterToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color ink = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return Material(
       color: selected

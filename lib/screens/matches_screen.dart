@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
@@ -530,40 +532,44 @@ class _MatchesScreenState extends State<MatchesScreen> {
     PersonRepository personRepository, {
     required bool searching,
   }) {
-    return CustomScrollView(
-      controller: _listScroll,
-      slivers: <Widget>[
-        // Drawn during a search too. Which kinds of proposal a person has —
-        // two open, one closed — is exactly what somebody typing their name
-        // wants to know, and hiding the split at the moment they ask was the
-        // one time it mattered most.
-        // Always pinned, including while a proposal's actions are open: it is
-        // the way between the shelves, and it is one compact line.
-        SliverPersistentHeader(
-          pinned: true,
-          delegate: _PinnedCategories(
-            // Opaque, because the banners pass underneath it.
-            background: theme.scaffoldBackgroundColor,
-            extent: _CategoryChips.heightFor(context),
-            child: _CategoryChips(
-              selected: _category,
-              counts: <MatchCategory, int>{
-                for (final MatchCategory category in MatchCategory.values)
-                  category: groups[category]!.length,
-              },
-              onSelected: (MatchCategory category) =>
-                  setState(() => _category = category),
+    return AppRefreshIndicator(
+      scope: RefreshScope.records,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        controller: _listScroll,
+        slivers: <Widget>[
+          // Drawn during a search too. Which kinds of proposal a person has —
+          // two open, one closed — is exactly what somebody typing their name
+          // wants to know, and hiding the split at the moment they ask was the
+          // one time it mattered most.
+          // Always pinned, including while a proposal's actions are open: it is
+          // the way between the shelves, and it is one compact line.
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _PinnedCategories(
+              // Opaque, because the banners pass underneath it.
+              background: theme.scaffoldBackgroundColor,
+              extent: _CategoryChips.heightFor(context),
+              child: _CategoryChips(
+                selected: _category,
+                counts: <MatchCategory, int>{
+                  for (final MatchCategory category in MatchCategory.values)
+                    category: groups[category]!.length,
+                },
+                onSelected: (MatchCategory category) =>
+                    setState(() => _category = category),
+              ),
             ),
           ),
-        ),
-        ..._categorySlivers(
-          theme,
-          groups,
-          dueReminders,
-          personRepository,
-          searching: searching,
-        ),
-      ],
+          ..._categorySlivers(
+            theme,
+            groups,
+            dueReminders,
+            personRepository,
+            searching: searching,
+          ),
+        ],
+      ),
     );
   }
 
@@ -670,6 +676,28 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   // --- Grouping -----------------------------------------------------------
 
+  Map<String, DateTime>? _recencyMemo;
+  Object? _recencyKey;
+
+  /// Every idea's last update — walked over the whole status ledger and every
+  /// person event, so it is computed once per change of either repository,
+  /// not on every rebuild of the page (a panel opening, a search letter, a
+  /// scroll that folds the tiles).
+  Map<String, DateTime> _recencyFor(
+    MatchRepository matches,
+    PersonRepository people,
+  ) {
+    final Object key = Object.hash(matches.revision, people.revision);
+    final Map<String, DateTime>? memo = _recencyMemo;
+    if (memo != null && key == _recencyKey) return memo;
+    _recencyKey = key;
+    return _recencyMemo = IdeaRecency.of(
+      matches: matches.getAll(),
+      statusEvents: matches.getAllStatusEvents(),
+      personEvents: people.getAllEvents(),
+    );
+  }
+
   /// Newest first inside every category.
   Map<MatchCategory, List<MatchIdea>> _groupMatches(
     List<MatchIdea> matches,
@@ -715,10 +743,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
     // Most recently updated first — opened, its status changed, or either
     // person's status changed. See [IdeaRecency]. The proposal somebody
     // followed a link to keeps its own place; the list is scrolled to it.
-    final Map<String, DateTime> recency = IdeaRecency.of(
-      matches: matches,
-      statusEvents: context.read<MatchRepository>().getAllStatusEvents(),
-      personEvents: personRepository.getAllEvents(),
+    final Map<String, DateTime> recency = _recencyFor(
+      context.read<MatchRepository>(),
+      personRepository,
     );
     int byLastUpdate(MatchIdea a, MatchIdea b) {
       final int byUpdate = (recency[b.id] ?? b.createdAt).compareTo(
@@ -1426,6 +1453,8 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final BorderRadius radius = BorderRadius.circular(12);
 
     // The app's one cream inside, every one of them — white page, cream

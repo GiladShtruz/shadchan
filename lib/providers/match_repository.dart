@@ -51,6 +51,17 @@ class MatchRepository extends ChangeNotifier {
   final Box<MatchStatusEvent>? _statusEventBox;
   final Uuid _uuid = const Uuid();
 
+  /// Bumped on every change this repository announces — a cheap key for a
+  /// screen that memoises something it computed over all the ideas.
+  int get revision => _revision;
+  int _revision = 0;
+
+  @override
+  void notifyListeners() {
+    _revision++;
+    super.notifyListeners();
+  }
+
   /// Records changed underneath this repository because the account did — a
   /// change made on another phone. The boxes already hold them; this redraws
   /// whoever reads them and re-books the reminders they carry.

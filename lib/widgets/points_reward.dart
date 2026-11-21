@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
 /// "+1 · נוסף למאגר" — a small pill that rises and fades after an action.
@@ -82,7 +83,9 @@ class _RewardState extends State<_Reward> with SingleTickerProviderStateMixin {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final bool still = MediaQuery.disableAnimationsOf(context);
-    final Color copper = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color copper = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
     // The figure is isolated left-to-right, or the bidi algorithm turns
     // "+1" into "1+" inside a Hebrew line.
     final String figure = '\u2066+${widget.points}\u2069';

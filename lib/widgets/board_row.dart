@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 
@@ -228,7 +229,7 @@ class BoardRow extends StatelessWidget {
                                 shape: BoxShape.circle,
                                 color: dark
                                     ? AppColors.secondaryDarkDm
-                                    : AppColors.secondary,
+                                    : context.tokens.ctaAccent,
                               ),
                             ),
                             const SizedBox(width: 6),

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/models/idea_proposal.dart';
 import 'package:shadchan/models/person.dart';
@@ -93,13 +94,13 @@ class SourceLine extends StatelessWidget {
       children: <Widget>[
         CircleAvatar(
           radius: compact ? 9 : 12,
-          backgroundColor: AppColors.softBlue,
+          backgroundColor: context.tokens.maleWash,
           child: Text(
             name.characters.first,
             style: TextStyle(
               fontSize: compact ? 10 : 12,
               fontWeight: FontWeight.w800,
-              color: AppColors.primaryDark,
+              color: context.tokens.maleAccent,
             ),
           ),
         ),
@@ -368,7 +369,7 @@ abstract final class NetworkActions {
                 for (final MapEntry<String, String> c in connected.entries)
                   ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: AppColors.softBlue,
+                      backgroundColor: context.tokens.maleWash,
                       child: Text(
                         c.value.trim().isEmpty
                             ? '?'
@@ -509,7 +510,7 @@ class _ProposeSheetState extends State<_ProposeSheet> {
                   avatar: PersonAvatar(person: widget.candidate, radius: 30),
                 ),
               ),
-              Icon(Icons.favorite_rounded, color: AppColors.femaleAccent),
+              Icon(Icons.favorite_rounded, color: context.tokens.femaleAccent),
               Expanded(
                 child: _MiniPerson(
                   person: widget.target.person,
@@ -1254,6 +1255,11 @@ class SharedCardScreen extends StatelessWidget {
                             color: theme.colorScheme.surface,
                             child: FutureBuilder<File?>(
                               future: MatchmakerNetwork.photo(ownerUid, path),
+                              // Already on the phone: no spinner flash.
+                              initialData: MatchmakerNetwork.photoNow(
+                                ownerUid,
+                                path,
+                              ),
                               builder: (BuildContext context, snap) {
                                 final File? f = snap.data;
                                 if (f == null) {
@@ -1261,7 +1267,18 @@ class SharedCardScreen extends StatelessWidget {
                                     child: CircularProgressIndicator(),
                                   );
                                 }
-                                return Image.file(f, fit: BoxFit.contain);
+                                // Decoded at the width it is drawn, not as
+                                // the whole camera frame.
+                                return Image.file(
+                                  f,
+                                  fit: BoxFit.contain,
+                                  cacheWidth:
+                                      (MediaQuery.sizeOf(context).width *
+                                              MediaQuery.devicePixelRatioOf(
+                                                context,
+                                              ))
+                                          .round(),
+                                );
                               },
                             ),
                           ),
@@ -1580,7 +1597,7 @@ class ProposalScreen extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 26),
                   child: Icon(
                     Icons.favorite_rounded,
-                    color: AppColors.femaleAccent,
+                    color: context.tokens.femaleAccent,
                   ),
                 ),
                 Expanded(

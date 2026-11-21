@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/art_tint.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -84,16 +85,20 @@ class _AddButton extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color accent = people
-        ? (dark ? AppColors.primaryDarkDm : AppColors.addPeopleAccent)
-        : (dark ? AppColors.secondaryDarkDm : AppColors.addIdeaAccent);
+        ? (dark ? AppColors.primaryDarkDm : context.tokens.maleAccent)
+        : (dark ? AppColors.secondaryDarkDm : context.tokens.ctaAccent);
     // The label in the deeper member of the same hue, so it reads on the wash.
     final Color ink = dark
         ? accent
-        : (people ? AppColors.primaryInk : AppColors.secondaryInk);
-    final Color fill = Color.alphaBlend(
-      accent.withValues(alpha: dark ? 0.22 : 0.17),
-      dark ? theme.colorScheme.surface : AppColors.page,
-    );
+        : (people ? context.tokens.textPrimary : context.tokens.ctaInk);
+    // At night the card is the ordinary dark card; the category speaks only
+    // through the drawing, the label and a quiet edge in its accent.
+    final Color fill = dark
+        ? context.tokens.surface
+        : Color.alphaBlend(
+            accent.withValues(alpha: 0.17),
+            context.tokens.background,
+          );
     final BorderRadius radius = BorderRadius.circular(18);
     return Semantics(
       button: true,
@@ -103,11 +108,16 @@ class _AddButton extends StatelessWidget {
       child: Material(
         color: fill,
         elevation: 2,
-        shadowColor: accent.withValues(alpha: 0.35),
+        shadowColor: dark
+            ? Colors.black.withValues(alpha: 0.3)
+            : accent.withValues(alpha: 0.35),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: radius,
-          side: BorderSide(color: accent.withValues(alpha: 0.7), width: 1.5),
+          side: BorderSide(
+            color: accent.withValues(alpha: dark ? 0.45 : 0.7),
+            width: dark ? 1 : 1.5,
+          ),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(

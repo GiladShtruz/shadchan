@@ -2,6 +2,7 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/names.dart';
+import 'package:shadchan/services/self_identity.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -307,6 +308,10 @@ abstract final class ContactsImportService {
       if (normalized == null) {
         continue;
       }
+      // The user's own number is never somebody to add.
+      if (SelfIdentity.isOwnPhone(normalized)) {
+        continue;
+      }
 
       selectedPhone = phone;
       normalizedPhone = normalized;
@@ -570,6 +575,9 @@ abstract final class ContactsImportService {
     final String? displayName = rawCandidate['displayName'] as String?;
     final String? phone = rawCandidate['phone'] as String?;
     final String? normalizedPhone = rawCandidate['normalizedPhone'] as String?;
+    if (SelfIdentity.isOwnPhone(phone)) {
+      return null;
+    }
     if (deviceContactId == null ||
         displayName == null ||
         phone == null ||

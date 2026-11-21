@@ -1,3 +1,5 @@
+import 'package:shadchan/utils/app_tokens.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/screens/network_screen.dart';
 import 'package:shadchan/screens/sharing_settings_screen.dart';
 import 'package:shadchan/services/network_sharing.dart';
@@ -1021,6 +1023,8 @@ class _ProfileTagPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1193,7 +1197,7 @@ class _FriendCardTileState extends State<_FriendCardTile> {
                 borderRadius: BorderRadius.circular(16),
                 backgroundColor: dark
                     ? theme.colorScheme.surfaceContainerHighest
-                    : AppColors.cardCream,
+                    : context.tokens.surface,
                 onTapIndex: (int index) => widget.onOpenCard(
                   person.photosPaths.indexOf(photos[index]),
                 ),
@@ -1509,7 +1513,7 @@ class _ProfileInlineActions extends StatelessWidget {
         icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 21),
         label: whatsappLabel,
         onTap: onWhatsApp,
-        ink: _whatsappGreen,
+        ink: context.tokens.adapt(_whatsappGreen),
       ),
       ContactChannel.sms => (
         icon: const Icon(Icons.sms_outlined, size: 21),
@@ -2266,7 +2270,7 @@ class _NoteComposerState extends State<_NoteComposer> {
             tooltip: canSend ? 'שליחה' : 'הקלטת הערה קולית',
             style: IconButton.styleFrom(
               backgroundColor: accent,
-              foregroundColor: Colors.white,
+              foregroundColor: context.tokens.onAccent,
             ),
             onPressed: _sending
                 ? null
@@ -3400,15 +3404,25 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     // shares more tags with this friend comes first (a lift, never a
     // condition), then the ones whose card changed most recently, so a
     // candidate the matchmaker has just updated is offered early.
-    List<Person> byRecency(Iterable<Person> people) => people.toList()
-      ..sort(
-        (Person a, Person b) =>
-            MatchSuggestionUtils.byTagsThenRecency(person, a, b),
-      );
-    List<Person> availableFirst(List<Person> people) => <Person>[
-      ...byRecency(people.where((Person p) => !p.profileStatus.pausesMatches)),
-      ...byRecency(people.where((Person p) => p.profileStatus.pausesMatches)),
-    ];
+    // Inside a tier: more tags shared with this friend first — tags only
+    // order candidates who already passed age and style, they never let
+    // anybody in — then the available before those on a break or taken,
+    // then the card changed most recently.
+    final Map<String, int> sharedTagCount = <String, int>{
+      for (final Person c in matchingCandidates)
+        c.id: MatchSuggestionUtils.sharedTags(person, c).length,
+    };
+    List<Person> availableFirst(List<Person> people) => people.toList()
+      ..sort((Person a, Person b) {
+        final int byTags = sharedTagCount[b.id]!.compareTo(
+          sharedTagCount[a.id]!,
+        );
+        if (byTags != 0) return byTags;
+        final bool ap = a.profileStatus.pausesMatches;
+        final bool bp = b.profileStatus.pausesMatches;
+        if (ap != bp) return ap ? 1 : -1;
+        return b.updatedAt.compareTo(a.updatedAt);
+      });
     final List<Person> suggestedPeople = <Person>[
       ...availableFirst(prioritizedSuggestions),
       ...availableFirst(activeSuggestions),
@@ -4161,27 +4175,31 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
   }
 
   Widget _list(BuildContext context) {
-    return ListView.separated(
-      controller: _scroll,
-      key: _storageKey,
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 32),
-      itemCount: widget.suggestedPeople.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 6),
-      itemBuilder: (BuildContext context, int index) {
-        final ThemeData theme = Theme.of(context);
-        final Person candidate = widget.suggestedPeople[index];
-        // Keyed by the person: rows move when somebody is turned down.
-        return KeyedSubtree(
-          key: ValueKey<String>(candidate.id),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (_isFirstDismissed(index)) _dismissedHeading(theme),
-              _cell(context, candidate, square: false),
-            ],
-          ),
-        );
-      },
+    return AppRefreshIndicator(
+      scope: RefreshScope.records,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        controller: _scroll,
+        key: _storageKey,
+        padding: const EdgeInsets.fromLTRB(12, 2, 12, 32),
+        itemCount: widget.suggestedPeople.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 6),
+        itemBuilder: (BuildContext context, int index) {
+          final ThemeData theme = Theme.of(context);
+          final Person candidate = widget.suggestedPeople[index];
+          // Keyed by the person: rows move when somebody is turned down.
+          return KeyedSubtree(
+            key: ValueKey<String>(candidate.id),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                if (_isFirstDismissed(index)) _dismissedHeading(theme),
+                _cell(context, candidate, square: false),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -4228,26 +4246,30 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
       ),
     );
 
-    return CustomScrollView(
-      controller: _scroll,
-      key: _storageKey,
-      slivers: <Widget>[
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
-          sliver: grid(live),
-        ),
-        if (turnedDown.isNotEmpty) ...<Widget>[
+    return AppRefreshIndicator(
+      scope: RefreshScope.records,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        controller: _scroll,
+        key: _storageKey,
+        slivers: <Widget>[
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            sliver: SliverToBoxAdapter(child: _dismissedHeading(theme)),
+            padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
+            sliver: grid(live),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            sliver: grid(turnedDown),
-          ),
+          if (turnedDown.isNotEmpty) ...<Widget>[
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              sliver: SliverToBoxAdapter(child: _dismissedHeading(theme)),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              sliver: grid(turnedDown),
+            ),
+          ],
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
-        const SliverToBoxAdapter(child: SizedBox(height: 32)),
-      ],
+      ),
     );
   }
 
@@ -4326,6 +4348,13 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
         : SuggestionRow(
             person: candidate,
             summary: _rowSummary(candidate),
+            // On what the match stands: the age range and the religious
+            // style (both required to be offered at all), and the tags the
+            // two share when there are some — read live from both cards.
+            reason: MatchSuggestionUtils.reasons(
+              source: widget.sourcePerson,
+              candidate: candidate,
+            ).join(' · '),
             tag: tag,
             hasIdea: existingMatch != null,
             dismissed: dismissed,
@@ -4903,7 +4932,7 @@ class _HistoryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final PersonEvent head = entry.head;
-    final Color color = _eventColor(head.type);
+    final Color color = context.tokens.adapt(_eventColor(head.type));
     final PersonRepository people = context.read<PersonRepository>();
     Person? relatedOf(PersonEvent event) {
       final String? id = event.relatedPersonId;

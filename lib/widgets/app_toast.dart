@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 
 /// The app's way of saying "that worked" without stopping anybody.
 ///
@@ -99,7 +99,9 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color lead = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color lead = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
     final String? emoji = widget.emoji;
 
     return Positioned(

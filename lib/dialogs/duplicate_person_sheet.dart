@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
 /// What the matchmaker decided about a card that looks like one already there.
@@ -50,7 +50,9 @@ class DuplicatePersonSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color lead = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color lead = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return ConstrainedBox(
       constraints: BoxConstraints(

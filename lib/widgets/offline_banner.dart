@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -127,10 +128,10 @@ class _Strip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color ground = offline
-        ? (dark ? AppColors.surfaceDm : AppColors.primaryInk)
+        ? (dark ? AppColors.surfaceDm : context.tokens.textPrimary)
         : pairing
-        ? AppColors.secondary
-        : AppColors.primary;
+        ? context.tokens.ctaAccent
+        : context.tokens.maleAccent;
     const Color ink = Colors.white;
     return Semantics(
       liveRegion: true,

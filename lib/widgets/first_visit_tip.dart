@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/home_board_store.dart';
-import 'package:shadchan/utils/app_colors.dart';
 
 /// The screens that explain themselves once, on the first visit.
 ///
@@ -79,7 +79,9 @@ class FirstVisitTip extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color lead = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color lead = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return Container(
       padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 4, 10),

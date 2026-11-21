@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
 /// The app's way of saying "that was worth doing" — big, in the middle, and
@@ -152,7 +153,9 @@ class _CelebrationState extends State<_Celebration>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color lead = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color lead = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return Positioned.fill(
       child: GestureDetector(
@@ -177,7 +180,7 @@ class _CelebrationState extends State<_Celebration>
                         child: AnimatedBuilder(
                           animation: _burst,
                           builder: (BuildContext context, _) => CustomPaint(
-                            painter: _ConfettiPainter(_burst.value),
+                            painter: _ConfettiPainter(_burst.value, dark: dark),
                           ),
                         ),
                       ),
@@ -312,16 +315,27 @@ class _Card extends StatelessWidget {
 /// travel, so the card is alone on screen by the time anybody has finished
 /// reading it.
 class _ConfettiPainter extends CustomPainter {
-  const _ConfettiPainter(this.progress);
+  const _ConfettiPainter(this.progress, {this.dark = false});
 
   final double progress;
+  final bool dark;
 
-  static const List<Color> _colors = <Color>[
+  static const List<Color> _light = <Color>[
     AppColors.secondary,
     AppColors.primaryDark,
     AppColors.rose,
     AppColors.teal,
   ];
+
+  /// The night accents — never the light teal or copper on the dark.
+  static const List<Color> _dark = <Color>[
+    AppColors.secondaryDarkDm,
+    AppColors.primaryDarkDm,
+    AppColors.femaleAccentDm,
+    AppColors.softHighlightDm,
+  ];
+
+  List<Color> get _colors => dark ? _dark : _light;
 
   static const int _count = 18;
 
@@ -361,5 +375,5 @@ class _ConfettiPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ConfettiPainter oldDelegate) =>
-      oldDelegate.progress != progress;
+      oldDelegate.progress != progress || oldDelegate.dark != dark;
 }
