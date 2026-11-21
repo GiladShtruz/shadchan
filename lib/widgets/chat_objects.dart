@@ -356,12 +356,12 @@ class _ProposalObject extends StatelessWidget {
                           AppNotice.show(
                             context,
                             ok
-                                ? 'אישרת. הרעיון ייפתח כשתחליטו לשאול את החברים.'
+                                ? 'אישרת — הרעיון נפתח אצל שניכם, בסטטוס "רעיון".'
                                 : 'לא הצלחנו לאשר. נסו שוב.',
                             isError: !ok,
                           );
                         },
-                        child: const Text('אישור'),
+                        child: const Text('אשר'),
                       ),
                       TextButton(
                         style: TextButton.styleFrom(
@@ -371,7 +371,7 @@ class _ProposalObject extends StatelessWidget {
                           if (!OfflineGuard.allow(context)) return;
                           await MatchmakerNetwork.answer(p, approve: false);
                         },
-                        child: const Text('דחייה'),
+                        child: const Text('דחה'),
                       ),
                     ],
                   ),

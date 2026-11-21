@@ -35,37 +35,17 @@ void main() {
     test('an install from before the choice is a matchmaker', () {
       expect(WorkspaceStore.entryRoute, isNull);
       expect(WorkspaceStore.matchmakerEnabled, isTrue);
-      expect(WorkspaceStore.lastArea, WorkArea.matchmaker);
     });
 
-    test('a card-only user always opens on the personal area', () {
-      WorkspaceStore.setMatchmakerEnabled(false);
-      WorkspaceStore.setLastArea(WorkArea.matchmaker);
-      expect(WorkspaceStore.lastArea, WorkArea.personal);
-    });
-
-    test('the last area is remembered once the matchmaker is on', () {
-      WorkspaceStore.setLastArea(WorkArea.personal);
-      expect(WorkspaceStore.lastArea, WorkArea.personal);
-      WorkspaceStore.setLastArea(WorkArea.matchmaker);
-      expect(WorkspaceStore.lastArea, WorkArea.matchmaker);
-    });
-
-    test('a chosen home page wins over the area last used', () {
-      WorkspaceStore.resetForTest();
-      WorkspaceStore.setMatchmakerEnabled(true);
-      WorkspaceStore.setLastArea(WorkArea.matchmaker);
-      expect(WorkspaceStore.homeArea, isNull);
-      expect(WorkspaceStore.launchArea, WorkArea.matchmaker);
-
-      WorkspaceStore.setHomeArea(WorkArea.personal);
-      expect(WorkspaceStore.launchArea, WorkArea.personal);
-
-      // A card-only user has only one area, whatever was chosen before.
-      WorkspaceStore.setMatchmakerEnabled(false);
-      WorkspaceStore.setHomeArea(WorkArea.matchmaker);
-      expect(WorkspaceStore.launchArea, WorkArea.personal);
-      WorkspaceStore.setMatchmakerEnabled(true);
+    test('the three answers switch the two capabilities', () {
+      expect(EntryRoute.cardOwner.wantsCard, isTrue);
+      expect(EntryRoute.cardOwner.wantsMatchmaking, isFalse);
+      expect(EntryRoute.matchmaker.wantsCard, isFalse);
+      expect(EntryRoute.matchmaker.wantsMatchmaking, isTrue);
+      expect(EntryRoute.both.wantsCard, isTrue);
+      expect(EntryRoute.both.wantsMatchmaking, isTrue);
+      WorkspaceStore.chooseEntry(EntryRoute.both);
+      expect(WorkspaceStore.entryRoute, EntryRoute.both);
     });
 
     test('a value written as text reads back the same', () async {

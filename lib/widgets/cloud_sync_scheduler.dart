@@ -216,7 +216,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       case InviteArrival.signedIn:
         AppRouter.router.go(
           InviteLinkService.pending?.personalToken == null
-              ? '/me'
+              ? '/home'
               : '/invite/personal',
         );
       case InviteArrival.none:

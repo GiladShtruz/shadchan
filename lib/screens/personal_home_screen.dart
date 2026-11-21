@@ -1,106 +1,45 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/personal_nav.dart';
+import 'package:shadchan/services/usage_actions.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
 import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
 import 'package:shadchan/screens/personal_privacy_screen.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/widgets/personal_home_sections.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/providers/personal_area_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/my_matchmakers_screen.dart';
-import 'package:shadchan/screens/personal_area_screen.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/services/personal_area_service.dart';
-import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/home_typography.dart';
-import 'package:shadchan/utils/community_prompt_gate.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/reminders_bell_button.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 
-/// Three personal destinations, separate from the matchmaker database tabs.
-class PersonalAreaScreen extends StatelessWidget {
-  const PersonalAreaScreen({
-    super.key,
-    this.section,
-    this.friendUid,
-    this.createData = PersonalAreaProvider.new,
-  });
-  final PersonalAreaProvider Function() createData;
-  final String? section, friendUid;
-  @override
-  Widget build(BuildContext context) => ChangeNotifierProvider(
-    create: (_) => createData(),
-    child: _PersonalShell(section: section, friendUid: friendUid),
-  );
-}
-
-class _PersonalShell extends StatefulWidget {
-  const _PersonalShell({this.section, this.friendUid});
-  final String? section, friendUid;
-  @override
-  State<_PersonalShell> createState() => _PersonalShellState();
-}
-
-class _PersonalShellState extends State<_PersonalShell> {
-  int _tab = 0;
+/// The home of somebody who keeps a personal card and does not matchmake.
+///
+/// **One home, not an area.** It is the same `/home` tab every user has; it
+/// only draws what is relevant to a single — the card, the matchmakers who
+/// see it, what is new around it — under the app's ordinary bar.
+class PersonalHomeScreen extends StatelessWidget {
+  const PersonalHomeScreen({super.key});
 
   /// Counts arrivals at the home, so each one can show a different
   /// community figure. Starts anywhere, so a fresh launch does not always
   /// open on the same one.
   static int _visit = Random().nextInt(1 << 16);
-  int _tabFor(String? section) => switch (section) {
-    'profile' => 2,
-    'helpers' || 'approved' || 'requests' => 1,
-    _ => 0,
-  };
-  @override
-  void initState() {
-    super.initState();
-    _tab = _tabFor(widget.section);
-    _visit++;
-    WorkspaceStore.setLastArea(WorkArea.personal);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) CommunityPromptGate.maybeAskHomeAreaOnly(context);
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _PersonalShell old) {
-    super.didUpdateWidget(old);
-    if (old.section != widget.section || old.friendUid != widget.friendUid) {
-      final int next = _tabFor(widget.section);
-      if (next == 0 && _tab != 0) _visit++;
-      _tab = next;
-    }
-  }
-
-  void _select(int index) {
-    setState(() {
-      if (index == 0 && _tab != 0) _visit++;
-      _tab = index;
-    });
-    final router = GoRouter.maybeOf(context);
-    router?.go(
-      index == 0
-          ? '/me'
-          : index == 1
-          ? '/me?section=helpers'
-          : '/me?section=profile',
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    Widget shell() => Theme(
+    final ThemeData theme = Theme.of(context);
+    _visit++;
+    final Widget page = Theme(
       data: theme.copyWith(
         textTheme: HomeTypography.scale(
           theme.textTheme,
@@ -108,65 +47,74 @@ class _PersonalShellState extends State<_PersonalShell> {
         ),
       ),
       child: Scaffold(
-        appBar: ShadchanAppBar(
-          title: ['האזור האישי', 'השדכנים שלי', 'פרופיל'][_tab],
-          actions: const [RemindersBellButton(boxed: true)],
+        appBar: const ShadchanAppBar(
+          actions: <Widget>[RemindersBellButton(boxed: true)],
         ),
-        body: SafeArea(
-          child: IndexedStack(
-            index: _tab,
-            children: [
-              TickerMode(
-                enabled: _tab == 0,
-                child: _PersonalHome(onSelectTab: _select, visit: _visit),
-              ),
-              TickerMode(
-                enabled: _tab == 1,
-                child: MyMatchmakersScreen(
-                  approved: widget.section == 'approved',
-                  friendUid: widget.friendUid,
-                ),
-              ),
-              TickerMode(
-                enabled: _tab == 2,
-                child: const PersonalProfileScreen(),
-              ),
-            ],
-          ),
-        ),
-        bottomNavigationBar: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          currentIndex: _tab,
-          onTap: _select,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home_rounded),
-              label: 'בית',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.handshake_outlined),
-              activeIcon: Icon(Icons.handshake_rounded),
-              label: 'השדכנים שלי',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'פרופיל',
-            ),
-          ],
-        ),
+        body: SafeArea(child: PersonalHome(visit: _visit)),
       ),
     );
-    if (!Hive.isBoxOpen('settings')) return shell();
+    if (!Hive.isBoxOpen('settings')) return page;
     return ValueListenableBuilder<Box<dynamic>>(
       valueListenable: Hive.box<dynamic>(
         'settings',
-      ).listenable(keys: [PersonalHelperActions.hiddenKey]),
+      ).listenable(keys: <String>[PersonalHelperActions.hiddenKey]),
       builder: (_, _, _) => ListenableBuilder(
         listenable: PersonalHelpersStore.revision,
-        builder: (_, _) => shell(),
+        builder: (_, _) => page,
       ),
+    );
+  }
+}
+
+/// What a matchmaker who also keeps a card sees of it on the one home: the
+/// way to the card and to "השדכנים שלי", anything new around the card, the
+/// one step worth doing for it, and who sees it — between the matchmaker's
+/// own blocks, with no heading that splits the page into two worlds.
+class PersonalHomeBlock extends StatelessWidget {
+  const PersonalHomeBlock({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
+    final Person? card = cards.card;
+    final bool hasCard = card != null && !cards.isDeleted;
+    void toMatchmakers() => PersonalNav.openMatchmakers(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        PersonalShortcuts(
+          onCard: () => PersonalNav.openCard(context),
+          onMatchmakers: toMatchmakers,
+        ),
+        PersonalWhatsNewSection(
+          card: hasCard ? card : null,
+          nextStep: hasCard
+              ? PersonalNextAction.stepFor(
+                  context,
+                  card: card,
+                  live: cards.hasCard,
+                ).kind
+              : null,
+          onMatchmakers: toMatchmakers,
+        ),
+        if (hasCard) ...<Widget>[
+          const SizedBox(height: 14),
+          PersonalNextAction(
+            card: card,
+            live: cards.hasCard,
+            onMatchmakers: toMatchmakers,
+          ),
+          const PersonalWhoSees(),
+        ] else ...<Widget>[
+          const SizedBox(height: 14),
+          PersonalCardPrompt(
+            deleted: cards.isDeleted,
+            onAction: cards.isDeleted
+                ? () => PersonalCardLifecycle.restore(context)
+                : () => PersonalAreaService.editCard(context),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -184,20 +132,17 @@ class _PersonalShellState extends State<_PersonalShell> {
 /// form. The card in full, "מה אני מחפש/ת", recordings and settings are not
 /// here — they live on "פרופיל". White page, secondary areas in the light
 /// cream, few frames, one thing per area.
-class _PersonalHome extends StatefulWidget {
-  const _PersonalHome({required this.onSelectTab, required this.visit});
-
-  /// Moves the shell to one of its tabs: 1 "השדכנים שלי", 2 "פרופיל".
-  final ValueChanged<int> onSelectTab;
+class PersonalHome extends StatefulWidget {
+  const PersonalHome({super.key, required this.visit});
 
   /// Turned over on every arrival at the home; picks the community figure.
   final int visit;
 
   @override
-  State<_PersonalHome> createState() => _PersonalHomeState();
+  State<PersonalHome> createState() => _PersonalHomeState();
 }
 
-class _PersonalHomeState extends State<_PersonalHome> {
+class _PersonalHomeState extends State<PersonalHome> {
   bool _restoring = false;
 
   /// Asked at most once per visit: "לא עכשיו" is an answer for now, and the
@@ -240,11 +185,6 @@ class _PersonalHomeState extends State<_PersonalHome> {
     if (mounted) setState(() => _restoring = false);
   }
 
-  void _toMatchmaker() {
-    WorkspaceStore.setLastArea(WorkArea.matchmaker);
-    context.go('/home');
-  }
-
   @override
   Widget build(BuildContext context) {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
@@ -253,7 +193,7 @@ class _PersonalHomeState extends State<_PersonalHome> {
     final bool hasCard = card != null && !cards.isDeleted;
     _maybeAskPhotoChoice(cards);
     final String first = (profile.firstName ?? '').trim();
-    void toMatchmakers() => widget.onSelectTab(1);
+    void toMatchmakers() => PersonalNav.openMatchmakers(context);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
@@ -261,13 +201,10 @@ class _PersonalHomeState extends State<_PersonalHome> {
         HomeGreeting(
           greeting: _greeting(DateTime.now().hour),
           name: first.isEmpty ? 'שלום' : first,
-          trailing: WorkspaceStore.matchmakerEnabled
-              ? SwitchToMatchmakerButton(onTap: _toMatchmaker)
-              : null,
         ),
         const SizedBox(height: 14),
         PersonalShortcuts(
-          onCard: () => widget.onSelectTab(2),
+          onCard: () => PersonalNav.openCard(context),
           onMatchmakers: toMatchmakers,
         ),
         // Only when there is real news around the owner.
@@ -340,22 +277,16 @@ class _PersonalFooter extends StatelessWidget {
           ),
         ),
         FooterLink(
-          icon: icon(Icons.chat_bubble_outline_rounded),
-          label: 'צ\'אטים',
-          theme: theme,
-          onTap: () => context.push('/chats'),
-        ),
-        FooterLink(
           icon: icon(Icons.lock_outline_rounded),
           label: 'ניהול ופרטיות',
           theme: theme,
           onTap: () => PersonalPrivacyScreen.open(context),
         ),
         FooterLink(
-          icon: icon(Icons.settings_outlined),
-          label: 'הגדרות חשבון',
+          icon: icon(Icons.diversity_1_outlined),
+          label: 'רוצה לחשוב גם על חברים?',
           theme: theme,
-          onTap: () => context.push('/profile/settings'),
+          onTap: () => UsageActions.startMatchmaking(context),
         ),
       ],
     );

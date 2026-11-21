@@ -7,7 +7,6 @@ import 'package:shadchan/screens/account_gate_screens.dart';
 import 'package:shadchan/screens/account_screen.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/add_contacts_screen.dart';
 import 'package:shadchan/screens/add_tip_screen.dart';
@@ -65,6 +64,9 @@ import 'package:shadchan/screens/chats_screen.dart';
 import 'package:shadchan/screens/network_screen.dart';
 import 'package:shadchan/screens/sharing_settings_screen.dart';
 import 'package:shadchan/services/chat_service.dart';
+import 'package:shadchan/utils/personal_nav.dart';
+import 'package:shadchan/widgets/shell_bottom_bar.dart';
+import 'package:shadchan/screens/my_matchmakers_screen.dart';
 
 List<T> _parseEnumList<T extends Enum>(String? raw, List<T> values) {
   if (raw == null || raw.isEmpty) {
@@ -94,9 +96,11 @@ PeopleSortOption? _parsePeopleSort(String? raw) {
 bool shouldShowBottomNavigationBar(String path) {
   if (const <String>{
     '/home',
+    '/chats',
     '/people',
     '/matches',
     '/profile',
+    '/my-matchmakers',
   }.contains(path)) {
     return true;
   }
@@ -144,19 +148,45 @@ final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(
 final List<GlobalKey<NavigatorState>> _branchNavigatorKeys =
     <GlobalKey<NavigatorState>>[
       GlobalKey<NavigatorState>(debugLabel: 'branch-home'),
+      GlobalKey<NavigatorState>(debugLabel: 'branch-chats'),
+      GlobalKey<NavigatorState>(debugLabel: 'branch-profile'),
       GlobalKey<NavigatorState>(debugLabel: 'branch-people'),
       GlobalKey<NavigatorState>(debugLabel: 'branch-matches'),
       GlobalKey<NavigatorState>(debugLabel: 'branch-dashboard'),
-      GlobalKey<NavigatorState>(debugLabel: 'branch-profile'),
+      GlobalKey<NavigatorState>(debugLabel: 'branch-my-matchmakers'),
     ];
 
-/// The bottom bar's items in order, each with the shell branch it opens.
-/// "פרופיל" is last, which in RTL puts it at the left end of the bar.
-const List<int> _navBranches = <int>[0, 1, 2, 4];
+/// The shell's branches, by name.
+abstract final class _Branch {
+  static const int home = 0;
+  static const int chats = 1;
+  static const int profile = 2;
+  static const int people = 3;
+  static const int matches = 4;
+  static const int myMatchmakers = 6;
+}
 
-/// True until the first redirect has run, so "open where I was last" applies
-/// to a launch and never to a later navigation.
-bool _atLaunch = true;
+/// The bottom bar's items in order, each with the shell branch it opens. In
+/// RTL the first is at the right: בית | צ'אטים | פרופיל | המאגר שלי |
+/// הרעיונות שלי — "פרופיל" in the middle.
+///
+/// A single who does not matchmake has a short bar instead — בית | צ'אטים |
+/// פרופיל | השדכנים שלי — and never sees the database, the ideas or partner
+/// matchmakers.
+List<int> _navBranches() => WorkspaceStore.matchmakerEnabled
+    ? const <int>[
+        _Branch.home,
+        _Branch.chats,
+        _Branch.profile,
+        _Branch.people,
+        _Branch.matches,
+      ]
+    : const <int>[
+        _Branch.home,
+        _Branch.chats,
+        _Branch.profile,
+        _Branch.myMatchmakers,
+      ];
 
 abstract final class AppRouter {
   static final GoRouter router = GoRouter(
@@ -237,8 +267,6 @@ abstract final class AppRouter {
       // Signed in and introduced, and the screen is still reachable:
       // "התחברות" on the community areas pushes the same one. It is not bounced
       // back here, because a screen somebody asked for should open.
-      final bool launch = _atLaunch;
-      _atLaunch = false;
       final String path = state.uri.path;
       if (InviteLinkService.pending?.personalToken != null &&
           ![
@@ -250,26 +278,35 @@ abstract final class AppRouter {
       }
 
       if (atWelcome || atStart) {
-        return WorkspaceStore.launchArea == WorkArea.personal ? '/me' : '/home';
+        return '/home';
       }
 
-      // Somebody who signed up only to manage their own card never sees the
-      // matchmaker's tabs until they switch that system on themselves.
+      // **One app, no areas.** The old personal area's links (pushes and
+      // notices already on phones, `/me?section=…`) land on the one home,
+      // the one profile or "השדכנים שלי".
+      if (path == '/me') {
+        return PersonalNav.forLegacy(state.uri.queryParameters);
+      }
+
+      // A single who does not matchmake never reaches the database, the
+      // ideas or the network — until they switch the matchmaker's tools on
+      // from the profile, in the same account.
       if (!WorkspaceStore.matchmakerEnabled &&
-          (path == '/home' ||
-              path.startsWith('/people') ||
+          (path.startsWith('/people') ||
               path.startsWith('/matches') ||
-              path == '/dashboard')) {
-        return '/me';
+              path.startsWith('/network') ||
+              path.startsWith('/ideas') ||
+              path == '/board' ||
+              path == '/dashboard' ||
+              path == PersonalNav.pageRoute)) {
+        return path == PersonalNav.pageRoute
+            ? state.uri.replace(path: PersonalNav.tabRoute).toString()
+            : '/home';
       }
-
-      // A launch opens on the chosen home page, or else the area the user was
-      // last in — its main page, never whatever inner screen they happened to
-      // leave from.
-      if (launch &&
-          path == '/home' &&
-          WorkspaceStore.launchArea == WorkArea.personal) {
-        return '/me';
+      // "השדכנים שלי" is a tab only in the single's short bar; everybody
+      // else opens it as a page over the app.
+      if (WorkspaceStore.matchmakerEnabled && path == PersonalNav.tabRoute) {
+        return state.uri.replace(path: PersonalNav.pageRoute).toString();
       }
 
       final String location = state.uri.toString();
@@ -295,28 +332,29 @@ abstract final class AppRouter {
           return const EntryRouteScreen();
         },
       ),
-      // The card owner's own area, outside the matchmaker's tabs.
+      // What is left of the old personal area: the card editor, one news
+      // post, and "השדכנים שלי" as a page for somebody with the matchmaker's
+      // tabs. `/me` itself is redirected above.
+      GoRoute(path: '/me', redirect: (_, _) => '/home'),
       GoRoute(
-        path: '/me',
+        path: '/me/news/:id',
+        builder: (_, state) =>
+            PersonalNewsDetailScreen(id: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/me/card',
         builder: (BuildContext context, GoRouterState state) {
-          return PersonalAreaScreen(
+          return const PersonExtendedEditScreen.ownerCard();
+        },
+      ),
+      GoRoute(
+        path: PersonalNav.pageRoute,
+        builder: (BuildContext context, GoRouterState state) {
+          return MyMatchmakersPage(
             section: state.uri.queryParameters['section'],
             friendUid: state.uri.queryParameters['friend'],
           );
         },
-        routes: <RouteBase>[
-          GoRoute(
-            path: 'news/:id',
-            builder: (_, state) =>
-                PersonalNewsDetailScreen(id: state.pathParameters['id']!),
-          ),
-          GoRoute(
-            path: 'card',
-            builder: (BuildContext context, GoRouterState state) {
-              return const PersonExtendedEditScreen.ownerCard();
-            },
-          ),
-        ],
       ),
       GoRoute(
         path: '/sign-in',
@@ -369,23 +407,177 @@ abstract final class AppRouter {
             },
         branches: <StatefulShellBranch>[
           StatefulShellBranch(
-            navigatorKey: _branchNavigatorKeys[0],
+            navigatorKey: _branchNavigatorKeys[_Branch.home],
             routes: <RouteBase>[
               GoRoute(
                 path: '/home',
                 builder: (BuildContext context, GoRouterState state) {
                   final Map<String, String> q = state.uri.queryParameters;
-                  return HomeScreen(
-                    key: ValueKey<String>('home:${state.uri}'),
-                    initialSearch: q['q'] ?? '',
-                    focusBoard: q['section'] == 'board',
+                  // One home for everybody. A single who does not matchmake
+                  // sees the card's side of it; everybody else the
+                  // matchmaker's, with their own card woven in when they
+                  // keep one.
+                  return ValueListenableBuilder<int>(
+                    valueListenable: WorkspaceStore.revision,
+                    builder: (BuildContext context, _, _) =>
+                        WorkspaceStore.matchmakerEnabled
+                        ? HomeScreen(
+                            key: ValueKey<String>('home:${state.uri}'),
+                            initialSearch: q['q'] ?? '',
+                            focusBoard: q['section'] == 'board',
+                          )
+                        : const PersonalHomeScreen(),
                   );
                 },
               ),
             ],
           ),
+          // "צ'אטים" — one list of every conversation, whoever it is with.
           StatefulShellBranch(
-            navigatorKey: _branchNavigatorKeys[1],
+            navigatorKey: _branchNavigatorKeys[_Branch.chats],
+            routes: <RouteBase>[
+              GoRoute(
+                path: ChatsScreen.route,
+                builder: (BuildContext context, GoRouterState state) {
+                  return const ChatsScreen();
+                },
+                routes: <RouteBase>[
+                  // One conversation, above the tabs.
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: ':id',
+                    builder: (BuildContext context, GoRouterState state) {
+                      final Object? extra = state.extra;
+                      return ChatScreen(
+                        chatId: state.pathParameters['id'] ?? '',
+                        initialRef: extra is ChatRef ? extra : null,
+                        otherName: state.uri.queryParameters['name'],
+                        contextIdeaId: state.uri.queryParameters['idea'],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // "פרופיל" — the middle of the bar, drawn as the user's own face.
+          // Everything behind it (settings, help, tips) goes above the tabs.
+          StatefulShellBranch(
+            navigatorKey: _branchNavigatorKeys[_Branch.profile],
+            routes: <RouteBase>[
+              // The matchmaker's own page: who they are, their account, their card,
+              // and one row into the settings.
+              GoRoute(
+                path: '/profile',
+                builder: (BuildContext context, GoRouterState state) {
+                  // `?section=settings` highlights the row that opens the settings
+                  // rather than landing at the top of the page — see
+                  // [ProfileScreen.focusSettings].
+                  return ProfileScreen(
+                    focusSettings:
+                        state.uri.queryParameters['section'] == 'settings',
+                    focusUsage: state.uri.queryParameters['section'] == 'usage',
+                  );
+                },
+                routes: <RouteBase>[
+                  // Every setting the app has, on a page of its own. It used to be a
+                  // group halfway down `/profile`.
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'settings',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const SettingsScreen();
+                    },
+                  ),
+                  // "החשבון שלי": the address, the ways in, the password, and
+                  // the ways out.
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'account',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const AccountScreen();
+                    },
+                  ),
+                  // The old "כרטיס השידוכים שלי" page. The full personal card replaced
+                  // it; anything still pointing here lands in the personal area.
+                  GoRoute(
+                    path: 'card',
+                    redirect: (BuildContext context, GoRouterState state) =>
+                        '/me',
+                  ),
+                  // The settings are one short page and five screens behind it. Each of
+                  // these used to be a card on `/profile` itself.
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'auto-match',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const SettingsAutoMatchScreen();
+                    },
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'appearance',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const SettingsAppearanceScreen();
+                    },
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'notifications',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const SettingsNotificationsScreen();
+                    },
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'data',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const SettingsDataScreen();
+                    },
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'help',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const SettingsHelpScreen();
+                    },
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'tips-list',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const TipsListScreen();
+                    },
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'whatsapp-message',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const WhatsAppMessageSettingsScreen();
+                    },
+                  ),
+                  // Writing a tip for the community, and — for the one account that
+                  // may — reviewing what everyone else wrote.
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'tips',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const AddTipScreen();
+                    },
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'tips-review',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const TipsAdminScreen();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _branchNavigatorKeys[_Branch.people],
             routes: <RouteBase>[
               GoRoute(
                 path: '/people',
@@ -533,7 +725,7 @@ abstract final class AppRouter {
             ],
           ),
           StatefulShellBranch(
-            navigatorKey: _branchNavigatorKeys[2],
+            navigatorKey: _branchNavigatorKeys[_Branch.matches],
             routes: <RouteBase>[
               GoRoute(
                 path: '/matches',
@@ -615,7 +807,7 @@ abstract final class AppRouter {
             ],
           ),
           StatefulShellBranch(
-            navigatorKey: _branchNavigatorKeys[3],
+            navigatorKey: _branchNavigatorKeys[5],
             routes: <RouteBase>[
               GoRoute(
                 path: '/dashboard',
@@ -625,118 +817,20 @@ abstract final class AppRouter {
               ),
             ],
           ),
-          // "פרופיל" — the fourth tab. Everything behind it (settings, help,
-          // tips) goes above the tabs, like the other task flows.
+          // "השדכנים שלי" — a tab only in the short bar of a single who does
+          // not matchmake; a page (`/me/matchmakers`) for everybody else.
           StatefulShellBranch(
-            navigatorKey: _branchNavigatorKeys[4],
+            navigatorKey: _branchNavigatorKeys[_Branch.myMatchmakers],
             routes: <RouteBase>[
-              // The matchmaker's own page: who they are, their account, their card,
-              // and one row into the settings.
               GoRoute(
-                path: '/profile',
+                path: PersonalNav.tabRoute,
                 builder: (BuildContext context, GoRouterState state) {
-                  // `?section=settings` highlights the row that opens the settings
-                  // rather than landing at the top of the page — see
-                  // [ProfileScreen.focusSettings].
-                  return ProfileScreen(
-                    focusSettings:
-                        state.uri.queryParameters['section'] == 'settings',
+                  return MyMatchmakersPage(
+                    asTab: true,
+                    section: state.uri.queryParameters['section'],
+                    friendUid: state.uri.queryParameters['friend'],
                   );
                 },
-                routes: <RouteBase>[
-                  // Every setting the app has, on a page of its own. It used to be a
-                  // group halfway down `/profile`.
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'settings',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const SettingsScreen();
-                    },
-                  ),
-                  // "החשבון שלי": the address, the ways in, the password, and
-                  // the ways out.
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'account',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const AccountScreen();
-                    },
-                  ),
-                  // The old "כרטיס השידוכים שלי" page. The full personal card replaced
-                  // it; anything still pointing here lands in the personal area.
-                  GoRoute(
-                    path: 'card',
-                    redirect: (BuildContext context, GoRouterState state) =>
-                        '/me',
-                  ),
-                  // The settings are one short page and five screens behind it. Each of
-                  // these used to be a card on `/profile` itself.
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'auto-match',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const SettingsAutoMatchScreen();
-                    },
-                  ),
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'appearance',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const SettingsAppearanceScreen();
-                    },
-                  ),
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'notifications',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const SettingsNotificationsScreen();
-                    },
-                  ),
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'data',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const SettingsDataScreen();
-                    },
-                  ),
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'help',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const SettingsHelpScreen();
-                    },
-                  ),
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'tips-list',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const TipsListScreen();
-                    },
-                  ),
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'whatsapp-message',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const WhatsAppMessageSettingsScreen();
-                    },
-                  ),
-                  // Writing a tip for the community, and — for the one account that
-                  // may — reviewing what everyone else wrote.
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'tips',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const AddTipScreen();
-                    },
-                  ),
-                  GoRoute(
-                    parentNavigatorKey: _rootNavigatorKey,
-                    path: 'tips-review',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const TipsAdminScreen();
-                    },
-                  ),
-                ],
               ),
             ],
           ),
@@ -779,27 +873,6 @@ abstract final class AppRouter {
               return SharingSettingsScreen(
                 readerUid: state.uri.queryParameters['with'],
                 readerName: state.uri.queryParameters['name'],
-              );
-            },
-          ),
-        ],
-      ),
-      // Chats: every conversation, and one of them.
-      GoRoute(
-        path: ChatsScreen.route,
-        builder: (BuildContext context, GoRouterState state) {
-          return const ChatsScreen();
-        },
-        routes: <RouteBase>[
-          GoRoute(
-            path: ':id',
-            builder: (BuildContext context, GoRouterState state) {
-              final Object? extra = state.extra;
-              return ChatScreen(
-                chatId: state.pathParameters['id'] ?? '',
-                initialRef: extra is ChatRef ? extra : null,
-                otherName: state.uri.queryParameters['name'],
-                kind: state.uri.queryParameters['kind'] ?? 'matchmakers',
               );
             },
           ),
@@ -1003,49 +1076,19 @@ class _AppShell extends StatelessWidget {
     // Only the primary destinations own the app navigation. Nested routes
     // remain inside their branch so back navigation is preserved, but they
     // intentionally render without the bar.
-    final int branchIndex = navigationShell.currentIndex;
-    final int navIndex = _navBranches.indexOf(branchIndex);
-    final int selectedIndex = navIndex < 0 ? 0 : navIndex;
-
     return ValueListenableBuilder<int>(
       valueListenable: WorkspaceStore.revision,
       builder: (BuildContext context, _, _) {
-        // A card-only user reaches "פרופיל" from their personal area, and
-        // sees no matchmaker tabs at all until they switch that system on.
-        final bool showBar =
-            showBottomNavigationBar && WorkspaceStore.matchmakerEnabled;
+        final List<int> branches = _navBranches();
+        final int navIndex = branches.indexOf(navigationShell.currentIndex);
         return Scaffold(
           body: navigationShell,
-          bottomNavigationBar: showBar
-              ? BottomNavigationBar(
-                  type: BottomNavigationBarType.fixed,
-                  currentIndex: selectedIndex,
-                  // Tapping a tab always returns to that area's primary screen.
-                  onTap: (int index) =>
-                      _goToBranchRoot(_navBranches[index], navigationShell),
-                  items: const <BottomNavigationBarItem>[
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.home_outlined),
-                      activeIcon: Icon(Icons.home),
-                      label: 'בית',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.group_outlined),
-                      activeIcon: Icon(Icons.group),
-                      label: 'המאגר שלי',
-                    ),
-                    // A bulb with a small heart in it: an idea for two.
-                    BottomNavigationBarItem(
-                      icon: IdeaBulbIcon(),
-                      activeIcon: IdeaBulbIcon(filled: true),
-                      label: 'הרעיונות שלי',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.person_outline_rounded),
-                      activeIcon: Icon(Icons.person_rounded),
-                      label: 'פרופיל',
-                    ),
-                  ],
+          bottomNavigationBar: showBottomNavigationBar
+              ? ShellBottomBar(
+                  matchmaker: WorkspaceStore.matchmakerEnabled,
+                  selected: navIndex,
+                  onSelected: (int index) =>
+                      _goToBranchRoot(branches[index], navigationShell),
                 )
               : null,
         );
@@ -1134,12 +1177,13 @@ class _SwipeableBranchesState extends State<_SwipeableBranches>
 
   /// The branch [step] places along the bar from the current one.
   int? _neighbour(int step) {
-    final int at = _navBranches.indexOf(_current);
+    final List<int> branches = _navBranches();
+    final int at = branches.indexOf(_current);
     final int next = at + step;
-    if (at < 0 || next < 0 || next >= _navBranches.length) {
+    if (at < 0 || next < 0 || next >= branches.length) {
       return null;
     }
-    return _navBranches[next];
+    return branches[next];
   }
 
   /// The page revealed by the current drag: the next one for a drag to the
@@ -1151,9 +1195,6 @@ class _SwipeableBranchesState extends State<_SwipeableBranches>
       : null;
 
   bool _canSwipe() {
-    if (!WorkspaceStore.matchmakerEnabled) {
-      return false;
-    }
     final String path = GoRouter.of(
       context,
     ).routerDelegate.currentConfiguration.uri.path;

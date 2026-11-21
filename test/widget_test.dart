@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/widgets/shell_bottom_bar.dart';
+import 'package:shadchan/providers/personal_area_provider.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:hive/hive.dart';
@@ -162,11 +164,13 @@ void main() {
     expect(find.text('הרעיונות שלי'), findsWidgets);
   });
 
-  testWidgets('Onboarding requires an explicit single or married choice', (
+  testWidgets('Onboarding asks how the app will be used — three answers', (
     WidgetTester tester,
   ) async {
     final Box<dynamic> settings = Hive.box<dynamic>('settings');
     await tester.runAsync(() => settings.delete('userIsSingle'));
+    await tester.runAsync(() => settings.delete('workspace.entry'));
+    WorkspaceStore.resetForTest();
     // The first-launch welcome sits in front of the profile form; this test is
     // about the form, so it starts from an install that has already read it.
     await tester.runAsync(() => settings.put('userSeenIntro', true));
@@ -175,55 +179,33 @@ void main() {
     await tester.pumpWidget(_buildTestApp());
     await tester.pumpAndSettle();
 
-    // Registration asks for the two names apart, so the greeting can use the
-    // first one alone without guessing where it ends.
     expect(find.widgetWithText(TextField, 'שם פרטי'), findsOneWidget);
     expect(find.widgetWithText(TextField, 'שם משפחה'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextField, 'שם פרטי'), 'רבקה');
     await tester.enterText(find.widgetWithText(TextField, 'שם משפחה'), 'כהן');
     await tester.pump();
 
-    expect(find.text('מה המצב האישי שלך?'), findsOneWidget);
+    expect(find.text('איך תרצה להשתמש בשדכן?'), findsOneWidget);
     expect(find.text('רווק'), findsOneWidget);
-    expect(find.text('נשוי'), findsOneWidget);
-    // The old hint about divorced and widowed users is gone, and the offer of
-    // a personal card waits until "רווק" is chosen.
-    expect(find.textContaining('גרוש או אלמן'), findsNothing);
+    expect(find.text('שדכן'), findsOneWidget);
+    expect(find.text('רווק וגם שדכן'), findsOneWidget);
+    // The marital question and the "add a card to the personal area" line
+    // are gone: the answer here is the capability.
+    expect(find.text('מה המצב האישי שלך?'), findsNothing);
     expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsNothing);
-    // The button is never dead: it is pressable with the answer missing, and
-    // pressing it says what is missing rather than doing nothing.
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, 'יאללה, מתחילים!'),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    expect(find.text('צריך לבחור מצב אישי'), findsNothing);
-
+    // The button is never dead: pressing it says what is missing.
     await tester.ensureVisible(
       find.widgetWithText(FilledButton, 'יאללה, מתחילים!'),
     );
     await tester.tap(find.widgetWithText(FilledButton, 'יאללה, מתחילים!'));
     await tester.pumpAndSettle();
+    expect(find.text('צריך לבחור איך להשתמש בשדכן'), findsOneWidget);
 
-    expect(find.text('צריך לבחור מצב אישי'), findsOneWidget);
-    // Still on the form; nothing was saved.
-    expect(find.text('מה המצב האישי שלך?'), findsOneWidget);
-
-    await tester.ensureVisible(find.text('רווק'));
+    await tester.ensureVisible(find.text('שדכן'));
     await tester.pump();
-    await tester.runAsync(() => tester.tap(find.text('רווק')));
+    await tester.tap(find.text('שדכן'));
     await tester.pump();
-    expect(find.text('צריך לבחור מצב אישי'), findsNothing);
-    expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsOneWidget);
-
-    await tester.ensureVisible(find.text('נשוי'));
-    await tester.pump();
-    await tester.runAsync(() => tester.tap(find.text('נשוי')));
-    await tester.pump();
-    expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsNothing);
+    expect(find.text('צריך לבחור איך להשתמש בשדכן'), findsNothing);
   });
 
   testWidgets('Onboarding marks a missing name in red instead of blocking', (
@@ -298,7 +280,7 @@ void main() {
     },
   );
 
-  testWidgets('Only a single user is offered a personal card', (
+  testWidgets('The profile carries the card only for somebody who keeps one', (
     WidgetTester tester,
   ) async {
     final Box<dynamic> settings = Hive.box<dynamic>('settings');
@@ -306,21 +288,21 @@ void main() {
     await tester.pumpWidget(_buildProfileTestApp());
     await tester.pumpAndSettle();
 
-    // The personal status is a quiet line under the name, not a titled section.
-    expect(find.text('מצב אישי'), findsNothing);
-    expect(find.textContaining('· שינוי'), findsOneWidget);
-    // A married user has no card to create or manage.
-    expect(find.text('יצירת הכרטיס שלי'), findsNothing);
+    // "השימוש שלי בשדכן" replaces the old status line and area button.
+    expect(find.textContaining('· שינוי'), findsNothing);
     expect(find.text('למעבר לאזור האישי'), findsNothing);
-    expect(find.text('הכרטיס שלי'), findsNothing);
+    await tester.scrollUntilVisible(find.text('השימוש שלי בשדכן'), 200);
+    expect(find.text('יש לי כרטיס אישי'), findsOneWidget);
+    // Without a card there is nothing to create or manage.
+    expect(find.text('יצירת הכרטיס שלי'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userIsSingle', true));
     await tester.pumpWidget(_buildProfileTestApp());
     await tester.pumpAndSettle();
-    // One central button near the top of the page, not a row among the
-    // settings.
-    expect(find.text('למעבר לאזור האישי'), findsOneWidget);
+    // The card's part of the same profile — no area to switch to.
+    expect(find.text('יצירת הכרטיס שלי'), findsOneWidget);
+    expect(find.text('למעבר לאזור האישי'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userIsSingle', false));
   });
@@ -376,6 +358,8 @@ void main() {
     expect(shouldShowBottomNavigationBar('/dashboard'), isFalse);
     expect(shouldShowBottomNavigationBar('/profile'), isTrue);
     expect(shouldShowBottomNavigationBar('/profile/settings'), isFalse);
+    expect(shouldShowBottomNavigationBar('/chats'), isTrue);
+    expect(shouldShowBottomNavigationBar('/chats/a_b'), isFalse);
   });
 
   testWidgets('Manual add uses the current card design without Mazel Tov', (
@@ -2579,7 +2563,7 @@ void main() {
   });
 
   testWidgets(
-    'A card-only user has three personal tabs and no matchmaker tabs',
+    'A single who does not matchmake has the short bar and no database',
     (WidgetTester tester) async {
       final Box<dynamic> settings = Hive.box<dynamic>('settings');
       await tester.runAsync(
@@ -2592,54 +2576,68 @@ void main() {
         AppRouter.router.go('/home');
         await tester.pumpAndSettle();
 
-        expect(find.text('האזור האישי'), findsOneWidget);
-        expect(find.text('יצירת הכרטיס שלי'), findsOneWidget);
-        expect(find.byType(BottomNavigationBar), findsOneWidget);
-        final bar = tester.widget<BottomNavigationBar>(
-          find.byType(BottomNavigationBar),
-        );
-        expect(bar.items.map((item) => item.label), [
+        expect(find.byType(ShellBottomBar), findsOneWidget);
+        expect(ShellBottomBar.labelsFor(matchmaker: false), <String>[
           'בית',
-          'השדכנים שלי',
+          'צ\'אטים',
           'פרופיל',
+          'השדכנים שלי',
         ]);
+        expect(find.text('השדכנים שלי'), findsWidgets);
         expect(find.text('המאגר שלי'), findsNothing);
-        // No way to switch to a matchmaker area that was never switched on.
-        expect(find.text('לעבור לאזור השדכן'), findsNothing);
+        expect(find.text('הרעיונות שלי'), findsNothing);
+        expect(find.textContaining('למעבר לאזור'), findsNothing);
+        // The database is not reachable by a link either.
+        AppRouter.router.go('/people');
+        await tester.pumpAndSettle();
+        expect(
+          AppRouter.router.routerDelegate.currentConfiguration.uri.path,
+          '/home',
+        );
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.runAsync(
           () => settings.delete('workspace.matchmakerEnabled'),
         );
-        await tester.runAsync(() => settings.delete('workspace.lastArea'));
         WorkspaceStore.resetForTest();
         AppRouter.router.go('/home');
       }
     },
   );
 
-  testWidgets('The matchmaker bar ends with a profile tab', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(_buildTestApp());
-    await tester.pump();
-    AppRouter.router.go('/home');
-    await tester.pumpAndSettle();
+  testWidgets(
+    'The matchmaker bar has five tabs with the profile in the middle',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pump();
+      AppRouter.router.go('/home');
+      await tester.pumpAndSettle();
 
-    final BottomNavigationBar bar = tester.widget<BottomNavigationBar>(
-      find.byType(BottomNavigationBar),
-    );
-    expect(
-      bar.items.map((BottomNavigationBarItem item) => item.label),
-      <String>['בית', 'המאגר שלי', 'הרעיונות שלי', 'פרופיל'],
-    );
+      expect(ShellBottomBar.labelsFor(matchmaker: true), <String>[
+        'בית',
+        'צ\'אטים',
+        'פרופיל',
+        'המאגר שלי',
+        'הרעיונות שלי',
+      ]);
+      // In RTL the first item is at the right: the profile face sits between
+      // צ'אטים and המאגר שלי, raised above the bar.
+      final Rect face = tester.getRect(
+        find.byKey(const ValueKey<String>('shell-profile-face')),
+      );
+      final Rect bar = tester.getRect(find.byType(ShellBottomBar));
+      expect((face.center.dx - bar.center.dx).abs(), lessThan(2));
 
-    await tester.tap(find.text('פרופיל'));
-    await tester.pumpAndSettle();
-    expect(find.text('הפרופיל שלי'), findsOneWidget);
-    // The bar stays: the profile is a tab now, not a page on top of them.
-    expect(find.byType(BottomNavigationBar), findsOneWidget);
-  });
+      await tester.tap(
+        find.byKey(const ValueKey<String>('shell-profile-face')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('הפרופיל שלי'), findsOneWidget);
+      expect(find.text('השימוש שלי בשדכן'), findsOneWidget);
+      // The bar stays: the profile is a tab.
+      expect(find.byType(ShellBottomBar), findsOneWidget);
+    },
+  );
 
   testWidgets('A sideways swipe moves between the main tabs, in bar order', (
     WidgetTester tester,
@@ -2651,9 +2649,8 @@ void main() {
     AppRouter.router.go('/home');
     await tester.pumpAndSettle();
 
-    int selected() => tester
-        .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
-        .currentIndex;
+    int selected() =>
+        tester.widget<ShellBottomBar>(find.byType(ShellBottomBar)).selected;
     expect(selected(), 0);
 
     // In RTL the next tab lies to the left, so a finger moving right brings
@@ -3124,6 +3121,9 @@ Widget _buildTestApp() {
       ChangeNotifierProvider<PersonalCardProvider>(
         create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
       ),
+      ChangeNotifierProvider<PersonalAreaProvider>(
+        create: (_) => PersonalAreaProvider(enabled: false),
+      ),
       ChangeNotifierProvider<CardAccessProvider>(
         create: (BuildContext context) => CardAccessProvider(
           people: context.read<PersonRepository>(),
@@ -3186,6 +3186,9 @@ Widget _buildProfileTestApp({Widget? home}) {
       ),
       ChangeNotifierProvider<PersonalCardProvider>(
         create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<PersonalAreaProvider>(
+        create: (_) => PersonalAreaProvider(enabled: false),
       ),
       ChangeNotifierProvider<CardAccessProvider>(
         create: (BuildContext context) => CardAccessProvider(

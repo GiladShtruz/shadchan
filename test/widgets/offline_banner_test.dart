@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/offline_guard.dart';
-import 'package:shadchan/widgets/area_switch_button.dart';
 import 'package:shadchan/widgets/offline_banner.dart';
 
 void main() {
@@ -97,30 +96,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('עריכה'));
     expect(started, isTrue);
-  });
-
-  testWidgets('both ways across are the same button', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      harness(
-        Column(
-          children: <Widget>[
-            AreaSwitchButton(label: 'למעבר לאזור האישי', onTap: () {}),
-            AreaSwitchButton(label: 'למעבר לאזור השדכן', onTap: () {}),
-          ],
-        ),
-      ),
-    );
-    final List<Size> sizes = <Size>[
-      tester.getSize(find.byType(AreaSwitchButton).first),
-      tester.getSize(find.byType(AreaSwitchButton).last),
-    ];
-    expect(sizes.first.height, sizes.last.height);
-    // A quiet light-blue link: no frame and no icon, on either side.
-    expect(find.byIcon(Icons.swap_horiz_rounded), findsNothing);
-    expect(find.byType(OutlinedButton), findsNothing);
-    expect(find.byType(TextButton), findsNWidgets(2));
   });
 }
 

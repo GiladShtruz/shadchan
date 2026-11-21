@@ -8,13 +8,11 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
-import 'package:shadchan/dialogs/home_area_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/dialogs/matchmaker_shares_sheet.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
@@ -74,9 +72,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final AccountProvider account = context.watch<AccountProvider>();
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final bool bothAreas =
-        WorkspaceStore.matchmakerEnabled &&
-        context.watch<PersonalCardProvider>().hasCard;
 
     return Scaffold(
       appBar: AppBar(title: const Text('הגדרות')),
@@ -128,26 +123,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : 'לחשוב יחד עם בן/בת הזוג — כל אחד עם המאגר שלו',
                   onTap: () => context.push(PartnerSpaceScreen.route),
                 ),
-                // Only for an account with both areas: the page a launch
-                // opens on. Asked once by [HomeAreaDialog]; changed here.
-                if (bothAreas)
-                  SettingsRow(
-                    icon: Icons.home_outlined,
-                    title: 'עמוד הבית',
-                    subtitle: switch (WorkspaceStore.launchArea) {
-                      WorkArea.personal => 'האזור האישי',
-                      WorkArea.matchmaker => 'אזור השדכן',
-                    },
-                    onTap: () async {
-                      await HomeAreaDialog.show(
-                        context,
-                        userGender: context.read<UserProfileProvider>().gender,
-                      );
-                      if (mounted) {
-                        setState(() {});
-                      }
-                    },
-                  ),
                 // The criteria התאמות opens on for a friend with no filter of
                 // their own. A matchmaker's setting, so only with that area.
                 if (WorkspaceStore.matchmakerEnabled)

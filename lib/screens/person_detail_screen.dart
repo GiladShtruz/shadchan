@@ -487,7 +487,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     context,
                     otherUid: person.cardOwnerUid!,
                     otherName: person.fullName,
-                    kind: 'single',
                   );
                 case 'shareInNetwork':
                   await PersonShareSheet.show(context, person);

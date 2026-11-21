@@ -41,7 +41,9 @@ class SharedIdeaLink {
   /// idea has two people — and its details survive a disconnect.
   final String theirPersonId;
 
-  /// The status this side last told the partner.
+  /// The shared state this side last agreed with the partner — a
+  /// [SharedIdeaState.print] (older links hold a bare status name, which
+  /// simply differs once and is reported again).
   final String? lastReported;
 
   String get partnerFirstName {
@@ -156,6 +158,31 @@ abstract final class SharedIdeas {
 
   static bool _reconciling = false;
 
+  /// The live watch on the ideas held while any shared idea exists, so a
+  /// move by the other matchmaker reaches this phone within seconds.
+  static VoidCallback? _liveHold;
+
+  static void _ensureLive() {
+    if (links.isEmpty) {
+      _liveHold?.call();
+      _liveHold = null;
+      return;
+    }
+    if (MatchmakerNetwork.uid == null || MatchmakerNetwork.proposalsLive) {
+      return;
+    }
+    _liveHold?.call();
+    _liveHold = MatchmakerNetwork.watchProposals();
+  }
+
+  /// Where the local copy of a shared idea stands, in the shared record's
+  /// own words.
+  static SharedIdeaState stateOf(MatchIdea idea) => SharedIdeaState(
+    status: idea.status,
+    askedMaleAt: idea.askedMaleAt,
+    askedFemaleAt: idea.askedFemaleAt,
+  );
+
   /// Opens a local idea for every *opened* proposal this side has not opened
   /// yet — an agreement ("approved") is not an idea until one of the two
   /// decides to really ask the friends. A couple space's older proposals
@@ -170,6 +197,8 @@ abstract final class SharedIdeas {
     if (_reconciling) return;
     _reconciling = true;
     try {
+      _ensureLive();
+      await _follow(proposals, me, matches);
       for (final IdeaProposal p in proposals) {
         final bool open =
             p.status == IdeaProposalStatus.opened ||
@@ -186,6 +215,46 @@ abstract final class SharedIdeas {
     } finally {
       _reconciling = false;
     }
+  }
+
+  /// Brings each local copy to where the other matchmaker moved the shared
+  /// idea. A move this side made itself is never applied back, and the
+  /// print is remembered so it is never reported back either.
+  static Future<void> _follow(
+    List<IdeaProposal> proposals,
+    String me,
+    MatchRepository matches,
+  ) async {
+    Map<String, SharedIdeaLink>? next;
+    for (final IdeaProposal p in proposals) {
+      final SharedIdeaLink? link = links[p.id];
+      final SharedIdeaState? remote = p.shared;
+      if (link == null || remote == null || remote.updatedBy == me) continue;
+      if (remote.print == link.lastReported) continue;
+      final MatchIdea? idea = matches.getById(link.matchId);
+      if (idea == null) continue;
+      if (stateOf(idea).print != remote.print) {
+        await OfflineGuard.exempt(() async {
+          if ((idea.askedMaleAt == null) != (remote.askedMaleAt == null) ||
+              (idea.askedFemaleAt == null) != (remote.askedFemaleAt == null)) {
+            await matches.setStage(
+              idea.id,
+              askedMaleAt: remote.askedMaleAt,
+              askedFemaleAt: remote.askedFemaleAt,
+              label: 'עודכן אצל ${link.partnerFirstName}',
+            );
+          }
+          final MatchIdea? now = matches.getById(link.matchId);
+          if (now != null && now.status != remote.status) {
+            await matches.updateStatus(idea.id, remote.status);
+          }
+        });
+      }
+      (next ??= <String, SharedIdeaLink>{...links})[p.id] = link.reported(
+        remote.print,
+      );
+    }
+    if (next != null) _save(next);
   }
 
   static Future<void> _open(
@@ -269,24 +338,30 @@ abstract final class SharedIdeas {
         partnerUid: p.otherOf(me),
         partnerName: partnerName,
         theirPersonId: theirs.id,
-        lastReported: idea.status.name,
+        lastReported: p.shared?.print ?? stateOf(idea).print,
       ),
     });
-    unawaited(MatchmakerNetwork.reportSide(p.id, idea.status.name));
+    _ensureLive();
+    // Opened from an older proposal with no shared record yet: this side
+    // writes the first one.
+    if (p.shared == null) {
+      unawaited(MatchmakerNetwork.reportShared(p.id, stateOf(idea)));
+    }
   }
 
-  /// Tells each partner where this side's half of a shared idea stands now.
+  /// Writes every shared idea this side moved — status or who was asked —
+  /// to the one shared record, for the other matchmaker's copy to follow.
   static void reportStatuses(MatchRepository matches) {
     final Map<String, SharedIdeaLink> current = links;
     Map<String, SharedIdeaLink>? next;
     for (final SharedIdeaLink link in current.values) {
       final MatchIdea? idea = matches.getById(link.matchId);
       if (idea == null) continue;
-      final String status = idea.status.name;
-      if (status == link.lastReported) continue;
-      unawaited(MatchmakerNetwork.reportSide(link.proposalId, status));
+      final SharedIdeaState state = stateOf(idea);
+      if (state.print == link.lastReported) continue;
+      unawaited(MatchmakerNetwork.reportShared(link.proposalId, state));
       (next ??= <String, SharedIdeaLink>{...current})[link.proposalId] = link
-          .reported(status);
+          .reported(state.print);
     }
     if (next != null) _save(next);
   }

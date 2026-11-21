@@ -1,28 +1,39 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadchan/services/chat_service.dart';
-import 'package:shadchan/services/matchmaker_shares.dart';
-import 'package:shadchan/services/matchmaker_network.dart';
-import 'package:shadchan/services/offline_guard.dart';
-import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/date_utils.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
+import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
+import 'package:shadchan/models/card_access.dart';
+import 'package:shadchan/models/idea_proposal.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/shared_card.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/network_screen.dart';
 import 'package:shadchan/screens/partner_space_screen.dart';
-import 'package:shadchan/services/partner_space.dart';
 import 'package:shadchan/services/ai_chat_command.dart';
+import 'package:shadchan/services/chat_service.dart';
+import 'package:shadchan/services/matchmaker_network.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/network_sharing.dart';
+import 'package:shadchan/services/offline_guard.dart';
+import 'package:shadchan/services/partner_space.dart';
 import 'package:shadchan/services/shared_ideas.dart';
+import 'package:shadchan/services/voice_note_store.dart';
+import 'package:shadchan/services/workspace_store.dart';
+import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/avatar_image.dart';
 import 'package:shadchan/utils/chat_idea_command.dart';
+import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/chat_objects.dart';
+import 'package:shadchan/widgets/personal_home_sections.dart';
 
 T? _maybeRead<T>(BuildContext context) {
   try {
@@ -32,13 +43,14 @@ T? _maybeRead<T>(BuildContext context) {
   }
 }
 
-/// "צ'אטים" — every conversation of this account, newest first, the way a
-/// messaging app lists them: a face, a name, the last line, its time, and a
-/// mark when something is unread.
+/// "צ'אטים" — **one list of every conversation of this account**, whoever it
+/// is with: a single, a matchmaker, somebody who is both. Newest first, the
+/// way a messaging app lists them: a face, a name, the last line, its time,
+/// and how many messages are waiting. No tabs by role — a person is a
+/// person.
 ///
-/// Today that is the matchmakers this one is connected with — one continuing
-/// chat each. The list is built for more kinds (a group of matchmakers, a
-/// single) without changing shape.
+/// The list reads only the conversations' own documents; no message is
+/// loaded until a conversation is opened.
 class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
 
@@ -49,40 +61,88 @@ class ChatsScreen extends StatefulWidget {
 }
 
 class _ChatsScreenState extends State<ChatsScreen> {
+  final TextEditingController _search = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     unawaited(ChatService.start());
-    unawaited(MatchmakerNetwork.start());
+    _search.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Whether [t] answers the search — by the other side's name or the last
+  /// line.
+  static bool matches(ChatThread t, String me, String query) {
+    final String q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return t.titleFor(me).toLowerCase().contains(q) ||
+        t.lastText.toLowerCase().contains(q);
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('צ\'אטים')),
+      appBar: AppBar(
+        titleSpacing: 20,
+        title: const Text('צ\'אטים'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              onTapOutside: (_) => FocusScope.of(context).unfocus(),
+              decoration: InputDecoration(
+                hintText: 'חיפוש בצ\'אטים',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'ניקוי',
+                        onPressed: _search.clear,
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                isDense: true,
+                filled: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'new-chat',
+        tooltip: 'שיחה חדשה',
+        onPressed: () => NewChatSheet.show(context),
+        child: const Icon(Icons.edit_square),
+      ),
       body: ListenableBuilder(
         listenable: Listenable.merge(<Listenable>[
           ChatService.threads,
-          MatchmakerShares.rows,
+          ChatService.loaded,
         ]),
         builder: (BuildContext context, _) {
-          final String? me = ChatService.uid ?? MatchmakerShares.uid;
-          final List<ChatThread> threads = ChatService.threads.value;
-          // Matchmakers who share with this one (either way) there is no
-          // chat with yet, so a chat can be started from here too.
-          final Set<String> withChat = <String>{
-            if (me != null)
-              for (final ChatThread t in threads) t.otherOf(me),
-          };
-          final List<MapEntry<String, String>> fresh =
-              <MapEntry<String, String>>[
-                if (me != null)
-                  for (final MapEntry<String, String> c
-                      in MatchmakerShares.connectedNames.entries)
-                    if (!withChat.contains(c.key)) c,
-              ];
-          if (threads.isEmpty && fresh.isEmpty) {
+          final String me = ChatService.uid ?? '';
+          final List<ChatThread> all = ChatService.threads.value;
+          final List<ChatThread> shown = <ChatThread>[
+            for (final ChatThread t in all)
+              if (matches(t, me, _search.text)) t,
+          ];
+          if (all.isEmpty) {
+            if (!ChatService.loaded.value && ChatService.uid != null) {
+              return const Center(child: CircularProgressIndicator());
+            }
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(28),
@@ -96,49 +156,33 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'צ\'אט נפתח עם שדכנים שאת/ה מכיר/ה — שיחה אחת מתמשכת '
-                      'לכל הכרטיסים והרעיונות ביניכם.',
+                      'כאן יופיעו כל השיחות שלך — עם השדכנים שלך, עם חברים '
+                      'שמנהלים כרטיס ועם שדכנים שאת/ה מכיר/ה. שיחה אחת קבועה עם '
+                      'כל אחד.',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: () => context.push('/known-matchmakers'),
-                      child: const Text('לשדכנים שאני מכיר'),
+                    FilledButton.icon(
+                      onPressed: () => NewChatSheet.show(context),
+                      icon: const Icon(Icons.add_comment_outlined),
+                      label: const Text('שיחה חדשה'),
                     ),
                   ],
                 ),
               ),
             );
           }
-          return ListView(
-            children: <Widget>[
-              for (final ChatThread t in threads)
-                _ThreadRow(thread: t, me: me ?? ''),
-              if (fresh.isNotEmpty) ...<Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                  child: Text(
-                    'שדכנים שמשתפים',
-                    style: theme.textTheme.titleSmall,
-                  ),
-                ),
-                for (final MapEntry<String, String> c in fresh)
-                  ListTile(
-                    leading: _Initial(name: c.value),
-                    title: Text(c.value.isEmpty ? 'שדכן/ית' : c.value),
-                    subtitle: const Text('להתחיל שיחה'),
-                    onTap: () async {
-                      await context.push(
-                        ChatService.routeTo(
-                          me: me!,
-                          otherUid: c.key,
-                          theirName: c.value,
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ],
+          if (shown.isEmpty) {
+            return const Center(child: Text('לא נמצאו שיחות'));
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.only(bottom: 88),
+            itemCount: shown.length,
+            itemBuilder: (BuildContext context, int i) => _ThreadRow(
+              key: ValueKey<String>(shown[i].id),
+              thread: shown[i],
+              me: me,
+            ),
           );
         },
       ),
@@ -146,18 +190,29 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 }
 
-class _Initial extends StatelessWidget {
-  const _Initial({required this.name, this.radius = 24});
+/// A face for a conversation: their picture, else their initial.
+class ChatAvatar extends StatelessWidget {
+  const ChatAvatar({
+    super.key,
+    required this.name,
+    this.photoUrl,
+    this.radius = 26,
+  });
 
   final String name;
+  final String? photoUrl;
   final double radius;
 
   @override
   Widget build(BuildContext context) {
     final String n = name.trim();
+    final String? url = photoUrl;
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.softBlue,
+      foregroundImage: url == null
+          ? null
+          : avatarImage(context, url, diameter: radius * 2),
       child: Text(
         n.isEmpty ? '?' : n.characters.first,
         style: TextStyle(
@@ -171,7 +226,7 @@ class _Initial extends StatelessWidget {
 }
 
 class _ThreadRow extends StatelessWidget {
-  const _ThreadRow({required this.thread, required this.me});
+  const _ThreadRow({super.key, required this.thread, required this.me});
 
   final ChatThread thread;
   final String me;
@@ -180,21 +235,29 @@ class _ThreadRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool unread = thread.isUnreadFor(me);
+    final int count = thread.unreadCountFor(me);
     final DateTime? at = thread.lastAt;
+    final String title = thread.titleFor(me);
     return ListTile(
-      leading: _Initial(name: thread.titleFor(me)),
+      leading: ChatAvatar(name: title, photoUrl: thread.photoFor(me)),
       title: Text(
-        thread.titleFor(me),
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: theme.textTheme.titleSmall?.copyWith(
           fontWeight: unread ? FontWeight.w900 : FontWeight.w700,
         ),
       ),
       subtitle: Text(
-        thread.lastText.isEmpty
-            ? 'שיחה חדשה'
-            : '${thread.lastFromUid == me ? 'את/ה: ' : ''}${thread.lastText}',
+        thread.previewFor(me),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: unread
+            ? theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface,
+              )
+            : null,
       ),
       trailing: Column(
         mainAxisSize: MainAxisSize.min,
@@ -204,36 +267,157 @@ class _ThreadRow extends StatelessWidget {
             Text(
               AppDateUtils.notificationTime(at),
               style: theme.textTheme.labelSmall?.copyWith(
-                color: unread ? theme.colorScheme.primary : null,
+                color: unread ? theme.colorScheme.secondary : null,
+                fontWeight: unread ? FontWeight.w800 : null,
               ),
             ),
           if (unread) ...<Widget>[
             const SizedBox(height: 4),
             Container(
-              width: 10,
-              height: 10,
+              constraints: const BoxConstraints(minWidth: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: theme.colorScheme.primary,
-                shape: BoxShape.circle,
+                color: theme.colorScheme.secondary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                count > 99 ? '99+' : '$count',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSecondary,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ],
         ],
       ),
-      onTap: () => context.push('/chats/${thread.id}'),
+      onTap: () => context.push(
+        ChatService.routeTo(
+          me: me,
+          otherUid: thread.otherOf(me),
+          theirName: title,
+        ),
+      ),
     );
   }
 }
 
-/// Opens the one continuing chat with [otherUid] — from a profile, a list of
-/// matchmakers or a list of singles. Nothing is written until the first
-/// message; the same pair always reaches the same conversation.
+/// Somebody a conversation can be started with.
+class ChatCandidate {
+  const ChatCandidate({
+    required this.uid,
+    required this.name,
+    required this.why,
+  });
+
+  final String uid;
+  final String name;
+
+  /// What ties the two of them: "השדכן/ית שלך", "כרטיס אישי", "שדכן/ית".
+  final String why;
+}
+
+/// "שיחה חדשה" — the people a conversation can be started with, from every
+/// tie this account has: the matchmakers who see (or asked for) the user's
+/// own card, the friends whose personal card the user follows, and the
+/// matchmakers they share with. Nothing is written until the first message.
+abstract final class NewChatSheet {
+  static List<ChatCandidate> candidatesOf(BuildContext context) {
+    final Map<String, ChatCandidate> out = <String, ChatCandidate>{};
+    void add(String uid, String name, String why) {
+      if (uid.isEmpty || uid == ChatService.uid) return;
+      out.putIfAbsent(uid, () => ChatCandidate(uid: uid, name: name, why: why));
+    }
+
+    final CardAccessProvider? access = _maybeRead<CardAccessProvider>(context);
+    if (access != null) {
+      for (final friend in matchmakerFriendsOf(access)) {
+        final CardAccess? row = friend.row;
+        if (row == null ||
+            row.status == CardAccessStatus.blocked ||
+            row.granteeUids.length > 1) {
+          continue;
+        }
+        add(row.matchmakerUid, friend.name, 'משדכ/ת · הכרטיס שלך');
+      }
+    }
+    if (WorkspaceStore.matchmakerEnabled) {
+      final PersonRepository? people = _maybeRead<PersonRepository>(context);
+      for (final Person p in people?.getAll() ?? const <Person>[]) {
+        final String? owner = p.cardOwnerUid;
+        if (owner != null && !p.hidden) {
+          add(owner, p.fullName, 'כרטיס אישי');
+        }
+      }
+      for (final MapEntry<String, String> c
+          in MatchmakerShares.connectedNames.entries) {
+        add(c.key, c.value, 'שדכן/ית');
+      }
+    }
+    final List<ChatCandidate> list = out.values.toList()
+      ..sort((ChatCandidate a, ChatCandidate b) => a.name.compareTo(b.name));
+    return list;
+  }
+
+  static Future<void> show(BuildContext context) async {
+    final List<ChatCandidate> list = candidatesOf(context);
+    final ChatCandidate? picked = await showModalBottomSheet<ChatCandidate>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext sheet) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        builder: (BuildContext sheet, ScrollController controller) =>
+            list.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'אפשר לפתוח שיחה עם השדכנים שרואים את הכרטיס שלך, עם חברים '
+                  'שהכרטיס האישי שלהם אצלך, ועם שדכנים שמשתפים איתך.',
+                  textAlign: TextAlign.center,
+                ),
+              )
+            : ListView.builder(
+                controller: controller,
+                itemCount: list.length + 1,
+                itemBuilder: (BuildContext sheet, int i) => i == 0
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Text(
+                          'שיחה חדשה',
+                          style: Theme.of(sheet).textTheme.titleMedium,
+                        ),
+                      )
+                    : ListTile(
+                        leading: ChatAvatar(name: list[i - 1].name, radius: 20),
+                        title: Text(list[i - 1].name),
+                        subtitle: Text(list[i - 1].why),
+                        onTap: () => Navigator.of(sheet).pop(list[i - 1]),
+                      ),
+              ),
+      ),
+    );
+    if (picked == null || !context.mounted) return;
+    await ChatLauncher.open(
+      context,
+      otherUid: picked.uid,
+      otherName: picked.name,
+    );
+  }
+}
+
+/// Opens the one continuing conversation with [otherUid] — from a profile, a
+/// card, an idea, a notice or the list of matchmakers. Nothing is written
+/// until the first message; the same two accounts always reach the same
+/// conversation.
 abstract final class ChatLauncher {
   static Future<void> open(
     BuildContext context, {
     required String otherUid,
     required String otherName,
-    String kind = 'matchmakers',
+    String? ideaId,
   }) async {
     final String? me = await ChatService.me();
     if (!context.mounted) return;
@@ -250,22 +434,23 @@ abstract final class ChatLauncher {
         me: me,
         otherUid: otherUid,
         theirName: otherName,
-        kind: kind,
+        ideaId: ideaId,
       ),
     );
   }
 }
 
-/// One conversation, WhatsApp-like: bubbles, day chips, a writing field at
-/// the foot. A message can carry what it is about ([ChatRef]) — a card or an
-/// idea — so one thread holds months of them.
+/// One conversation, WhatsApp-like: bubbles, day chips, read marks, photos
+/// and voice messages, cards and ideas as objects in the thread, and a
+/// writing field at the foot. Opened about an idea, the composer carries its
+/// context ("בנוגע לרעיון: יעל × אורי") — still the same conversation.
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
     required this.chatId,
     this.initialRef,
     this.otherName,
-    this.kind = 'matchmakers',
+    this.contextIdeaId,
   });
 
   final String chatId;
@@ -274,12 +459,11 @@ class ChatScreen extends StatefulWidget {
   /// document to read it from).
   final String? otherName;
 
-  /// `matchmakers`, `single` or `partners` — written when the first message
-  /// creates the chat.
-  final String kind;
-
   /// What the chat was opened about; sent with the next message.
   final ChatRef? initialRef;
+
+  /// The shared idea the chat was opened from — its small context line.
+  final String? contextIdeaId;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -287,44 +471,73 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _text = TextEditingController();
-
-  /// Listened to only once the chat exists: a chat with no message yet
-  /// cannot be read, and a refused listener would never recover.
-  Stream<List<ChatMessage>>? _messages;
+  final ScrollController _scroll = ScrollController();
+  final FocusNode _focus = FocusNode();
+  late final ChatMessagesController _messages = ChatMessagesController(
+    widget.chatId,
+  );
   ChatRef? _ref;
   bool _canSend = false;
   bool _sending = false;
-
-  /// Whether the server answered whether this chat exists yet.
-  bool _checked = false;
+  VoidCallback? _releaseProposals;
 
   @override
   void initState() {
     super.initState();
-    _ref = widget.initialRef;
+    _ref = widget.initialRef ?? _ideaRef(widget.contextIdeaId);
     ChatService.openChatId = widget.chatId;
     unawaited(ChatService.start());
-    unawaited(_load());
     unawaited(_loadTheirCards());
+    _messages.addListener(_onMessages);
+    _scroll.addListener(_onScroll);
     _text.addListener(() {
       final bool can = _text.text.trim().isNotEmpty;
       if (can != _canSend) setState(() => _canSend = can);
     });
   }
 
-  VoidCallback? _releaseProposals;
+  /// "בנוגע לרעיון: יעל × אורי" for a shared idea opened from its card.
+  static ChatRef? _ideaRef(String? id) {
+    if (id == null || id.isEmpty) return null;
+    final IdeaProposal? p = MatchmakerNetwork.proposal(id);
+    final String label = p == null
+        ? 'רעיון משותף'
+        : '${p.candidateFirstName} × ${p.targetFirstName}';
+    return ChatRef(kind: 'proposal', id: id, label: label);
+  }
+
+  void _onMessages() {
+    if (!mounted) return;
+    setState(() {});
+    if (_messages.messages.isNotEmpty) {
+      unawaited(ChatService.markRead(widget.chatId));
+    }
+  }
+
+  /// Near the top of what is loaded: the next older page.
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 400) {
+      unawaited(_messages.loadOlder());
+    }
+  }
 
   /// While this chat is open, and only then: the ideas live, the cards the
-  /// other matchmaker sent here, and a first page of what they share — so
-  /// the "+" and a sentence like "פתח רעיון בין יעל לאורי" can find them.
+  /// other side sent here, and a first page of what they share — so the "+"
+  /// and a sentence like "פתח רעיון בין יעל לאורי" can find them.
   Future<void> _loadTheirCards() async {
     await MatchmakerNetwork.start();
     if (!mounted) return;
     _releaseProposals = MatchmakerNetwork.watchProposals();
+    if (_ref?.kind == 'proposal' && _ref?.label == 'רעיון משותף') {
+      final ChatRef? better = _ideaRef(_ref!.id);
+      if (better != null && mounted) setState(() => _ref = better);
+    }
     final String other = _other;
     if (other.isEmpty || PartnerSpace.isPartner(other)) return;
     await MatchmakerNetwork.loadSentFrom(other);
-    if (MatchmakerShares.sharesWithMe(other)) {
+    if (WorkspaceStore.matchmakerEnabled &&
+        MatchmakerShares.sharesWithMe(other)) {
       try {
         await MatchmakerNetwork.page(ownerUid: other, limit: 60);
       } catch (_) {}
@@ -337,21 +550,12 @@ class _ChatScreenState extends State<ChatScreen> {
     _releaseProposals?.call();
     if (ChatService.openChatId == widget.chatId) ChatService.openChatId = null;
     unawaited(ChatService.markRead(widget.chatId));
+    _messages.removeListener(_onMessages);
+    _messages.dispose();
     _text.dispose();
+    _scroll.dispose();
+    _focus.dispose();
     super.dispose();
-  }
-
-  /// Finds out whether the chat exists — opening an existing one at once,
-  /// and a new one as an empty conversation ready for its first message.
-  Future<void> _load() async {
-    await ChatService.me();
-    final bool exists = await ChatService.exists(widget.chatId);
-    if (!mounted) return;
-    setState(() {
-      _checked = true;
-      if (exists) _messages = ChatService.messages(widget.chatId);
-    });
-    if (exists) unawaited(ChatService.markRead(widget.chatId));
   }
 
   Future<void> _send() async {
@@ -359,7 +563,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (body.isEmpty || _sending) return;
     if (!OfflineGuard.allow(context)) return;
     // "פתח רעיון בין יעל כהן לאורי לוי": done, not sent as words.
-    if (ChatIdeaCommand.looksLike(body)) {
+    if (WorkspaceStore.matchmakerEnabled && ChatIdeaCommand.looksLike(body)) {
       final bool handled = await _ideaFromText(body);
       if (handled) {
         if (mounted) _text.clear();
@@ -369,35 +573,42 @@ class _ChatScreenState extends State<ChatScreen> {
     await _deliver(body, ref: _ref);
   }
 
+  String? get _myName => _maybeRead<UserProfileProvider>(context)?.fullName;
+
   /// Sends one line — creating the chat when this is its first message.
-  Future<bool> _deliver(String body, {ChatRef? ref}) async {
-    final bool first = _messages == null;
+  Future<bool> _deliver(
+    String body, {
+    ChatRef? ref,
+    ChatMessageType type = ChatMessageType.text,
+    ChatOffer? offer,
+  }) async {
     setState(() => _sending = true);
     final bool ok = await ChatService.send(
       widget.chatId,
       body,
+      type: type,
       ref: ref,
-      kind: widget.kind,
-      myName: _maybeRead<UserProfileProvider>(context)?.fullName,
+      offer: offer,
+      myName: _myName,
       theirName: _otherName,
     );
     if (!mounted) return ok;
     setState(() => _sending = false);
     if (!ok) {
-      AppNotice.show(
-        context,
-        'ההודעה לא נשלחה. אפשר לבדוק את החיבור ולנסות שוב.',
-        isError: true,
-      );
+      _failed();
       return false;
     }
-    _text.clear();
-    setState(() {
-      _ref = null;
-      if (first) _messages = ChatService.messages(widget.chatId);
-    });
+    if (type == ChatMessageType.text) _text.clear();
+    setState(() => _ref = null);
+    _messages.resubscribe();
     return true;
   }
+
+  void _failed() => AppNotice.show(
+    context,
+    'ההודעה לא נשלחה. אפשר לבדוק את החיבור ולנסות שוב.',
+    isError: true,
+  );
 
   /// The other side, read off the chat's id — known before the chat exists.
   String get _other =>
@@ -411,6 +622,17 @@ class _ChatScreenState extends State<ChatScreen> {
     final String given = (widget.otherName ?? '').trim();
     if (given.isNotEmpty) return given;
     return MatchmakerNetwork.connectedNames[_other] ?? '';
+  }
+
+  /// Whether the other side keeps a personal card this account follows —
+  /// the conversation can then carry "יש לי רעיון בשבילך".
+  bool get _otherIsSingle {
+    final CardAccessProvider? access = _maybeRead<CardAccessProvider>(context);
+    if (access == null) return false;
+    final PersonRepository? people = _maybeRead<PersonRepository>(context);
+    return (people?.getAll() ?? const <Person>[]).any(
+      (Person p) => p.cardOwnerUid == _other,
+    );
   }
 
   /// The cards the other matchmaker shares with this one, or sent in here.
@@ -555,9 +777,11 @@ class _ChatScreenState extends State<ChatScreen> {
     ),
   );
 
-  /// The "+" beside the field: send one of my cards here, or offer an idea
-  /// for one of theirs — without leaving the conversation.
+  /// The "+" beside the field: a photo, a card from my database, an idea —
+  /// without leaving the conversation.
   Future<void> _attach() async {
+    final bool matchmaker = WorkspaceStore.matchmakerEnabled;
+    final bool single = matchmaker && _otherIsSingle;
     final String? choice = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -566,61 +790,169 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             ListTile(
-              leading: const Icon(Icons.badge_outlined),
-              title: const Text('שליחת כרטיס מהמאגר שלי'),
-              onTap: () => Navigator.pop(context, 'card'),
+              leading: const Icon(Icons.photo_outlined),
+              title: const Text('תמונה מהגלריה'),
+              onTap: () => Navigator.pop(context, 'image'),
             ),
-            ListTile(
-              leading: const Icon(Icons.lightbulb_outline_rounded),
-              title: Text('הצעת רעיון לכרטיס של $_otherName'),
-              onTap: () => Navigator.pop(context, 'idea'),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: Text(
-                'אפשר גם לכתוב, למשל: "פתח רעיון בין יעל כהן לאורי לוי".',
-                style: Theme.of(context).textTheme.bodySmall,
+            if (single)
+              ListTile(
+                leading: const Icon(Icons.lightbulb_outline_rounded),
+                title: Text('יש לי רעיון בשביל $_otherName'),
+                subtitle: const Text('כרטיס של מועמד/ת מהמאגר שלך'),
+                onTap: () => Navigator.pop(context, 'offer'),
               ),
-            ),
+            if (matchmaker) ...<Widget>[
+              ListTile(
+                leading: const Icon(Icons.badge_outlined),
+                title: const Text('שליחת כרטיס מהמאגר שלי'),
+                onTap: () => Navigator.pop(context, 'card'),
+              ),
+              if (!single)
+                ListTile(
+                  leading: const Icon(Icons.lightbulb_outline_rounded),
+                  title: Text('הצעת רעיון לכרטיס של $_otherName'),
+                  onTap: () => Navigator.pop(context, 'idea'),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Text(
+                  'אפשר גם לכתוב, למשל: "פתח רעיון בין יעל כהן לאורי לוי".',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
     if (choice == null || !mounted) return;
-    if (choice == 'card') {
-      final Person? person = await PersonPickerSheet.show(
+    switch (choice) {
+      case 'image':
+        await _sendImage();
+      case 'card':
+        await _sendCard(offer: false);
+      case 'offer':
+        await _sendCard(offer: true);
+      case 'idea':
+        await _offerIdeaForTheirCard();
+    }
+  }
+
+  Future<void> _sendImage() async {
+    if (!OfflineGuard.allow(context)) return;
+    final XFile? picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 82,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _sending = true);
+    final bool ok = await ChatService.sendFile(
+      widget.chatId,
+      File(picked.path),
+      type: ChatMessageType.image,
+      myName: _myName,
+      theirName: _otherName,
+    );
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (!ok) {
+      _failed();
+      return;
+    }
+    _messages.resubscribe();
+  }
+
+  Future<void> _recordVoice() async {
+    if (!OfflineGuard.allow(context)) return;
+    final VoiceRecording? recording = await VoiceRecorderSheet.record(
+      context,
+      maxDuration: const Duration(minutes: 5),
+    );
+    if (recording == null || !mounted) return;
+    final File file = await VoiceNoteStore.fileFor(recording.fileName);
+    if (!mounted) return;
+    setState(() => _sending = true);
+    final bool ok = await ChatService.sendFile(
+      widget.chatId,
+      file,
+      type: ChatMessageType.voice,
+      durationMs: recording.durationMs,
+      myName: _myName,
+      theirName: _otherName,
+    );
+    // The recording was made for this message only; the conversation keeps
+    // its own copy.
+    unawaited(VoiceNoteStore.delete(recording.fileName));
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (!ok) {
+      _failed();
+      return;
+    }
+    _messages.resubscribe();
+  }
+
+  /// A card from my database, as an object in the conversation — or, to a
+  /// single, "יש לי רעיון בשבילך" with the candidate's card.
+  Future<void> _sendCard({required bool offer}) async {
+    final Person? person = await PersonPickerSheet.show(
+      context,
+      title: offer
+          ? 'איזה רעיון יש לך בשביל $_otherName?'
+          : 'איזה כרטיס לשלוח ל$_otherName?',
+      candidatePredicate: (Person p) =>
+          !p.hidden &&
+          !SharedIdeas.isPartnersPerson(p.id) &&
+          p.cardOwnerUid != _other,
+    );
+    if (person == null || !mounted) return;
+    if (!OfflineGuard.allow(context)) return;
+    setState(() => _sending = true);
+    final bool sent = await MatchmakerNetwork.sendCard(
+      person: person,
+      toUid: _other,
+      myName: context.read<UserProfileProvider>().fullName ?? '',
+    );
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (!sent) {
+      AppNotice.show(
         context,
-        title: 'איזה כרטיס לשלוח ל$_otherName?',
-        candidatePredicate: (Person p) =>
-            !p.hidden && !SharedIdeas.isPartnersPerson(p.id),
+        'אפשר לשלוח רק כרטיס מלא — תמונה וטקסט — שמותר לשתף.',
+        isError: true,
       );
-      if (person == null || !mounted) return;
-      final bool sent = await MatchmakerNetwork.sendCard(
-        person: person,
-        toUid: _other,
-        myName: context.read<UserProfileProvider>().fullName ?? '',
-      );
-      if (!mounted) return;
-      if (!sent) {
-        AppNotice.show(
-          context,
-          'אפשר לשלוח רק כרטיס מלא — תמונה וטקסט — שמותר לשתף.',
-          isError: true,
-        );
-        return;
-      }
-      NetworkSharing.noteSent(person.id);
+      return;
+    }
+    NetworkSharing.noteSent(person.id);
+    final ChatRef ref = ChatRef(
+      kind: 'card',
+      id: person.id,
+      ownerUid: ChatService.uid,
+      label: person.fullName,
+    );
+    if (offer) {
       await _deliver(
-        'שלחתי לך את הכרטיס של ${person.fullName}',
-        ref: ChatRef(
-          kind: 'card',
-          id: person.id,
-          ownerUid: ChatService.uid,
-          label: person.fullName,
+        'יש לי רעיון בשבילך',
+        ref: ref,
+        type: ChatMessageType.ideaOffer,
+        offer: ChatOffer(
+          personId: person.id,
+          name: person.fullName,
+          summary: sharedSummaryOf(person),
         ),
       );
       return;
     }
+    await _deliver(
+      'שלחתי לך את הכרטיס של ${person.fullName}',
+      ref: ref,
+      type: ChatMessageType.card,
+    );
+  }
+
+  Future<void> _offerIdeaForTheirCard() async {
     final List<SharedCard> theirs = _theirCards;
     if (theirs.isEmpty) {
       AppNotice.show(context, '$_otherName עוד לא שיתף/ה איתך כרטיסים.');
@@ -636,13 +968,46 @@ class _ChatScreenState extends State<ChatScreen> {
     await _ideaFor(target);
   }
 
+  /// The single's answer to "יש לי רעיון בשבילך": approve, decline — with a
+  /// reason only the matchmaker reads, or "דלג" — or ask the matchmaker in
+  /// the ordinary composer.
+  Future<void> _answerOffer(ChatMessage m, String answer) async {
+    if (answer == 'ask') {
+      setState(
+        () => _ref = ChatRef(
+          kind: 'ideaOffer',
+          id: m.id,
+          label: m.offer?.name ?? 'הרעיון',
+        ),
+      );
+      _focus.requestFocus();
+      return;
+    }
+    if (!OfflineGuard.allow(context)) return;
+    String? reason;
+    if (answer == 'declined') {
+      reason = await _DeclineReasonDialog.ask(context);
+      if (reason == null || !mounted) return; // dismissed: nothing sent
+    }
+    final bool ok = await ChatService.answerOffer(
+      widget.chatId,
+      m.id,
+      approve: answer == 'approved',
+      reason: reason,
+    );
+    if (!ok && mounted) _failed();
+  }
+
   void _openRef(ChatRef ref) {
     final String me = ChatService.uid ?? '';
     switch (ref.kind) {
       case 'card':
+      case 'person':
         final String? owner = ref.ownerUid;
         if (owner == null || owner == me) {
-          context.push('/people/${ref.id}');
+          if (WorkspaceStore.matchmakerEnabled) {
+            context.push('/people/${ref.id}');
+          }
         } else {
           SharedCardScreen.showSheet(
             context,
@@ -667,11 +1032,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final ChatThread? thread = ChatService.thread(widget.chatId);
         final String other = _other;
         final String title = _otherName.isEmpty ? 'צ\'אט' : _otherName;
-        final String kind = thread?.kind ?? widget.kind;
-        // The composer is always there: whether a message may be sent is the
-        // server's answer (connected matchmakers, a single and a matchmaker
-        // who keeps or asked for their card, partners), and a refusal is said
-        // in words rather than by a field that silently vanished.
+        final List<ChatMessage> list = _messages.messages;
         return Scaffold(
           backgroundColor: dark
               ? theme.scaffoldBackgroundColor
@@ -679,12 +1040,16 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: AppBar(
             titleSpacing: 0,
             title: InkWell(
-              onTap: other.isEmpty || kind != 'matchmakers'
+              onTap: other.isEmpty || !WorkspaceStore.matchmakerEnabled
                   ? null
                   : () => context.push('/known-matchmakers/$other'),
               child: Row(
                 children: <Widget>[
-                  _Initial(name: title, radius: 18),
+                  ChatAvatar(
+                    name: title,
+                    photoUrl: thread?.photoFor(me),
+                    radius: 18,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(child: Text(title, overflow: TextOverflow.ellipsis)),
                 ],
@@ -694,90 +1059,126 @@ class _ChatScreenState extends State<ChatScreen> {
           body: Column(
             children: <Widget>[
               Expanded(
-                child: !_checked
+                child: !_messages.loaded
                     ? const Center(child: CircularProgressIndicator())
-                    : StreamBuilder<List<ChatMessage>>(
-                        stream:
-                            _messages ??
-                            Stream<List<ChatMessage>>.value(
-                              const <ChatMessage>[],
-                            ),
-                        builder: (BuildContext context, snap) {
-                          final List<ChatMessage> list =
-                              snap.data ?? const <ChatMessage>[];
-                          if (snap.hasData && _messages != null) {
-                            unawaited(ChatService.markRead(widget.chatId));
-                          }
-                          if (list.isEmpty) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  snap.hasData
-                                      ? (_messages == null
-                                            ? 'עוד אין הודעות. השיחה תיפתח עם ההודעה '
-                                                  'הראשונה — ותישאר אותה שיחה גם '
-                                                  'בהמשך.'
-                                            : 'זו תחילת השיחה. כל הכרטיסים והרעיונות '
-                                                  'ביניכם — כאן, בשיחה אחת.')
-                                      : '',
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ),
-                            );
-                          }
-                          final List<Widget> items = <Widget>[];
-                          DateTime? day;
-                          for (final ChatMessage m in list) {
-                            final DateTime at = m.at ?? DateTime.now();
-                            final DateTime d = DateTime(
-                              at.year,
-                              at.month,
-                              at.day,
-                            );
-                            if (day != d) {
-                              day = d;
-                              items.add(_DayChip(day: d));
-                            }
-                            if (m.system) {
-                              final ChatRef? ref = m.ref;
-                              items.add(
-                                ChatSystemLine(
-                                  text: m.text,
-                                  onTap: ref == null
-                                      ? null
-                                      : () => _openRef(ref),
-                                ),
-                              );
-                              continue;
-                            }
-                            items.add(
-                              _Bubble(
-                                message: m,
-                                mine: m.fromUid == me,
-                                me: me,
-                              ),
-                            );
-                          }
-                          return ListView(
-                            reverse: true,
-                            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                            children: items.reversed.toList(),
-                          );
-                        },
+                    : list.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'עוד אין הודעות. השיחה תיפתח עם ההודעה הראשונה — '
+                            'ותישאר אותה שיחה גם בהמשך.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      )
+                    : _MessageList(
+                        controller: _scroll,
+                        messages: list,
+                        me: me,
+                        other: other,
+                        thread: thread,
+                        loadingOlder: _messages.loadingOlder,
+                        onOpenRef: _openRef,
+                        onAnswer: _answerOffer,
                       ),
               ),
               _Composer(
                 controller: _text,
+                focusNode: _focus,
                 canSend: _canSend && !_sending,
-                refLabel: _ref?.label,
+                busy: _sending,
+                refLabel: _ref == null
+                    ? null
+                    : _ref!.kind == 'proposal' || _ref!.kind == 'idea'
+                    ? 'בנוגע לרעיון: ${_ref!.label}'
+                    : 'לגבי: ${_ref!.label}',
                 onClearRef: () => setState(() => _ref = null),
                 onSend: _send,
                 onAttach: _attach,
+                onRecord: _recordVoice,
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+}
+
+/// The thread itself: newest at the bottom, built lazily — only the bubbles
+/// on screen exist — with a day chip wherever the day changes.
+class _MessageList extends StatelessWidget {
+  const _MessageList({
+    required this.controller,
+    required this.messages,
+    required this.me,
+    required this.other,
+    required this.thread,
+    required this.loadingOlder,
+    required this.onOpenRef,
+    required this.onAnswer,
+  });
+
+  final ScrollController controller;
+
+  /// Oldest first.
+  final List<ChatMessage> messages;
+  final String me;
+  final String other;
+  final ChatThread? thread;
+  final bool loadingOlder;
+  final ValueChanged<ChatRef> onOpenRef;
+  final void Function(ChatMessage, String) onAnswer;
+
+  static DateTime _day(ChatMessage m) {
+    final DateTime at = m.at ?? DateTime.now();
+    return DateTime(at.year, at.month, at.day);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int n = messages.length;
+    return ListView.builder(
+      controller: controller,
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      itemCount: n + (loadingOlder ? 1 : 0),
+      itemBuilder: (BuildContext context, int i) {
+        if (i == n) {
+          return const Padding(
+            padding: EdgeInsets.all(12),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        // Reversed: index 0 is the newest.
+        final ChatMessage m = messages[n - 1 - i];
+        final bool firstOfDay =
+            i == n - 1 || _day(messages[n - 2 - i]) != _day(m);
+        final Widget body = m.system
+            ? ChatSystemLine(
+                text: m.text,
+                onTap: m.ref == null ? null : () => onOpenRef(m.ref!),
+              )
+            : _Bubble(
+                message: m,
+                mine: m.fromUid == me,
+                me: me,
+                read: m.fromUid == me && m.readBy(thread, other),
+                onOpenRef: onOpenRef,
+                onAnswer: (String a) => onAnswer(m, a),
+              );
+        return KeyedSubtree(
+          key: ValueKey<String>(m.id),
+          child: firstOfDay
+              ? Column(
+                  children: <Widget>[
+                    _DayChip(day: _day(m)),
+                    body,
+                  ],
+                )
+              : body,
         );
       },
     );
@@ -815,11 +1216,21 @@ class _DayChip extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message, required this.mine, required this.me});
+  const _Bubble({
+    required this.message,
+    required this.mine,
+    required this.me,
+    required this.read,
+    required this.onOpenRef,
+    required this.onAnswer,
+  });
 
   final ChatMessage message;
   final bool mine;
   final String me;
+  final bool read;
+  final ValueChanged<ChatRef> onOpenRef;
+  final ValueChanged<String> onAnswer;
 
   @override
   Widget build(BuildContext context) {
@@ -830,6 +1241,8 @@ class _Bubble extends StatelessWidget {
         : theme.colorScheme.surface;
     final DateTime? at = message.at;
     final ChatRef? ref = message.ref;
+    final ChatMedia? media = message.media;
+    final bool offer = message.type == ChatMessageType.ideaOffer;
     return Align(
       // As in WhatsApp in Hebrew: what I wrote on the left (the end), what I
       // received on the right (the start).
@@ -863,8 +1276,28 @@ class _Bubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (ref != null) ChatObject(chatRef: ref, me: me),
-              Text(message.text, style: theme.textTheme.bodyLarge),
+              if (offer)
+                _OfferBlock(
+                  message: message,
+                  mine: mine,
+                  onOpenRef: onOpenRef,
+                  onAnswer: onAnswer,
+                )
+              else ...<Widget>[
+                if (ref != null &&
+                    (ref.kind == 'ideaOffer' ||
+                        ref.kind == 'proposal' &&
+                            message.type == ChatMessageType.text))
+                  _ContextLine(ref: ref, onTap: () => onOpenRef(ref))
+                else if (ref != null)
+                  ChatObject(chatRef: ref, me: me),
+                if (media != null && message.type == ChatMessageType.image)
+                  _ChatImage(media: media),
+                if (media != null && message.type == ChatMessageType.voice)
+                  _ChatVoice(media: media),
+                if (message.text.isNotEmpty)
+                  Text(message.text, style: theme.textTheme.bodyLarge),
+              ],
               const SizedBox(height: 2),
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -879,9 +1312,13 @@ class _Bubble extends StatelessWidget {
                     Icon(
                       message.pending
                           ? Icons.schedule_rounded
+                          : read
+                          ? Icons.done_all_rounded
                           : Icons.done_rounded,
-                      size: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
+                      size: 13,
+                      color: read
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
                     ),
                   ],
                 ],
@@ -894,26 +1331,416 @@ class _Bubble extends StatelessWidget {
   }
 }
 
-class _Composer extends StatelessWidget {
-  const _Composer({
-    required this.controller,
-    required this.canSend,
-    required this.refLabel,
-    required this.onClearRef,
-    required this.onSend,
-    required this.onAttach,
-  });
+/// A small line over a message that answers something: "בנוגע לרעיון: …".
+class _ContextLine extends StatelessWidget {
+  const _ContextLine({required this.ref, required this.onTap});
 
-  final TextEditingController controller;
-  final bool canSend;
-  final String? refLabel;
-  final VoidCallback onClearRef;
-  final VoidCallback onSend;
-  final VoidCallback onAttach;
+  final ChatRef ref;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    return InkWell(
+      onTap: ref.kind == 'ideaOffer' ? null : onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: BorderDirectional(
+            start: BorderSide(color: theme.colorScheme.primary, width: 3),
+          ),
+        ),
+        child: Text(
+          'בנוגע לרעיון: ${ref.label}',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "יש לי רעיון בשבילך": the candidate's card (opened inside the app, never
+/// passed on), and — for the single, once — אשר | דחה | שאל את השדכן.
+class _OfferBlock extends StatelessWidget {
+  const _OfferBlock({
+    required this.message,
+    required this.mine,
+    required this.onOpenRef,
+    required this.onAnswer,
+  });
+
+  final ChatMessage message;
+  final bool mine;
+  final ValueChanged<ChatRef> onOpenRef;
+  final ValueChanged<String> onAnswer;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ChatOffer? offer = message.offer;
+    final ChatRef? ref = message.ref;
+    final String? answer = message.answer;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Icon(
+              Icons.lightbulb_rounded,
+              color: theme.colorScheme.secondary,
+              size: 20,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                message.text.isEmpty ? 'יש לי רעיון בשבילך' : message.text,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Material(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.6,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: ref == null ? null : () => onOpenRef(ref),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.badge_outlined),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          offer?.name ?? '',
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        if ((offer?.summary ?? '').isNotEmpty)
+                          Text(
+                            offer!.summary,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        Text(
+                          'לצפייה בכרטיס',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        if (answer == 'approved')
+          Text(
+            mine ? '✓ אישר/ה את הרעיון' : '✓ אישרת את הרעיון',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: AppColors.primaryDark,
+            ),
+          )
+        else if (answer == 'declined') ...<Widget>[
+          Text(
+            mine ? 'לא מתאים/ה לרעיון הזה' : 'דחית את הרעיון',
+            style: theme.textTheme.labelLarge,
+          ),
+          if (mine && (message.answerReason ?? '').isNotEmpty)
+            Text(
+              'הסיבה: ${message.answerReason}',
+              style: theme.textTheme.bodySmall,
+            ),
+        ] else if (mine)
+          Text('ממתין לתשובה', style: theme.textTheme.labelMedium)
+        else
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: <Widget>[
+              FilledButton(
+                onPressed: () => onAnswer('approved'),
+                child: const Text('אשר'),
+              ),
+              OutlinedButton(
+                onPressed: () => onAnswer('declined'),
+                child: const Text('דחה'),
+              ),
+              TextButton(
+                onPressed: () => onAnswer('ask'),
+                child: const Text('שאל את השדכן'),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+/// "למה לא?" — optional, only the matchmaker reads it, and "דלג" is an
+/// answer too: asked once, never again for the same idea. Null when
+/// dismissed (nothing is sent).
+class _DeclineReasonDialog extends StatefulWidget {
+  const _DeclineReasonDialog();
+
+  static Future<String?> ask(BuildContext context) => showDialog<String>(
+    context: context,
+    builder: (_) => const _DeclineReasonDialog(),
+  );
+
+  @override
+  State<_DeclineReasonDialog> createState() => _DeclineReasonDialogState();
+}
+
+class _DeclineReasonDialogState extends State<_DeclineReasonDialog> {
+  final TextEditingController _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('רוצה לכתוב למה?'),
+    content: TextField(
+      controller: _c,
+      autofocus: true,
+      minLines: 2,
+      maxLines: 4,
+      maxLength: 500,
+      decoration: const InputDecoration(hintText: 'לא חובה — רק השדכן/ית יראו'),
+    ),
+    actions: <Widget>[
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(''),
+        child: const Text('דלג'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.of(context).pop(_c.text.trim()),
+        child: const Text('שליחה'),
+      ),
+    ],
+  );
+}
+
+/// A photo in the conversation: a small thumbnail from the local copy, the
+/// whole picture on a tap.
+class _ChatImage extends StatelessWidget {
+  const _ChatImage({required this.media});
+
+  final ChatMedia media;
+
+  @override
+  Widget build(BuildContext context) {
+    final double width = MediaQuery.sizeOf(context).width * 0.6;
+    final int px = (width * MediaQuery.devicePixelRatioOf(context)).ceil();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: FutureBuilder<File?>(
+        future: ChatService.mediaFile(media.path),
+        builder: (BuildContext context, AsyncSnapshot<File?> snap) {
+          final File? file = snap.data;
+          if (file == null) {
+            return SizedBox(
+              width: width,
+              height: width * 0.75,
+              child: Center(
+                child: snap.connectionState == ConnectionState.done
+                    ? const Icon(Icons.broken_image_outlined)
+                    : const CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+          return GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  backgroundColor: Colors.black,
+                  appBar: AppBar(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                  ),
+                  body: Center(
+                    child: InteractiveViewer(child: Image.file(file)),
+                  ),
+                ),
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.file(
+                file,
+                width: width,
+                fit: BoxFit.cover,
+                cacheWidth: px,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// A voice message: play/pause and its length — the file downloaded once.
+class _ChatVoice extends StatefulWidget {
+  const _ChatVoice({required this.media});
+
+  final ChatMedia media;
+
+  @override
+  State<_ChatVoice> createState() => _ChatVoiceState();
+}
+
+class _ChatVoiceState extends State<_ChatVoice> {
+  AudioPlayer? _player;
+  StreamSubscription<PlayerState>? _state;
+  StreamSubscription<Duration>? _position;
+  bool _playing = false;
+  bool _loading = false;
+  Duration _at = Duration.zero;
+
+  @override
+  void dispose() {
+    unawaited(_state?.cancel());
+    unawaited(_position?.cancel());
+    unawaited(_player?.dispose());
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    if (_playing) {
+      await _player?.pause();
+      return;
+    }
+    if (_player == null) {
+      setState(() => _loading = true);
+      final File? file = await ChatService.mediaFile(widget.media.path);
+      if (!mounted) return;
+      if (file == null) {
+        setState(() => _loading = false);
+        AppNotice.show(context, 'לא הצלחנו לטעון את ההקלטה', isError: true);
+        return;
+      }
+      final AudioPlayer player = AudioPlayer();
+      try {
+        await player.setFilePath(file.path);
+      } catch (_) {
+        await player.dispose();
+        if (mounted) {
+          setState(() => _loading = false);
+          AppNotice.show(context, 'לא ניתן לנגן את ההקלטה', isError: true);
+        }
+        return;
+      }
+      _player = player;
+      _state = player.playerStateStream.listen((PlayerState s) {
+        if (!mounted) return;
+        if (s.processingState == ProcessingState.completed) {
+          unawaited(player.pause());
+          unawaited(player.seek(Duration.zero));
+        }
+        setState(() {
+          _playing =
+              s.playing && s.processingState != ProcessingState.completed;
+        });
+      });
+      _position = player.positionStream.listen((Duration d) {
+        if (mounted) setState(() => _at = d);
+      });
+      setState(() => _loading = false);
+    }
+    unawaited(_player!.play());
+  }
+
+  static String _clock(Duration d) =>
+      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Duration total = Duration(milliseconds: widget.media.durationMs ?? 0);
+    final double progress = total.inMilliseconds == 0
+        ? 0
+        : (_at.inMilliseconds / total.inMilliseconds).clamp(0, 1).toDouble();
+    return SizedBox(
+      width: 220,
+      child: Row(
+        children: <Widget>[
+          IconButton(
+            tooltip: _playing ? 'השהיה' : 'השמעה',
+            onPressed: _loading ? null : _toggle,
+            icon: _loading
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  ),
+          ),
+          Expanded(
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 3,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _clock(_playing || _at > Duration.zero ? _at : total),
+            style: theme.textTheme.labelSmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Composer extends StatelessWidget {
+  const _Composer({
+    required this.controller,
+    required this.focusNode,
+    required this.canSend,
+    required this.busy,
+    required this.refLabel,
+    required this.onClearRef,
+    required this.onSend,
+    required this.onAttach,
+    required this.onRecord,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool canSend;
+  final bool busy;
+  final String? refLabel;
+  final VoidCallback onClearRef;
+  final VoidCallback onSend;
+  final VoidCallback onAttach;
+  final VoidCallback onRecord;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool empty = controller.text.trim().isEmpty;
     return SafeArea(
       top: false,
       child: Padding(
@@ -922,8 +1749,8 @@ class _Composer extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: <Widget>[
             IconButton(
-              tooltip: 'כרטיס או רעיון',
-              onPressed: onAttach,
+              tooltip: 'צירוף',
+              onPressed: busy ? null : onAttach,
               icon: const Icon(Icons.add_circle_outline_rounded),
             ),
             Expanded(
@@ -948,7 +1775,7 @@ class _Composer extends StatelessWidget {
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
-                                'לגבי: $refLabel',
+                                refLabel!,
                                 style: theme.textTheme.labelMedium?.copyWith(
                                   color: theme.colorScheme.primary,
                                 ),
@@ -966,6 +1793,7 @@ class _Composer extends StatelessWidget {
                       ),
                     TextField(
                       controller: controller,
+                      focusNode: focusNode,
                       minLines: 1,
                       maxLines: 5,
                       textInputAction: TextInputAction.newline,
@@ -986,11 +1814,18 @@ class _Composer extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            IconButton.filled(
-              tooltip: 'שליחה',
-              onPressed: canSend ? onSend : null,
-              icon: const Icon(Icons.send_rounded),
-            ),
+            if (empty)
+              IconButton.filledTonal(
+                tooltip: 'הודעה קולית',
+                onPressed: busy ? null : onRecord,
+                icon: const Icon(Icons.mic_none_rounded),
+              )
+            else
+              IconButton.filled(
+                tooltip: 'שליחה',
+                onPressed: canSend ? onSend : null,
+                icon: const Icon(Icons.send_rounded),
+              ),
           ],
         ),
       ),

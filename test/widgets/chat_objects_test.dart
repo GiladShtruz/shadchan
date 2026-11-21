@@ -65,8 +65,9 @@ void main() {
     await tester.pump();
     expect(find.text('רעיון: דוד ונועה'), findsOneWidget);
     expect(find.text('ממתין לתשובה שלך'), findsOneWidget);
-    expect(find.text('אישור'), findsOneWidget);
-    expect(find.text('דחייה'), findsOneWidget);
+    // "אשר | דחה" — approving opens the idea at once.
+    expect(find.text('אשר'), findsOneWidget);
+    expect(find.text('דחה'), findsOneWidget);
   });
 
   testWidgets('the state follows the idea; no buttons once it is answered', (

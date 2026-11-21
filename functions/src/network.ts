@@ -62,6 +62,12 @@ export interface SharedPhotoAccess {
   inProposal: boolean;
   /** `partnerships/{a}_{b}` of the two, if any — a couple space. */
   partnership?: Record<string, unknown> | undefined;
+  /**
+   * `sentCards/{owner}/to/{uid}/cards/{person}` — the card the owner sent
+   * this one in a conversation (a matchmaker to a matchmaker, or a candidate
+   * to a single). Its own photos, and only those.
+   */
+  sent?: Record<string, unknown> | undefined;
 }
 
 /** Whether [a.uid] may receive [a.path]. */
@@ -81,6 +87,10 @@ export function mayReadSharedPhoto(a: SharedPhotoAccess): boolean {
   if (a.card && a.card.ownerUid === a.ownerUid) {
     const readers = Array.isArray(a.card.readers) ? a.card.readers : [];
     if (readers.includes(a.uid)) return true;
+  }
+  if (a.sent) {
+    const paths = Array.isArray(a.sent.photoPaths) ? a.sent.photoPaths : [];
+    if (paths.includes(a.path)) return true;
   }
   return a.inProposal;
 }
@@ -126,6 +136,19 @@ export const sharedCardPhoto = onCall(
       partnership: partnership.exists ? partnership.data() : undefined,
       inProposal: false,
     });
+    if (!allowed && uid !== ownerUid) {
+      const sent = await db.doc(`sentCards/${ownerUid}/to/${uid}/cards/${personId}`).get();
+      if (sent.exists) {
+        allowed = mayReadSharedPhoto({
+          uid,
+          ownerUid,
+          path,
+          card: undefined,
+          sent: sent.data(),
+          inProposal: false,
+        });
+      }
+    }
     if (!allowed && uid !== ownerUid) {
       allowed = mayReadSharedPhoto({
         uid,
@@ -240,6 +263,8 @@ export function proposalEvents(
     // Between partners an idea opens at once, with no question asked.
     if (was === null && (now === 'approved' || now === 'opened')) events.push(`נפתח רעיון משותף: ${pair}`);
     if (was === 'pending' && now === 'approved') events.push(`הרעיון ${pair} אושר`);
+    // Approving opens the idea at once (2026-11-21).
+    if (was === 'pending' && now === 'opened') events.push(`הרעיון ${pair} אושר ונפתח`);
     if (was === 'approved' && now === 'opened') events.push(`הרעיון ${pair} נפתח`);
     if (was === 'pending' && now === 'declined') events.push(`הרעיון ${pair} לא אושר`);
     if (was === 'pending' && now === 'withdrawn') events.push(`ההצעה ${pair} בוטלה`);
@@ -266,17 +291,24 @@ async function chatEvents(
   const members = [a, b].sort();
   const chat = db.doc(`chats/${members[0]}_${members[1]}`);
   const snap = await chat.get();
-  if (!snap.exists) {
-    await chat.set({
+  const batch = db.batch();
+  // The conversation's own line, so the list shows it and sorts it — but no
+  // unread count: system lines are small and never call for attention.
+  batch.set(
+    chat,
+    {
       members,
       type: 'direct',
-      kind: 'matchmakers',
-      names: { [a]: names[a] ?? '', [b]: names[b] ?? '' },
-      createdAt: FieldValue.serverTimestamp(),
+      ...(snap.exists ? {} : { names: { [a]: names[a] ?? '', [b]: names[b] ?? '' } }),
+      lastText: [...lines[lines.length - 1]].slice(0, 200).join(''),
+      lastType: 'system',
+      lastFromUid: 'system',
+      lastAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-    });
-  }
-  const batch = db.batch();
+      ...(snap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+    },
+    { merge: true },
+  );
   for (const text of lines) {
     batch.set(chat.collection('messages').doc(), {
       fromUid: 'system',
@@ -343,6 +375,25 @@ export const onIdeaProposalWritten = onDocumentWritten('ideaProposals/{id}', asy
   );
 });
 
+/** What a message says in a push: its words, or what stands for them. */
+export function chatPreview(type: unknown, text: string): string {
+  if (text.trim().length > 0) return text;
+  switch (type) {
+    case 'voice':
+      return '🎤 הודעה קולית';
+    case 'image':
+      return '📷 תמונה';
+    case 'card':
+      return '🪪 כרטיס';
+    case 'idea':
+      return '💡 רעיון';
+    case 'ideaOffer':
+      return '💡 יש לי רעיון בשבילך';
+    default:
+      return 'הודעה חדשה';
+  }
+}
+
 /** One chat message, pushed to the other members' phones (no inbox row). */
 export const onChatMessageCreated = onDocumentCreated(
   'chats/{chatId}/messages/{messageId}',
@@ -357,8 +408,10 @@ export const onChatMessageCreated = onDocumentCreated(
     const fromUid = message.get('fromUid') as string;
     const members = ((chat.get('members') as string[]) ?? []).filter((m) => m !== fromUid);
     const names = (chat.get('names') ?? {}) as Record<string, string>;
-    const sender = (names[fromUid] ?? '').trim() || 'שדכן/ית';
-    const text = [...String(message.get('text') ?? '')].slice(0, 160).join('');
+    const sender = (names[fromUid] ?? '').trim() || 'הודעה חדשה';
+    const text = [...chatPreview(message.get('type'), String(message.get('text') ?? ''))]
+      .slice(0, 160)
+      .join('');
     const tokenDocs = await Promise.all(members.map((m) => db.doc(`fcmTokens/${m}`).get()));
     const tokens = [
       ...new Set(

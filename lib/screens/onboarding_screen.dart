@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:shadchan/services/analytics_service.dart';
 import 'dart:io';
 
@@ -37,7 +38,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final TextEditingController _lastNameController = TextEditingController();
 
   Gender _selectedGender = Gender.male;
-  bool? _selectedIsSingle;
+
+  /// "איך תרצה להשתמש בשדכן?" — preset from the answer given before
+  /// signing in; asked here when there was none (an install from before).
+  EntryRoute? _usage;
   String? _photoPath;
   bool _saving = false;
   bool _loadedExistingProfile = false;
@@ -71,7 +75,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _lastNameController.text = profile.lastName ?? '';
     _selectedGender = profile.gender ?? Gender.male;
     _photoPath = profile.photoPath;
-    _selectedIsSingle = profile.hasMaritalStatus ? profile.isSingle : null;
+    _usage =
+        WorkspaceStore.entryRoute ??
+        (profile.hasMaritalStatus
+            ? (profile.isSingle ? EntryRoute.both : EntryRoute.matchmaker)
+            : null);
   }
 
   @override
@@ -196,51 +204,32 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               const SizedBox(height: 24),
               Text(
                 key: _maritalStatusKey,
-                'מה המצב האישי שלך?',
+                'איך {תרצה|תרצי} להשתמש בשדכן?'.forGender(_selectedGender),
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: _missingMaritalStatus ? theme.colorScheme.error : null,
                 ),
               ),
               const SizedBox(height: 8),
-              SegmentedButton<bool>(
-                segments: <ButtonSegment<bool>>[
-                  ButtonSegment<bool>(
-                    value: true,
-                    icon: const Icon(Icons.favorite_border_rounded),
-                    label: Text('{רווק|רווקה}'.forGender(_selectedGender)),
-                  ),
-                  ButtonSegment<bool>(
-                    value: false,
-                    icon: const Icon(Icons.home_outlined),
-                    label: Text('{נשוי|נשואה}'.forGender(_selectedGender)),
-                  ),
-                ],
-                emptySelectionAllowed: true,
-                selected: _selectedIsSingle == null
-                    ? const <bool>{}
-                    : <bool>{_selectedIsSingle!},
-                onSelectionChanged: (Set<bool> selection) {
-                  if (selection.isNotEmpty) {
-                    setState(() => _selectedIsSingle = selection.first);
+              _UsageChoice(
+                gender: _selectedGender,
+                selected: _usage,
+                onSelected: (EntryRoute usage) {
+                  setState(() => _usage = usage);
+                  if (usage == EntryRoute.cardOwner) {
+                    // A single only: the card is the sign-up.
+                    WorkspaceStore.chooseEntry(EntryRoute.cardOwner);
                   }
                 },
               ),
               const SizedBox(height: 8),
               if (_missingMaritalStatus)
                 Text(
-                  'צריך לבחור מצב אישי',
+                  'צריך לבחור איך להשתמש בשדכן',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.error,
                     fontWeight: FontWeight.w700,
                     height: 1.35,
                   ),
-                ),
-              // A single matchmaker can keep their own card too. Offered here as
-              // one small line, never asked: a tap finishes sign-up and opens
-              // the card in the personal area.
-              if (_selectedIsSingle == true)
-                _AddPersonalCardLine(
-                  onTap: _saving ? null : () => _continue(openCard: true),
                 ),
               // Nothing about the community is asked for here. The line about
               // yourself and the public prompts are filled in later from the
@@ -266,7 +255,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool get _canContinue =>
       _firstNameController.text.trim().isNotEmpty &&
       _lastNameController.text.trim().isNotEmpty &&
-      _selectedIsSingle != null;
+      _usage != null;
 
   bool get _missingFirstName =>
       _showErrors && _firstNameController.text.trim().isEmpty;
@@ -274,7 +263,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool get _missingLastName =>
       _showErrors && _lastNameController.text.trim().isEmpty;
 
-  bool get _missingMaritalStatus => _showErrors && _selectedIsSingle == null;
+  bool get _missingMaritalStatus => _showErrors && _usage == null;
 
   /// The topmost unanswered question, so the red mark is one somebody can see.
   GlobalKey? get _firstMissingKey {
@@ -284,13 +273,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (_lastNameController.text.trim().isEmpty) {
       return _lastNameKey;
     }
-    if (_selectedIsSingle == null) {
+    if (_usage == null) {
       return _maritalStatusKey;
     }
     return null;
   }
 
-  Future<void> _continue({bool openCard = false}) async {
+  Future<void> _continue() async {
+    final bool openCard = _usage == EntryRoute.both;
     if (!_canContinue) {
       final GlobalKey? missing = _firstMissingKey;
       setState(() => _showErrors = true);
@@ -331,13 +321,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         name: _firstNameController.text,
         lastName: _lastNameController.text,
         gender: _selectedGender,
-        isSingle: _selectedIsSingle!,
+        isSingle: _usage!.wantsCard,
         // No `about`: it is not asked for here, and an omitted value leaves
         // whatever the profile already has.
         photoPath: _photoPath,
       );
+      WorkspaceStore.setMatchmakerEnabled(true);
+      WorkspaceStore.chooseEntry(_usage!);
       Analytics.log(AnalyticsEvent.signup_completed, <String, Object?>{
-        'user_type': 'matchmaker',
+        'user_type': _usage == EntryRoute.both ? 'both' : 'matchmaker',
       });
       if (!mounted) {
         return;
@@ -369,9 +361,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         }
       }
       if (openCard) {
-        // The personal area with its card editor on top: back from the
-        // editor lands in the area the card lives in.
-        context.go('/me/card');
+        // Home first, the card editor on top of it: back from the editor
+        // lands on the one home of the app.
+        context.go('/home');
+        await WidgetsBinding.instance.endOfFrame;
+        if (mounted) unawaited(context.push('/me/card'));
         return;
       }
       // Straight into the real home screen. Landing on the add-contacts flow
@@ -406,7 +400,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       'user_type': 'single',
     });
     WorkspaceStore.setMatchmakerEnabled(false);
-    WorkspaceStore.setLastArea(WorkArea.personal);
     if (!mounted) {
       return;
     }
@@ -429,7 +422,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       }
     }
     if (mounted) {
-      context.go('/me');
+      context.go('/home');
     }
   }
 
@@ -558,32 +551,94 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 }
 
-/// "הוספת כרטיס אישי לאזור האישי" — the small optional offer under the
-/// personal status, for a single matchmaker.
-class _AddPersonalCardLine extends StatelessWidget {
-  const _AddPersonalCardLine({required this.onTap});
+/// "איך תרצה להשתמש בשדכן?" — three answers, one account whichever is
+/// picked. Changeable later from the profile ("השימוש שלי בשדכן").
+class _UsageChoice extends StatelessWidget {
+  const _UsageChoice({
+    required this.gender,
+    required this.selected,
+    required this.onSelected,
+  });
 
-  final VoidCallback? onTap;
+  final Gender gender;
+  final EntryRoute? selected;
+  final ValueChanged<EntryRoute> onSelected;
+
+  static String labelOf(EntryRoute route, Gender? gender) => switch (route) {
+    EntryRoute.cardOwner => '{רווק|רווקה}'.forGender(gender),
+    EntryRoute.matchmaker => '{שדכן|שדכנית}'.forGender(gender),
+    EntryRoute.both => '{רווק וגם שדכן|רווקה וגם שדכנית}'.forGender(gender),
+  };
+
+  static String hintOf(EntryRoute route) => switch (route) {
+    EntryRoute.cardOwner => 'כרטיס אישי, והחברים שמשדכים רואים אותו',
+    EntryRoute.matchmaker => 'מאגר של חברים ורעיונות לשידוכים',
+    EntryRoute.both => 'הכרטיס שלך וגם המאגר — באותה אפליקציה',
+  };
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color ink = theme.colorScheme.primary;
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: TextButton.icon(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: ink,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          visualDensity: VisualDensity.compact,
-          textStyle: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w700,
+    return Column(
+      children: <Widget>[
+        for (final EntryRoute route in const <EntryRoute>[
+          EntryRoute.cardOwner,
+          EntryRoute.matchmaker,
+          EntryRoute.both,
+        ])
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Material(
+              color: route == selected
+                  ? theme.colorScheme.primaryContainer
+                  : theme.colorScheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                  color: route == selected
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.outlineVariant,
+                ),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => onSelected(route),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        route == selected
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        size: 20,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              labelOf(route, gender),
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              hintOf(route),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
-        icon: const Icon(Icons.badge_outlined, size: 18),
-        label: const Text('הוספת כרטיס אישי לאזור האישי'),
-      ),
+      ],
     );
   }
 }

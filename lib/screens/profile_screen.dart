@@ -3,6 +3,8 @@ import 'package:shadchan/utils/avatar_image.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/screens/personal_area_screen.dart';
+import 'package:shadchan/services/usage_actions.dart';
 import 'package:shadchan/screens/partner_space_screen.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 import 'package:go_router/go_router.dart';
@@ -15,7 +17,6 @@ import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -44,7 +45,14 @@ import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 /// group scannable, and it is why "שיתוף האפליקציה" — which fires the share
 /// sheet on the spot — sits under "פעולות נוספות" instead.
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key, this.focusSettings = false});
+  const ProfileScreen({
+    super.key,
+    this.focusSettings = false,
+    this.focusUsage = false,
+  });
+
+  /// Opens the page with "השימוש שלי בשדכן" scrolled into view.
+  final bool focusUsage;
 
   /// Opens the page with the settings group scrolled into view.
   ///
@@ -62,17 +70,31 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   /// The anchor [ProfileScreen.focusSettings] scrolls to.
   final GlobalKey _settingsKey = GlobalKey();
+  final GlobalKey _usageKey = GlobalKey();
+
+  void _onUsageChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    WorkspaceStore.revision.removeListener(_onUsageChanged);
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
-    if (widget.focusSettings) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSettings());
+    WorkspaceStore.revision.addListener(_onUsageChanged);
+    if (widget.focusSettings || widget.focusUsage) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollTo(widget.focusUsage ? _usageKey : _settingsKey),
+      );
     }
   }
 
-  Future<void> _scrollToSettings() async {
-    final BuildContext? target = _settingsKey.currentContext;
+  Future<void> _scrollTo(GlobalKey key) async {
+    final BuildContext? target = key.currentContext;
     if (target == null || !mounted) {
       return;
     }
@@ -90,8 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final AccountProvider account = context.watch<AccountProvider>();
-    final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
-    final bool hasCard = cards.hasCard;
+    context.watch<PersonalCardProvider>();
     final bool matchmaker = WorkspaceStore.matchmakerEnabled;
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
@@ -122,46 +143,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onEditPhoto: () => _editPhoto(profile),
               onEditAbout: () => _editAbout(profile),
             ),
-            const SizedBox(height: 2),
-            // The answer was already given during sign-up. All that is left
-            // here is a quiet way back to it if it ever changes — not a
-            // section of its own.
-            _PersonalStatusLine(
-              profile: profile,
-              onChangeRequested: () => _changePersonalStatus(profile),
-            ),
           ],
         ),
       ),
       const SizedBox(height: 18),
 
-      // 1.5. The user's own card, where it cannot be missed. A married user
-      // has no card to manage, so has no entry at all.
+      // 1.5. The personal card, in full, for somebody who keeps one: the
+      // card, its status, "מה אני מחפש/ת", the recording and who sees it.
+      // One profile — the card is part of it, not an area somewhere else.
       if (profile.isSingle) ...<Widget>[
-        _MyCardEntry(
-          hasCard: hasCard,
-          deleted: cards.isDeleted,
-          gender: profile.gender,
-          onTap: () => context.go('/me'),
-        ),
+        const PersonalCardProfileSection(),
         const SizedBox(height: 16),
       ],
 
-      // Somebody who came only to manage their card can switch the
-      // matchmaker's system on — same account, nothing new to sign up for.
-      if (!matchmaker) ...<Widget>[
-        SettingsGroup(
-          title: 'שדכנות',
+      // "השימוש שלי בשדכן": the two capabilities of this one account.
+      KeyedSubtree(
+        key: _usageKey,
+        child: SettingsGroup(
+          title: 'השימוש שלי בשדכן',
+          accent: copper,
           children: <Widget>[
-            SettingsRow(
-              icon: Icons.diversity_1_outlined,
-              title: 'להתחיל להכיר בין חברים',
-              subtitle: 'לנהל מאגר של חברים ולחשוב על רעיונות לשידוכים',
-              onTap: _startMatchmaking,
+            SwitchListTile(
+              secondary: const Icon(Icons.badge_outlined),
+              title: const Text('יש לי כרטיס אישי'),
+              subtitle: Text(
+                'כרטיס שרק {אתה מעדכן|את מעדכנת}, והשדכנים שלך רואים'.forGender(
+                  profile.gender,
+                ),
+              ),
+              value: profile.isSingle,
+              onChanged: (bool on) => UsageActions.setHasCard(context, on),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.diversity_1_outlined),
+              title: Text(
+                '{אני חושב|אני חושבת} על חברים'.forGender(profile.gender),
+              ),
+              subtitle: const Text('מאגר חברים, רעיונות ושדכנים שותפים'),
+              value: matchmaker,
+              onChanged: (bool on) => UsageActions.setMatchmaking(context, on),
             ),
           ],
         ),
-      ],
+      ),
 
       // The user's own number — how friends' accounts find this one, for
       // the personal card in both directions.
@@ -181,7 +205,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               final String? phone = await MyPhoneDialog.show(
                 context,
                 initial: profile.myPhone,
-                purpose: profile.isSingle || !matchmaker
+                purpose: !matchmaker
                     ? MyPhonePurpose.cardOwner
                     : MyPhonePurpose.matchmaker,
               );
@@ -298,14 +322,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         // Somebody who is both a single with a personal area and a matchmaker
         // has two "profiles" in one account; the bar says which one this is.
         // The title starts on the same line the cards below start on.
-        appBar: AppBar(
-          titleSpacing: 20,
-          title: Text(
-            profile.isSingle && matchmaker
-                ? 'הפרופיל שלי – {שדכן|שדכנית}'.forGender(profile.gender)
-                : 'הפרופיל שלי',
-          ),
-        ),
+        appBar: AppBar(titleSpacing: 20, title: const Text('הפרופיל שלי')),
         body: SafeArea(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -315,31 +332,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
-  }
-
-  /// Switches the matchmaker's system on for a card-only user and takes them
-  /// to its home screen, through the matchmaker's introduction the first time.
-  Future<void> _startMatchmaking() async {
-    WorkspaceStore.setMatchmakerEnabled(true);
-    WorkspaceStore.setLastArea(WorkArea.matchmaker);
-    final UserProfileProvider profile = context.read<UserProfileProvider>();
-    if (!profile.hasSeenIntro) {
-      await Navigator.of(context, rootNavigator: true).push<void>(
-        MaterialPageRoute<void>(
-          builder: (BuildContext introContext) => IntroScreens(
-            onFinished: () async {
-              await profile.markIntroSeen();
-              if (introContext.mounted) {
-                Navigator.of(introContext).pop();
-              }
-            },
-          ),
-        ),
-      );
-    }
-    if (mounted) {
-      context.go('/home');
-    }
   }
 
   // --- The photo ----------------------------------------------------------
@@ -460,43 +452,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     await profile.setCommunityPhone(phone);
-  }
-
-  // --- Personal status ----------------------------------------------------
-
-  /// Offered from the quiet line under the name. Changing to married hides the
-  /// personal card rather than deleting it, so nothing is lost by answering.
-  Future<void> _changePersonalStatus(UserProfileProvider profile) async {
-    final Gender? gender = profile.gender;
-    final bool? isSingle = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      builder: (BuildContext sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ListTile(
-                leading: const Icon(Icons.favorite_border_rounded),
-                title: Text('{רווק|רווקה}'.forGender(gender)),
-                trailing: profile.isSingle ? const Icon(Icons.check) : null,
-                onTap: () => Navigator.of(sheetContext).pop(true),
-              ),
-              ListTile(
-                leading: const Icon(Icons.home_outlined),
-                title: Text('{נשוי|נשואה}'.forGender(gender)),
-                trailing: profile.isSingle ? null : const Icon(Icons.check),
-                onTap: () => Navigator.of(sheetContext).pop(false),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (isSingle == null || isSingle == profile.isSingle) {
-      return;
-    }
-    await profile.setIsSingle(isSingle);
   }
 }
 
@@ -791,41 +746,6 @@ T? _maybeWatchRepo<T>(BuildContext context) {
   }
 }
 
-/// The personal status, as small as it can be while still being changeable.
-///
-/// Whether the matchmaker is single was settled during sign-up; repeating it as
-/// a titled card on the profile gave a one-off answer permanent furniture.
-class _PersonalStatusLine extends StatelessWidget {
-  const _PersonalStatusLine({
-    required this.profile,
-    required this.onChangeRequested,
-  });
-
-  final UserProfileProvider profile;
-  final VoidCallback onChangeRequested;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Gender? gender = profile.gender;
-    final String label = profile.isSingle
-        ? '{רווק|רווקה}'.forGender(gender)
-        : '{נשוי|נשואה}'.forGender(gender);
-
-    return Center(
-      child: TextButton(
-        onPressed: onChangeRequested,
-        style: TextButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurfaceVariant,
-          textStyle: theme.textTheme.bodySmall,
-          visualDensity: VisualDensity.compact,
-        ),
-        child: Text('$label · שינוי'),
-      ),
-    );
-  }
-}
-
 /// The matchmaker's own photo, drawn the same way wherever it appears: the home
 /// app bar, and the head of this screen. Falls back to the initial of their
 /// name, and to a plain person icon when there is no name either.
@@ -928,67 +848,6 @@ class UserProfileAvatar extends StatelessWidget {
       onTap: onTap,
       customBorder: const CircleBorder(),
       child: avatar,
-    );
-  }
-}
-
-/// "הכרטיס שלי" at the top of the profile — the way into the personal area,
-/// or the invitation to write a first card.
-class _MyCardEntry extends StatelessWidget {
-  const _MyCardEntry({
-    required this.hasCard,
-    required this.deleted,
-    required this.gender,
-    required this.onTap,
-  });
-
-  final bool hasCard;
-
-  /// A card that was deleted: the personal area offers to restore it.
-  final bool deleted;
-  final Gender? gender;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
-    // **One central button, not one more row.** For a single who is also a
-    // matchmaker the personal area is the other half of the app, and the way
-    // there has to be the first thing on this page that looks like a door.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        FilledButton.icon(
-          onPressed: onTap,
-          style: FilledButton.styleFrom(
-            backgroundColor: blue,
-            foregroundColor: Colors.white,
-            minimumSize: const Size.fromHeight(54),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            textStyle: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          icon: const Icon(Icons.swap_horiz_rounded),
-          label: const Text('למעבר לאזור האישי'),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          deleted
-              ? 'הכרטיס שמור שם, ואפשר להחזיר אותו'
-              : hasCard
-              ? 'הכרטיס האישי שלך, הסטטוס ומי רואה אותו'
-              : 'שם אפשר ליצור כרטיס אישי שרק {אתה מעדכן|את מעדכנת}'.forGender(
-                  gender,
-                ),
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodySmall,
-        ),
-      ],
     );
   }
 }
