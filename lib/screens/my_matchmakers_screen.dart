@@ -1,3 +1,5 @@
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shadchan/widgets/reminders_bell_button.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +43,66 @@ abstract final class PersonalHelperActions {
         'אפשר להזמין חבר באופן אישי גם בלי גישה לאנשי הקשר',
       );
     }
+  }
+}
+
+/// "השדכנים שלי" as a page of the app: a tab in the short bar of a single
+/// who does not matchmake ([asTab]), or a page pushed over the app — from the
+/// home's shortcut or the profile — for everybody else.
+class MyMatchmakersPage extends StatelessWidget {
+  const MyMatchmakersPage({
+    super.key,
+    this.asTab = false,
+    this.section,
+    this.friendUid,
+  });
+
+  final bool asTab;
+  final String? section;
+  final String? friendUid;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: !asTab,
+        titleSpacing: asTab ? 20 : null,
+        title: const Text('השדכנים שלי'),
+        actions: const <Widget>[RemindersBellButton()],
+      ),
+      body: SafeArea(
+        // Hiding a friend changes a setting, not a provider: listen to it
+        // here, so the list tidies itself the moment a friend is hidden.
+        child: _HiddenListener(
+          builder: () => MyMatchmakersScreen(
+            approved: section == 'approved',
+            friendUid: friendUid,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HiddenListener extends StatelessWidget {
+  const _HiddenListener({required this.builder});
+
+  /// Built afresh on every change, so the list below reads the new state.
+  final Widget Function() builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget listened = ListenableBuilder(
+      listenable: PersonalHelpersStore.revision,
+      builder: (_, _) => builder(),
+    );
+    if (!Hive.isBoxOpen('settings')) return listened;
+    return ValueListenableBuilder<Box<dynamic>>(
+      valueListenable: Hive.box<dynamic>(
+        'settings',
+      ).listenable(keys: <String>[PersonalHelperActions.hiddenKey]),
+      builder: (_, _, _) => listened,
+    );
   }
 }
 

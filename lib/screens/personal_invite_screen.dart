@@ -44,7 +44,6 @@ class _PersonalInviteScreenState extends State<PersonalInviteScreen> {
       if (!mounted) return;
       InviteLinkService.clear();
       WorkspaceStore.setMatchmakerEnabled(true);
-      WorkspaceStore.setLastArea(WorkArea.matchmaker);
       await context.read<CardAccessProvider>().ensureConnected();
       if (mounted) context.go('/card-friend/${result['ownerUid']}');
     } on FirebaseFunctionsException catch (error) {
@@ -92,9 +91,7 @@ class _PersonalInviteScreenState extends State<PersonalInviteScreen> {
                   TextButton(
                     onPressed: () {
                       InviteLinkService.clear();
-                      context.go(
-                        WorkspaceStore.matchmakerEnabled ? '/home' : '/me',
-                      );
+                      context.go('/home');
                     },
                     child: const Text('לא עכשיו'),
                   ),

@@ -7,7 +7,6 @@ import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/privacy_policy_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
-import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/share_utils.dart';
@@ -22,7 +21,6 @@ enum AppMenuAction {
   marriedFriends,
   deletedIdeas,
   profile,
-  personalArea,
   settings,
   updatesGroup,
   share,
@@ -130,9 +128,7 @@ class AppMenuButton extends StatelessWidget {
           ),
           const PopupMenuDivider(height: 9),
         ],
-        ...(variant == AppMenuVariant.home
-            ? _homeRows(single: _isSingle(context))
-            : _listRows(single: _isSingle(context))),
+        ...(variant == AppMenuVariant.home ? _homeRows() : _listRows()),
       ],
     );
 
@@ -152,28 +148,13 @@ class AppMenuButton extends StatelessWidget {
         : button;
   }
 
-  /// A matchmaker who is also single reaches their own personal area from
-  /// the menu, on every page of the matchmaker area, in the row that is
-  /// "הפרופיל שלי" for everybody else.
-  static bool _isSingle(BuildContext context) {
-    try {
-      return Provider.of<UserProfileProvider>(context, listen: false).isSingle;
-    } on ProviderNotFoundException {
-      return false;
-    }
-  }
-
-  static PopupMenuItem<AppMenuAction> _profileOrArea({required bool single}) =>
-      single
-      ? _item(
-          AppMenuAction.personalArea,
-          Icons.swap_horiz_rounded,
-          'למעבר לאזור האישי',
-        )
-      : _item(AppMenuAction.profile, Icons.person_outline, 'הפרופיל שלי');
+  /// One profile for everybody: the card, the matchmaking figures and the
+  /// settings live on the same page.
+  static PopupMenuItem<AppMenuAction> _profileItem() =>
+      _item(AppMenuAction.profile, Icons.person_outline, 'הפרופיל שלי');
 
   /// המאגר שלי and הרעיונות שלי: four destinations and nothing else.
-  static List<PopupMenuEntry<AppMenuAction>> _listRows({bool single = false}) {
+  static List<PopupMenuEntry<AppMenuAction>> _listRows() {
     return <PopupMenuEntry<AppMenuAction>>[
       // The best thing that ever comes out of this app, first on the menu:
       // everybody the matchmaker knows who got married.
@@ -188,7 +169,7 @@ class AppMenuButton extends StatelessWidget {
         'רעיונות שנמחקו',
       ),
       const PopupMenuDivider(height: 9),
-      _profileOrArea(single: single),
+      _profileItem(),
       // Matchmakers among the contacts, the connections with them, the cards
       // they share and the chats with them.
       _item(
@@ -201,7 +182,6 @@ class AppMenuButton extends StatelessWidget {
         Icons.diversity_3_outlined,
         'כרטיסים ששיתפו איתי',
       ),
-      _item(AppMenuAction.chats, Icons.chat_bubble_outline_rounded, 'צ\'אטים'),
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
@@ -211,10 +191,9 @@ class AppMenuButton extends StatelessWidget {
   /// בית: the settings, and then everything that is about the app rather than
   /// about the database — sharing it, the community group, the guide, an
   /// address to write to, the privacy policy.
-  static List<PopupMenuEntry<AppMenuAction>> _homeRows({bool single = false}) {
+  static List<PopupMenuEntry<AppMenuAction>> _homeRows() {
     return <PopupMenuEntry<AppMenuAction>>[
-      _profileOrArea(single: single),
-      _item(AppMenuAction.chats, Icons.chat_bubble_outline_rounded, 'צ\'אטים'),
+      _profileItem(),
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
@@ -255,15 +234,13 @@ class AppMenuButton extends StatelessWidget {
       case AppMenuAction.network:
         AppNavigation.open(context, '/network');
       case AppMenuAction.chats:
-        AppNavigation.open(context, '/chats');
+        context.go('/chats');
       case AppMenuAction.marriedFriends:
         AppNavigation.open(context, '/married');
       case AppMenuAction.deletedIdeas:
         AppNavigation.open(context, '/ideas/deleted');
       case AppMenuAction.profile:
         context.go('/profile');
-      case AppMenuAction.personalArea:
-        context.go('/me');
       case AppMenuAction.settings:
         // The settings are a page of their own now, so this goes straight to
         // them rather than to the profile that used to contain them.

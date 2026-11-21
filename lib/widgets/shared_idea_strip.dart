@@ -1,3 +1,4 @@
+import 'package:shadchan/screens/chats_screen.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -103,17 +104,13 @@ class SharedIdeaStrip extends StatelessWidget {
                 IconButton(
                   tooltip: 'צ\'אט עם $who',
                   visualDensity: VisualDensity.compact,
-                  onPressed: () => NetworkActions.chatWith(
+                  // The one conversation with that matchmaker — never a
+                  // chat of the idea — opened with the idea as its context.
+                  onPressed: () => ChatLauncher.open(
                     context,
                     otherUid: link.partnerUid,
                     otherName: link.partnerName,
-                    ref: ChatRef(
-                      kind: 'idea',
-                      id: link.proposalId,
-                      label: p == null
-                          ? 'רעיון משותף'
-                          : '${p.candidateFirstName} ו${p.targetFirstName}',
-                    ),
+                    ideaId: link.proposalId,
                   ),
                   icon: Icon(
                     Icons.chat_bubble_outline_rounded,

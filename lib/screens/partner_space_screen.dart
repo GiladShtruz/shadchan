@@ -486,7 +486,6 @@ class _ActiveSpace extends StatelessWidget {
             context,
             otherUid: partner,
             otherName: partnerName,
-            kind: 'partners',
           ),
         ),
         _SpaceTile(
@@ -1143,7 +1142,6 @@ class PartnerSpaceProfileArea extends StatelessWidget {
                         context,
                         otherUid: partner,
                         otherName: name,
-                        kind: 'partners',
                       ),
                       icon: const Icon(
                         Icons.chat_bubble_outline_rounded,

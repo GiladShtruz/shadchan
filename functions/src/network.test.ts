@@ -5,6 +5,7 @@ import {
   mayReadSharedPhoto,
   proposalNotice,
   proposalEvents,
+  chatPreview,
   sideEvent,
   allowsOnward,
   granteesOf,
@@ -116,4 +117,17 @@ test('a partner photo reaches the partner only while the couple space is active'
     mayReadSharedPhoto({ ...base, uid: 'c', card: { ownerUid: 'a', readers: ['c'] } }),
     false,
   );
+});
+
+test('approving opens the idea at once, said in one line', () => {
+  assert.deepEqual(proposalEvents('pending', 'opened', {}, {}, {}, 'נועה ודוד'), [
+    'הרעיון נועה ודוד אושר ונפתח',
+  ]);
+});
+
+test('a push of a message without words says what it is', () => {
+  assert.equal(chatPreview('voice', ''), '🎤 הודעה קולית');
+  assert.equal(chatPreview('image', '  '), '📷 תמונה');
+  assert.equal(chatPreview('ideaOffer', ''), '💡 יש לי רעיון בשבילך');
+  assert.equal(chatPreview('text', 'שלום'), 'שלום');
 });

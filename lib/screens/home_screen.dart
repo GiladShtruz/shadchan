@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shadchan/widgets/area_switch_button.dart';
+import 'package:shadchan/screens/personal_home_screen.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -350,8 +350,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final UserProfileProvider userProfile = context
         .watch<UserProfileProvider>();
     final Gender? userGender = userProfile.gender;
-    final bool hasOwnCard =
-        userProfile.isSingle && context.watch<PersonalCardProvider>().hasCard;
+    // Somebody who keeps a card (or is about to write one) sees it on this
+    // same home — written or not, deleted or not.
+    final bool hasOwnCard = userProfile.isSingle;
+    context.watch<PersonalCardProvider>();
     final HomeBoardStore board = HomeBoardStore.instance;
 
     if (board.takeFocusRequest()) {
@@ -394,14 +396,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             name: greetingName,
             leading: const HomeGreetingAvatar(),
             line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
-            // Small and quiet: findable, never in the way of the greeting.
-            trailing: hasOwnCard
-                ? AreaSwitchButton(
-                    label: 'למעבר לאזור האישי',
-                    compact: true,
-                    onTap: () => context.go('/me'),
-                  )
-                : null,
           ),
           top: 8,
         ),
@@ -423,6 +417,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // and these two stay at the top of the page.
         const SliverToBoxAdapter(child: SizedBox(height: 10)),
         HomeActionArea.pinnedSliver(context, inset: inset()),
+
+        // 3.5. The user's own card, for a matchmaker who keeps one: the way
+        // to it and to "השדכנים שלי", anything new around it and who sees it
+        // — part of the same home, with no heading of its own.
+        if (hasOwnCard) block(const PersonalHomeBlock()),
 
         // 4. Two circles, side by side in meaning: "החברים שלך" — the friends
         // this matchmaker thinks about — and "שדכנים שותפים" — the

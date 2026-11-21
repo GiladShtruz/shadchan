@@ -225,7 +225,6 @@ abstract final class PersonalAreaService {
 
   static void openMatchmaking(BuildContext context) {
     WorkspaceStore.setMatchmakerEnabled(true);
-    WorkspaceStore.setLastArea(WorkArea.matchmaker);
     context.go('/people?personalCards=1');
   }
 }

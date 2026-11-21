@@ -25,6 +25,7 @@ import {
   where,
   serverTimestamp,
   writeBatch,
+  increment,
 } from 'firebase/firestore';
 
 const A = 'mmA'; // shares
@@ -188,20 +189,79 @@ test('only the side asked answers; each side writes only its own half', async ()
   await assertFails(getDoc(doc(as(C), 'ideaProposals/x1')));
 });
 
+test('approving opens the shared idea at once; either side moves the one record', async () => {
+  await setDoc(doc(as(B), 'ideaProposals/y1'), proposal());
+  const seed = (by, status, extra = {}) => ({
+    status, askedMaleAt: null, askedFemaleAt: null, updatedBy: by,
+    updatedAt: serverTimestamp(), ...extra,
+  });
+  // The asked side approves straight into an open idea at "רעיון".
+  await assertSucceeds(
+    updateDoc(doc(as(A), 'ideaProposals/y1'), {
+      status: 'opened', idea: seed(A, 'idea'), updatedAt: serverTimestamp(),
+    }),
+  );
+  // B asked the boy: the one shared record says so, signed by B.
+  await assertSucceeds(
+    updateDoc(doc(as(B), 'ideaProposals/y1'), {
+      idea: seed(B, 'checking', { askedMaleAt: new Date() }),
+      [`sides.${B}`]: { status: 'checking' },
+      updatedAt: serverTimestamp(),
+    }),
+  );
+  // Never signed in the other's name, never an unknown status.
+  await assertFails(
+    updateDoc(doc(as(A), 'ideaProposals/y1'), {
+      idea: seed(B, 'dating'), updatedAt: serverTimestamp(),
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(as(A), 'ideaProposals/y1'), {
+      idea: seed(A, 'whatever'), updatedAt: serverTimestamp(),
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(doc(as(A), 'ideaProposals/y1'), {
+      idea: seed(A, 'dating'), updatedAt: serverTimestamp(),
+    }),
+  );
+});
+
 function chat(extra = {}) {
   return {
-    members: [A, B], type: 'direct', kind: 'matchmakers',
+    members: [A, B], type: 'direct',
     names: { [A]: 'A', [B]: 'B' },
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     ...extra,
   };
 }
 
-test('a chat is opened between matchmakers who share and read by its members', async () => {
-  await assertSucceeds(setDoc(doc(as(B), `chats/${PAIR}`), chat()));
-  await assertFails(
-    setDoc(doc(as(C), `chats/${A}_${C}`), chat({ members: [A, C] })),
+// What `ChatService.send` writes: the conversation as a merge, and the
+// message, in one batch — a create the first time, an update after.
+function sendBatch(db, from, to, id, text, extra = {}) {
+  const pair = [from, to].sort();
+  const chatId = `${pair[0]}_${pair[1]}`;
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, `chats/${chatId}`),
+    {
+      members: pair, type: 'direct', names: { [from]: from },
+      lastText: text || '🎤', lastType: extra.type ?? 'text', lastFromUid: from,
+      lastAt: serverTimestamp(), readAt: { [from]: serverTimestamp() },
+      unread: { [from]: 0, [to]: increment(1) },
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
   );
+  batch.set(doc(db, `chats/${chatId}/messages/${id}`), {
+    fromUid: from, type: 'text', text, at: serverTimestamp(), ...extra,
+  });
+  return batch.commit();
+}
+
+test('a chat is opened between matchmakers who share and read by its members', async () => {
+  await assertSucceeds(sendBatch(as(B), B, A, 'm0', 'שלום'));
+  await assertFails(sendBatch(as(C), C, A, 'x', 'שלום'));
   await assertSucceeds(
     setDoc(doc(as(B), `chats/${PAIR}/messages/m1`), {
       fromUid: B, text: 'שלום', at: serverTimestamp(),
@@ -216,70 +276,103 @@ test('a chat is opened between matchmakers who share and read by its members', a
       fromUid: A, text: 'x', at: serverTimestamp(),
     }),
   );
-  // Each member marks only their own reading.
+  // Each member marks only their own reading, and zeroes only their own count.
   await assertSucceeds(
-    updateDoc(doc(as(A), `chats/${PAIR}`), {
-      [`readAt.${A}`]: serverTimestamp(), updatedAt: serverTimestamp(),
-    }),
+    setDoc(doc(as(A), `chats/${PAIR}`), {
+      readAt: { [A]: serverTimestamp() }, unread: { [A]: 0 }, updatedAt: serverTimestamp(),
+    }, { merge: true }),
   );
   await assertFails(
     updateDoc(doc(as(A), `chats/${PAIR}`), {
       [`readAt.${B}`]: serverTimestamp(), updatedAt: serverTimestamp(),
     }),
   );
+  // A's own message leaves one unread for B — which only B may clear.
+  await assertSucceeds(sendBatch(as(A), A, B, 'm4', 'ענית?'));
+  await assertFails(
+    updateDoc(doc(as(A), `chats/${PAIR}`), { [`unread.${B}`]: 0, updatedAt: serverTimestamp() }),
+  );
+  // Nobody inflates the other's count without sending.
+  await assertFails(
+    updateDoc(doc(as(A), `chats/${PAIR}`), { [`unread.${B}`]: 5, updatedAt: serverTimestamp() }),
+  );
 });
 
-test('after sharing stops (and no phone book ties them) the chat stays readable but takes no new messages', async () => {
-  await setDoc(doc(as(B), `chats/${PAIR}`), chat());
+test('the same send writes again to an existing chat, unread grows by one', async () => {
+  await assertSucceeds(sendBatch(as(A), A, B, 'a1', 'שלום'));
+  await assertSucceeds(sendBatch(as(A), A, B, 'a2', 'מה שלומך?'));
+  let snap;
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    snap = await getDoc(doc(ctx.firestore(), `chats/${PAIR}`));
+  });
+  if (snap.data().unread[B] !== 2) throw new Error(`unread ${snap.data().unread[B]}`);
+});
+
+test('once a chat exists it stays a chat after sharing stops', async () => {
+  await assertSucceeds(sendBatch(as(B), B, A, 'm0', 'שלום'));
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), `matchmakerShares/${A}_${B}`), { mode: 'none' });
   });
   await assertSucceeds(getDoc(doc(as(A), `chats/${PAIR}`)));
-  await assertFails(
-    setDoc(doc(as(A), `chats/${PAIR}/messages/m3`), {
-      fromUid: A, text: 'שלום', at: serverTimestamp(),
-    }),
-  );
+  await assertSucceeds(sendBatch(as(A), A, B, 'm3', 'עדיין כאן'));
 });
 
-test('the first message creates the chat, in the same write', async () => {
-  const db = as(A);
-  const batch = writeBatch(db);
-  batch.set(doc(db, `chats/${PAIR}`), chat({
-    lastText: 'שלום', lastFromUid: A, lastAt: serverTimestamp(),
-    readAt: { [A]: serverTimestamp() },
-  }));
-  batch.set(doc(db, `chats/${PAIR}/messages/first`), {
-    fromUid: A, text: 'שלום', at: serverTimestamp(),
-  });
-  await assertSucceeds(batch.commit());
-  await assertSucceeds(getDoc(doc(as(B), `chats/${PAIR}/messages/first`)));
-});
-
-test('a single and the matchmaker who keeps their card can chat; a stranger cannot', async () => {
-  const id = S < A ? `${S}_${A}` : `${A}_${S}`;
-  const members = [S, A].sort();
-  const db = as(S);
-  const batch = writeBatch(db);
-  batch.set(doc(db, `chats/${id}`), chat({ members, kind: 'single', names: {} }));
-  batch.set(doc(db, `chats/${id}/messages/m1`), {
-    fromUid: S, text: 'היי', at: serverTimestamp(),
-  });
-  await assertSucceeds(batch.commit());
-  await assertSucceeds(
-    setDoc(doc(as(A), `chats/${id}/messages/m2`), {
-      fromUid: A, text: 'שלום', at: serverTimestamp(),
-    }),
-  );
+test('a single and the matchmaker who keeps their card share one chat; a stranger cannot start one', async () => {
+  const id = [S, A].sort().join('_');
+  await assertSucceeds(sendBatch(as(S), S, A, 'm1', 'היי'));
+  await assertSucceeds(sendBatch(as(A), A, S, 'm2', 'שלום'));
+  await assertSucceeds(getDoc(doc(as(S), `chats/${id}/messages/m2`)));
   // No card between them, not connected, not in contacts.
-  const other = S < C ? `${S}_${C}` : `${C}_${S}`;
-  await assertFails(
-    setDoc(doc(as(S), `chats/${other}`), chat({ members: [S, C].sort(), kind: 'single' })),
+  await assertFails(sendBatch(as(S), S, C, 'x', 'היי'));
+  // Access revoked later: the conversation goes on.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), `cardAccess/${S}_${A}`), { status: 'revoked' });
+  });
+  await assertSucceeds(sendBatch(as(A), A, S, 'm3', 'עדיין כאן'));
+});
+
+test('photos and voice messages carry their file; empty text only with media', async () => {
+  await assertSucceeds(
+    sendBatch(as(A), A, B, 'v1', '', {
+      type: 'voice', media: { path: `chats/${PAIR}/abc123.m4a`, durationMs: 4000, size: 1000, mime: 'audio/mp4' },
+    }),
   );
-  // A kind nobody knows.
+  await assertFails(sendBatch(as(A), A, B, 'v2', '', { type: 'voice' }));
+  await assertFails(sendBatch(as(A), A, B, 'v3', ''));
+  // A file of another conversation is not this one's.
   await assertFails(
-    setDoc(doc(as(B), `chats/${PAIR}`), chat({ kind: 'group' })),
+    sendBatch(as(A), A, B, 'v4', '', {
+      type: 'image', media: { path: `chats/${A}_${C}/x1.jpg` },
+    }),
   );
+});
+
+test('"יש לי רעיון בשבילך": only the single answers, once', async () => {
+  const id = [S, A].sort().join('_');
+  await assertSucceeds(
+    sendBatch(as(A), A, S, 'o1', 'יש לי רעיון בשבילך', {
+      type: 'ideaOffer', offer: { personId: 'p9', name: 'אורי לוי', summary: '27' },
+      ref: { kind: 'card', id: 'p9', ownerUid: A, label: 'אורי לוי' },
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(as(A), `chats/${id}/messages/o1`), { answer: 'approved', answeredAt: serverTimestamp() }),
+  );
+  await assertSucceeds(
+    updateDoc(doc(as(S), `chats/${id}/messages/o1`), {
+      answer: 'declined', answerReason: 'לא מתאים לי', answeredAt: serverTimestamp(),
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(as(S), `chats/${id}/messages/o1`), { answer: 'approved', answeredAt: serverTimestamp() }),
+  );
+});
+
+test('a matchmaker may send a candidate card to a single tied by a card', async () => {
+  const path = `sentCards/${A}/to/${S}/cards/s9`;
+  await assertSucceeds(setDoc(doc(as(A), path), card('s9')));
+  await assertSucceeds(getDoc(doc(as(S), path)));
+  await assertFails(setDoc(doc(as(C), `sentCards/${C}/to/${S}/cards/s9`), card('s9')));
 });
 
 test('a card sent in a chat is read only by the matchmaker it was sent to', async () => {

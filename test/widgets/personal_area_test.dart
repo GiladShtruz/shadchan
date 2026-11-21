@@ -19,6 +19,9 @@ import 'package:shadchan/providers/personal_area_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/personal_home_screen.dart';
+import 'package:shadchan/screens/personal_area_screen.dart';
+import 'package:shadchan/utils/personal_nav.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shadchan/screens/card_friend_screen.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/my_matchmakers_screen.dart';
@@ -184,6 +187,68 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
   }
 
+  /// The one app as a single who does not matchmake has it: בית | פרופיל |
+  /// השדכנים שלי (the chats tab needs Firebase and is left out here).
+  GoRouter router() => GoRouter(
+    initialLocation: '/home',
+    routes: <RouteBase>[
+      ShellRoute(
+        builder: (context, state, child) {
+          final String path = state.uri.path;
+          const List<String> tabs = <String>[
+            '/home',
+            '/profile',
+            PersonalNav.tabRoute,
+          ];
+          final int at = tabs.indexOf(path);
+          return Scaffold(
+            body: child,
+            bottomNavigationBar: BottomNavigationBar(
+              currentIndex: at < 0 ? 0 : at,
+              onTap: (i) => context.go(tabs[i]),
+              items: const <BottomNavigationBarItem>[
+                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'בית'),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person),
+                  label: 'פרופיל',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.handshake),
+                  label: 'השדכנים שלי',
+                ),
+              ],
+            ),
+          );
+        },
+        routes: <RouteBase>[
+          GoRoute(path: '/home', builder: (_, _) => const PersonalHomeScreen()),
+          GoRoute(
+            path: '/profile',
+            builder: (_, _) => Scaffold(
+              body: ListView(
+                children: const <Widget>[PersonalCardProfileSection()],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: PersonalNav.tabRoute,
+            builder: (_, state) => MyMatchmakersPage(
+              asTab: true,
+              section: state.uri.queryParameters['section'],
+              friendUid: state.uri.queryParameters['friend'],
+            ),
+          ),
+          GoRoute(
+            path: PersonalNav.pageRoute,
+            builder: (_, state) => MyMatchmakersPage(
+              section: state.uri.queryParameters['section'],
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+
   Widget app({double scale = 1, Widget? home}) => MultiProvider(
     providers: [
       ChangeNotifierProvider<PersonRepository>.value(value: people),
@@ -195,23 +260,34 @@ void main() {
       ),
       ChangeNotifierProvider<CardAccessProvider>.value(value: access),
       ChangeNotifierProvider<PersonalCardProvider>.value(value: cards),
+      ChangeNotifierProvider<PersonalAreaProvider>(create: (_) => _Data()),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(settings),
       ),
     ],
-    child: MaterialApp(
-      theme: AppTheme.lightTheme(),
-      home: Builder(
-        builder: (context) => Directionality(
+    child: Builder(
+      builder: (context) {
+        Widget wrap(Widget child) => Directionality(
           textDirection: TextDirection.rtl,
           child: MediaQuery(
             data: MediaQuery.of(
               context,
             ).copyWith(textScaler: TextScaler.linear(scale)),
-            child: home ?? PersonalAreaScreen(createData: _Data.new),
+            child: child,
           ),
-        ),
-      ),
+        );
+        if (home != null) {
+          return MaterialApp(
+            theme: AppTheme.lightTheme(),
+            home: Builder(builder: (_) => wrap(home)),
+          );
+        }
+        return MaterialApp.router(
+          theme: AppTheme.lightTheme(),
+          routerConfig: router(),
+          builder: (_, child) => wrap(child!),
+        );
+      },
     ),
   );
 
@@ -296,20 +372,15 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 5));
   });
-  testWidgets(
-    'a single who also matchmakes has a way across beside the greeting',
-    (tester) async {
-      await tall(tester);
-      await tester.runAsync(
-        () => settings.put('workspace.matchmakerEnabled', 'true'),
-      );
-      await tester.pumpWidget(app());
-      await tester.pumpAndSettle();
-      expect(find.text('למעבר לאזור השדכנית'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(seconds: 5));
-    },
-  );
+  testWidgets('one app: no button across to another area', (tester) async {
+    await tall(tester);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.textContaining('למעבר לאזור'), findsNothing);
+    expect(find.text('רוצה לחשוב גם על חברים?'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 5));
+  });
   testWidgets('a request is the one action and tops the grant tab', (
     tester,
   ) async {
@@ -411,7 +482,9 @@ void main() {
             .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
             .items
             .map((i) => i.label),
-        ['בית', 'השדכנים שלי', 'פרופיל'],
+        // The short bar's order (the chats tab needs Firebase, so the test
+        // shell leaves it out): בית | פרופיל | השדכנים שלי.
+        ['בית', 'פרופיל', 'השדכנים שלי'],
       );
       expect(find.byTooltip('התראות'), findsOneWidget);
       await tester.tap(find.text('פרופיל').last);
@@ -879,7 +952,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tester.dragUntilVisible(
-        find.text('הגדרות חשבון'),
+        find.text('רוצה לחשוב גם על חברים?'),
         find.byType(ListView).first,
         const Offset(0, -300),
       );

@@ -245,6 +245,27 @@ service firebase.storage {
       allow delete: if owner() && firestore.get(/databases/(default)/documents/privateLooking/$(ownerUid)).data.audioPath != 'privateLooking/' + ownerUid + '/' + fileName;
     }
 
+    // A conversation's photos and voice messages. The conversation's id is
+    // the two members' uids, sorted, joined by "_" — so whether somebody is
+    // a member is read off the path itself, with no cross-service read (and
+    // it holds for the very first message, sent before the chat exists).
+    // Files are never replaced; they go with the conversation.
+    match /chats/{chatId}/{fileName} {
+      function member() {
+        return request.auth != null
+            && request.auth.token.firebase.sign_in_provider != 'anonymous'
+            && chatId.split('_').size() == 2
+            && request.auth.uid in chatId.split('_');
+      }
+      allow read: if member();
+      allow create: if member()
+                    && resource == null
+                    && request.resource.size <= 15 * 1024 * 1024
+                    && (request.resource.contentType.matches('image/.*')
+                        || request.resource.contentType.matches('audio/.*'));
+      allow update, delete: if false;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

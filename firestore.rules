@@ -1368,12 +1368,16 @@ service cloud.firestore {
     // One card sent by its owner to one matchmaker — in a chat, on purpose.
     // The same whitelist as a shared card; only the matchmaker it was sent
     // to reads it, and only while the two know each other or share. A single's own card needs the same consent as in the pool.
+    // Since 2026-11-21 also a candidate's card sent by a matchmaker to a
+    // single they are tied to by the single's own card ("יש לי רעיון
+    // בשבילך") — viewed in the app, never passed on.
     match /sentCards/{ownerUid}/to/{toUid}/cards/{personId} {
       allow read: if durable()
                   && (request.auth.uid == ownerUid
-                      || (request.auth.uid == toUid && networkPeer(ownerUid)));
+                      || (request.auth.uid == toUid
+                          && (networkPeer(ownerUid) || cardTie(ownerUid, toUid))));
       allow create, update: if durable() && request.auth.uid == ownerUid
-                            && networkPeer(toUid)
+                            && (networkPeer(toUid) || cardTie(ownerUid, toUid))
                             && sharedCardOk(request.resource.data, ownerUid, personId);
       allow delete: if durable() && request.auth.uid == ownerUid;
     }
@@ -1385,11 +1389,29 @@ service cloud.firestore {
     // `sides` map is where each writes where *its* half stands, for the other
     // to see — and nothing else.
     match /ideaProposals/{proposalId} {
+      // The one record of a shared idea both matchmakers move: the status
+      // and who was asked, and who moved it last.
+      function sharedIdeaOk(i) {
+        return i == null
+          || (i is map
+              && i.keys().hasOnly(['status', 'askedMaleAt', 'askedFemaleAt', 'updatedBy', 'updatedAt'])
+              && i.status in ['idea', 'checking', 'unavailable', 'dating', 'dated', 'rejected', 'married']
+              && (i.get('askedMaleAt', null) == null || i.askedMaleAt is timestamp)
+              && (i.get('askedFemaleAt', null) == null || i.askedFemaleAt is timestamp)
+              && i.updatedBy is string);
+      }
+      // Whoever writes the shared idea signs it, now.
+      function sharedIdeaSigned(before, after) {
+        return !after.diff(before).affectedKeys().hasAny(['idea'])
+          || (after.idea.updatedBy == request.auth.uid
+              && after.idea.updatedAt == request.time);
+      }
       function proposalOk(d) {
         return d.keys().hasOnly([
                  'fromUid', 'toUid', 'uids', 'fromName', 'toName', 'status',
-                 'target', 'candidate', 'note', 'sides', 'createdAt', 'updatedAt'])
+                 'target', 'candidate', 'note', 'sides', 'idea', 'createdAt', 'updatedAt'])
           && d.uids == [d.fromUid, d.toUid] && d.fromUid != d.toUid
+          && sharedIdeaOk(d.get('idea', null))
           && d.fromName is string && d.fromName.size() <= 80
           && d.toName is string && d.toName.size() <= 80
           && d.status in ['pending', 'approved', 'opened', 'declined', 'withdrawn']
@@ -1406,6 +1428,8 @@ service cloud.firestore {
       allow read: if durable() && request.auth.uid in resource.data.uids;
       allow create: if durable() && proposalOk(request.resource.data)
                     && request.resource.data.fromUid == request.auth.uid
+                    && (request.resource.data.get('idea', null) == null
+                        || request.resource.data.idea.updatedBy == request.auth.uid)
                     && request.resource.data.createdAt == request.time
                     && request.resource.data.sides.size() == 0
                     && (
@@ -1431,12 +1455,13 @@ service cloud.firestore {
                     && request.resource.data.createdAt == resource.data.createdAt
                     && request.resource.data.candidate == resource.data.candidate
                     && request.resource.data.target == resource.data.target
+                    && sharedIdeaSigned(resource.data, request.resource.data)
                     && (
                       // The side asked answers.
                       (resource.data.status == 'pending'
                        && resource.data.toUid == request.auth.uid
-                       && request.resource.data.status in ['approved', 'declined']
-                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'toName']))
+                       && request.resource.data.status in ['approved', 'opened', 'declined']
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'toName', 'idea']))
                       ||
                       // The side who asked takes it back.
                       (resource.data.status == 'pending'
@@ -1448,12 +1473,13 @@ service cloud.firestore {
                       // the moment they really ask the two friends.
                       (resource.data.status == 'approved'
                        && request.resource.data.status == 'opened'
-                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'idea']))
                       ||
-                      // Each side writes only where its own half stands.
+                      // Either side moves the one shared idea, and writes
+                      // where its own half stands.
                       (resource.data.status in ['approved', 'opened']
                        && request.resource.data.status == resource.data.status
-                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sides', 'updatedAt'])
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sides', 'idea', 'updatedAt'])
                        && request.resource.data.sides.diff(resource.data.sides).affectedKeys().hasOnly([request.auth.uid]))
                     );
       allow delete: if false;
@@ -1479,19 +1505,39 @@ service cloud.firestore {
         && get(partnerPath(request.auth.uid, other)).data.status == 'active';
     }
 
-    // Who may talk to whom: connected matchmakers, matchmakers saved in each
-    // other's phones, a single and a matchmaker tied by a card, and partners.
-    // Asked when a chat is made and on every message — a tie that ended (a
-    // disconnect, a block) leaves the history readable and closes the chat.
-    function chatPeerAllowed(kind, other) {
-      return kind == 'single' ? cardTie(request.auth.uid, other)
-        : kind == 'partners' ? partnerOf(other)
-        : (sharesBetween(other)
-           || partnerOf(other)
-           || knownPhoneInContacts(request.auth.uid, other)
-           || knownPhoneInContacts(other, request.auth.uid));
+    // Who may **start** a conversation with whom — a user is one person,
+    // never a role, so this asks about the two accounts and not about what
+    // either of them is: a single and a matchmaker tied by a card (asked,
+    // approved, anything but a block), matchmakers who share or know each
+    // other from the phone book, and partners.
+    //
+    // Asked only when the conversation is created. **Once it exists it stays
+    // a conversation**: a card access revoked or a share stopped changes the
+    // card's permissions, not the chat (2026-11-21).
+    function chatPeerAllowed(other) {
+      return cardTie(request.auth.uid, other)
+        || sharesBetween(other)
+        || partnerOf(other)
+        || knownPhoneInContacts(request.auth.uid, other)
+        || knownPhoneInContacts(other, request.auth.uid);
     }
 
+    // The per-member unread counters: the sender adds one for the other side
+    // and zeroes their own; a reader zeroes their own. Nothing else.
+    function unreadOk(before, after, other) {
+      let b = before.get('unread', {});
+      let a = after.get('unread', {});
+      let changed = a.diff(b).affectedKeys();
+      return changed.hasOnly([request.auth.uid, other])
+        && (!changed.hasAny([request.auth.uid]) || a[request.auth.uid] == 0)
+        && (!changed.hasAny([other])
+            || (after.get('lastFromUid', '') == request.auth.uid
+                && a[other] == b.get(other, 0) + 1));
+    }
+
+    // One conversation per pair of accounts (`{a}_{b}`, uids sorted) —
+    // whatever either of them is: single, matchmaker or both. Every card,
+    // idea and recording between them is in the same thread.
     match /chats/{chatId} {
       function member() {
         return request.auth.uid in resource.data.members;
@@ -1499,39 +1545,46 @@ service cloud.firestore {
       function otherOf(d) {
         return d.members[0] == request.auth.uid ? d.members[1] : d.members[0];
       }
-      function mayStart(d) {
-        return chatPeerAllowed(d.get('kind', 'matchmakers'), otherOf(d));
+      function lastOk(d) {
+        return d.get('lastText', '') is string
+          && d.get('lastText', '').size() <= 200
+          && d.get('lastType', 'text') in ['text', 'voice', 'image', 'card', 'idea', 'ideaOffer', 'system']
+          && d.get('names', {}) is map
+          && d.get('photos', {}) is map;
       }
       allow read: if durable() && member();
-      // The chat is created by its first message, in the same write.
+      // Created by its first message, in the same write. The client writes
+      // the chat with a merge, so the same write is a create the first time
+      // and an update every time after — no read needed to know which.
       allow create: if durable()
                     && request.resource.data.keys().hasOnly([
-                         'members', 'type', 'kind', 'names', 'createdAt', 'updatedAt',
-                         'lastText', 'lastFromUid', 'lastAt', 'readAt'])
+                         'members', 'type', 'kind', 'names', 'photos', 'createdAt', 'updatedAt',
+                         'lastText', 'lastFromUid', 'lastType', 'lastAt', 'readAt', 'unread'])
                     && request.resource.data.type == 'direct'
-                    && request.resource.data.kind in ['matchmakers', 'single', 'partners']
+                    && request.resource.data.get('kind', 'direct') is string
                     && request.resource.data.members is list
                     && request.resource.data.members.size() == 2
                     && request.resource.data.members[0] < request.resource.data.members[1]
                     && chatId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
                     && request.auth.uid in request.resource.data.members
-                    && request.resource.data.names is map
-                    && request.resource.data.createdAt == request.time
-                    && request.resource.data.get('lastText', '') is string
-                    && request.resource.data.get('lastText', '').size() <= 200
+                    && lastOk(request.resource.data)
                     && request.resource.data.get('lastFromUid', request.auth.uid) == request.auth.uid
                     && request.resource.data.get('readAt', {}).keys().hasOnly([request.auth.uid])
-                    && mayStart(request.resource.data);
+                    && request.resource.data.get('photos', {}).keys().hasOnly([request.auth.uid])
+                    && unreadOk({}, request.resource.data, otherOf(request.resource.data))
+                    && chatPeerAllowed(otherOf(request.resource.data));
       allow update: if durable() && member()
                     && request.resource.data.members == resource.data.members
                     && request.resource.data.type == resource.data.type
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-                         ['lastText', 'lastFromUid', 'lastAt', 'readAt', 'names', 'updatedAt'])
-                    && request.resource.data.get('lastText', '') is string
-                    && request.resource.data.get('lastText', '').size() <= 200
-                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastText', 'lastFromUid'])
+                         ['lastText', 'lastFromUid', 'lastType', 'lastAt', 'readAt', 'unread',
+                          'names', 'photos', 'updatedAt'])
+                    && lastOk(request.resource.data)
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastText', 'lastFromUid', 'lastType'])
                         || request.resource.data.lastFromUid == request.auth.uid)
-                    && request.resource.data.get('readAt', {}).diff(resource.data.get('readAt', {})).affectedKeys().hasOnly([request.auth.uid]);
+                    && request.resource.data.get('readAt', {}).diff(resource.data.get('readAt', {})).affectedKeys().hasOnly([request.auth.uid])
+                    && request.resource.data.get('photos', {}).diff(resource.data.get('photos', {})).affectedKeys().hasOnly([request.auth.uid])
+                    && unreadOk(resource.data, request.resource.data, otherOf(resource.data));
       allow delete: if false;
 
       match /messages/{messageId} {
@@ -1543,26 +1596,65 @@ service cloud.firestore {
         function chatAfter() {
           return getAfter(/databases/$(database)/documents/chats/$(chatId)).data;
         }
+        function mediaOk(d) {
+          return d.get('media', null) == null
+            || (d.media is map
+                && d.media.keys().hasOnly(['path', 'durationMs', 'width', 'height', 'size', 'mime'])
+                && d.media.path is string
+                && d.media.path.matches('chats/' + chatId + '/[A-Za-z0-9_-]+[.][a-z0-9]{2,5}')
+                && d.media.get('size', 0) is int
+                && d.media.get('size', 0) <= 15 * 1024 * 1024);
+        }
+        function refOk(d) {
+          return d.get('ref', null) == null
+            || (d.ref is map
+                && d.ref.keys().hasOnly(['kind', 'id', 'ownerUid', 'label'])
+                && d.ref.kind in ['card', 'idea', 'proposal', 'person', 'ideaOffer']
+                && d.ref.id is string
+                && d.ref.id.size() <= 300
+                && d.ref.label is string
+                && d.ref.label.size() <= 120);
+        }
+        function offerOk(d) {
+          return d.get('offer', null) == null
+            || (d.offer is map
+                && d.offer.keys().hasOnly(['personId', 'name', 'summary', 'matchId'])
+                && d.offer.personId is string && d.offer.personId.size() <= 200
+                && d.offer.name is string && d.offer.name.size() <= 120
+                && d.offer.get('summary', '') is string && d.offer.get('summary', '').size() <= 300);
+        }
         allow read: if durable() && request.auth.uid in chat().members;
         allow create: if durable()
                       && request.auth.uid in chatAfter().members
-                      && chatPeerAllowed(chatAfter().get('kind', 'matchmakers'),
-                           chatAfter().members[0] == request.auth.uid ? chatAfter().members[1] : chatAfter().members[0])
-                      && request.resource.data.keys().hasOnly(['fromUid', 'text', 'at', 'ref'])
+                      && request.resource.data.keys().hasOnly(['fromUid', 'type', 'text', 'at', 'ref', 'media', 'offer'])
                       && request.resource.data.fromUid == request.auth.uid
                       && request.resource.data.at == request.time
+                      && request.resource.data.get('type', 'text') in ['text', 'voice', 'image', 'card', 'idea', 'ideaOffer']
                       && request.resource.data.text is string
-                      && request.resource.data.text.size() > 0
                       && request.resource.data.text.size() <= 4000
-                      && (request.resource.data.get('ref', null) == null
-                          || (request.resource.data.ref is map
-                              && request.resource.data.ref.keys().hasOnly(['kind', 'id', 'ownerUid', 'label'])
-                              && request.resource.data.ref.kind in ['card', 'idea', 'proposal']
-                              && request.resource.data.ref.id is string
-                              && request.resource.data.ref.id.size() <= 300
-                              && request.resource.data.ref.label is string
-                              && request.resource.data.ref.label.size() <= 120));
-        allow update, delete: if false;
+                      && (request.resource.data.get('type', 'text') != 'text'
+                          || request.resource.data.text.size() > 0)
+                      && (!(request.resource.data.get('type', 'text') in ['voice', 'image'])
+                          || request.resource.data.get('media', null) != null)
+                      && (request.resource.data.get('type', 'text') != 'ideaOffer'
+                          || request.resource.data.get('offer', null) != null)
+                      && mediaOk(request.resource.data)
+                      && refOk(request.resource.data)
+                      && offerOk(request.resource.data);
+        // "יש לי רעיון בשבילך": the single answers once — approve, decline
+        // (with a reason only the matchmaker reads, or none), or "שאל את
+        // השדכן". Nothing else on a message ever changes.
+        allow update: if durable()
+                      && request.auth.uid in chat().members
+                      && resource.data.get('type', 'text') == 'ideaOffer'
+                      && resource.data.fromUid != request.auth.uid
+                      && resource.data.get('answer', null) == null
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer', 'answerReason', 'answeredAt'])
+                      && request.resource.data.answer in ['approved', 'declined']
+                      && request.resource.data.answeredAt == request.time
+                      && request.resource.data.get('answerReason', '') is string
+                      && request.resource.data.get('answerReason', '').size() <= 500;
+        allow delete: if false;
       }
     }
 

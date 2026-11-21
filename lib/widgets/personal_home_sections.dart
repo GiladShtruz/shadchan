@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/personal_nav.dart';
 import 'dart:async';
 import 'package:shadchan/utils/avatar_image.dart';
 
@@ -10,7 +11,6 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadchan/widgets/area_switch_button.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/dialogs/access_permissions_dialog.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
@@ -82,22 +82,6 @@ class PersonalSectionTitle extends StatelessWidget {
       ),
     );
   }
-}
-
-/// "למעבר לאזור השדכן" — the small way across, beside the greeting, for an
-/// owner who also matchmakes. The mirror of the matchmaker home's "למעבר לאזור
-/// האישי", and drawn by the same [AreaSwitchButton].
-class SwitchToMatchmakerButton extends StatelessWidget {
-  const SwitchToMatchmakerButton({super.key, required this.onTap});
-  final VoidCallback onTap;
-
-  static const String labelTemplate = 'למעבר לאזור {השדכן|השדכנית}';
-
-  @override
-  Widget build(BuildContext context) => AreaSwitchButton(
-    label: labelTemplate.forGender(context.userGender),
-    onTap: onTap,
-  );
 }
 
 /// No card, or a deleted one: the central card's place, saying what to do.
@@ -269,7 +253,6 @@ abstract final class MatchmakerFriendActions {
                 context,
                 otherUid: row.matchmakerUid,
                 otherName: friend.name,
-                kind: 'single',
               ),
             ),
             icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
@@ -1040,7 +1023,8 @@ class PersonalWhoSees extends StatelessWidget {
         children: <Widget>[
           const PersonalSectionTitle(title),
           PersonalCreamArea(
-            onTap: () => context.go('/me?section=approved'),
+            onTap: () =>
+                PersonalNav.openMatchmakers(context, section: 'approved'),
             child: Row(
               children: <Widget>[
                 if (faces.isNotEmpty) ...<Widget>[

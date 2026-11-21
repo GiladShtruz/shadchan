@@ -4,12 +4,14 @@ import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
-/// "ברוך הבא!" — the first screen of a fresh install, before signing in.
+/// "ברוך הבא! איך תרצה להשתמש בשדכן?" — the first screen of a fresh install,
+/// before signing in.
 ///
-/// Two ways in, one account either way. A matchmaker goes on to the sign-up
-/// the app always had, introduction included. Somebody who came to manage
-/// their own card signs in the same way and then goes straight to writing it,
-/// without being walked through a matchmaker's database they may never use.
+/// Three answers and **one account whichever is picked**: the answer only
+/// switches capabilities on (a personal card, the matchmaker's tools, or
+/// both), and the profile's "השימוש שלי בשדכן" changes it later. A single
+/// goes straight to writing their card; a matchmaker to the sign-up form;
+/// somebody who is both, to the form and then their card.
 class EntryRouteScreen extends StatelessWidget {
   const EntryRouteScreen({super.key});
 
@@ -47,26 +49,41 @@ class EntryRouteScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'איך נכנסים היום?',
+                    'איך תרצה להשתמש בשדכן?',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyLarge,
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 6),
+                  Text(
+                    'חשבון אחד לכל מה שבחרת, ואפשר לשנות בכל עת מהפרופיל.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 24),
+                  _RouteCard(
+                    icon: Icons.badge_outlined,
+                    title: 'רווק/ה',
+                    subtitle:
+                        'כרטיס אישי שרק את/ה מעדכן/ת, והחברים שמשדכים רואים אותו',
+                    accent: AppColors.secondary,
+                    onTap: () => _choose(context, EntryRoute.cardOwner),
+                  ),
+                  const SizedBox(height: 12),
                   _RouteCard(
                     icon: Icons.diversity_1_outlined,
-                    title: 'כניסה לשדכן',
+                    title: 'שדכן/ית',
                     subtitle: 'לנהל את החברים שלך ולחשוב על רעיונות לשידוכים',
                     accent: AppColors.primary,
                     onTap: () => _choose(context, EntryRoute.matchmaker),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
                   _RouteCard(
-                    icon: Icons.badge_outlined,
-                    title: 'כניסה לרווק/ה',
+                    icon: Icons.all_inclusive_rounded,
+                    title: 'רווק/ה וגם שדכן/ית',
                     subtitle:
-                        'לנהל בעצמך כרטיס אישי ולתת לחברים שמשדכים גישה אליו',
-                    accent: AppColors.secondary,
-                    onTap: () => _choose(context, EntryRoute.cardOwner),
+                        'הכרטיס האישי שלך וגם המאגר והרעיונות — באותה אפליקציה',
+                    accent: AppColors.femaleAccent,
+                    onTap: () => _choose(context, EntryRoute.both),
                   ),
                 ],
               ),

@@ -12,7 +12,6 @@ import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/push_service.dart';
-import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/utils/app_router.dart';
@@ -37,6 +36,7 @@ import 'package:shadchan/services/notification_preferences.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
+import 'package:shadchan/providers/personal_area_provider.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
@@ -199,9 +199,7 @@ void _openFromNotification(String route, bool launch) {
   WidgetsBinding.instance.addPostFrameCallback((_) async {
     final GoRouter router = AppRouter.router;
     if (launch) {
-      final String home = WorkspaceStore.launchArea == WorkArea.personal
-          ? '/me'
-          : '/home';
+      const String home = '/home';
       if (Uri.parse(route).path == home) {
         router.go(route);
         return;
@@ -346,6 +344,12 @@ Widget _buildApp() {
       ),
       ChangeNotifierProvider<PersonalCardProvider>(
         create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
+      ),
+      // The personal card's activity and the community figures for singles,
+      // for the one home and the one profile (it used to live inside the
+      // retired personal area). Lazy: it connects when a card screen reads it.
+      ChangeNotifierProvider<PersonalAreaProvider>(
+        create: (_) => PersonalAreaProvider(),
       ),
       ChangeNotifierProvider<InboxProvider>(
         lazy: false,

@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shadchan/models/idea_proposal.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/shared_card.dart';
 import 'package:shadchan/services/card_photo_privacy.dart';
@@ -531,16 +532,23 @@ abstract final class MatchmakerNetwork {
     }
   }
 
-  /// The side asked says yes or no. A "no" opens nothing — and a "yes" is
-  /// an agreement, not yet an open idea ([open]).
+  /// The side asked says yes or no. A "no" stays in the chat's history and
+  /// opens nothing; **a "yes" opens the idea at once** (2026-11-21) — an
+  /// ordinary idea in both "הרעיונות שלי", starting at "רעיון", one shared
+  /// record ([SharedIdeaState]) that both sides move.
   static Future<bool> answer(IdeaProposal p, {required bool approve}) async {
-    if (uid != p.toUid || p.status != IdeaProposalStatus.pending) return false;
+    final String? me = uid;
+    if (me == null || me != p.toUid || p.status != IdeaProposalStatus.pending) {
+      return false;
+    }
     try {
       await FirebaseFirestore.instance
           .collection('ideaProposals')
           .doc(p.id)
           .update(<String, Object?>{
-            'status': approve ? 'approved' : 'declined',
+            'status': approve ? 'opened' : 'declined',
+            if (approve)
+              'idea': const SharedIdeaState(status: MatchStatus.idea).toMap(me),
             'updatedAt': FieldValue.serverTimestamp(),
           });
       return true;
@@ -593,6 +601,32 @@ abstract final class MatchmakerNetwork {
       return false;
     }
   }
+
+  /// Writes where the one shared idea stands now — status and who was asked
+  /// — for the other matchmaker's copy to follow; and this side's status in
+  /// `sides`, which the chat's small system lines are written from.
+  static Future<void> reportShared(
+    String proposalId,
+    SharedIdeaState state,
+  ) async {
+    final String? me = uid;
+    if (me == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('ideaProposals')
+          .doc(proposalId)
+          .update(<String, Object?>{
+            'idea': state.toMap(me),
+            'sides.$me': <String, Object?>{'status': state.status.name},
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+    } catch (error) {
+      _log(error);
+    }
+  }
+
+  /// Whether the ideas are being listened to live right now.
+  static bool get proposalsLive => _proposalSub != null;
 
   /// Where this side's half of an approved idea stands, for the other side.
   static Future<void> reportSide(String proposalId, String statusName) async {

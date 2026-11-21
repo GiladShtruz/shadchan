@@ -6,41 +6,42 @@ import 'dart:io';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/personal_nav.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
 import 'package:shadchan/screens/personal_privacy_screen.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/person_photo_carousel.dart';
-import 'package:shadchan/utils/home_typography.dart';
-import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/profile_status_choices.dart';
 
-/// The full personal profile, hosted by the personal area's third tab.
+/// The personal card's part of the one profile: the card in full, its
+/// status, "מה אני מחפש/ת" and the recording, and the ways to manage who sees
+/// it. Drawn inside [ProfileScreen] for somebody who keeps a card — there is
+/// no separate personal profile any more.
+///
 /// Card content and private wishes remain separate; permission management is
 /// a secondary route and never an authorization shortcut.
-class PersonalProfileScreen extends StatefulWidget {
-  const PersonalProfileScreen({super.key});
+class PersonalCardProfileSection extends StatefulWidget {
+  const PersonalCardProfileSection({super.key});
 
   @override
-  State<PersonalProfileScreen> createState() => _PersonalProfileScreenState();
+  State<PersonalCardProfileSection> createState() =>
+      _PersonalCardProfileSectionState();
 }
 
-class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
+class _PersonalCardProfileSectionState
+    extends State<PersonalCardProfileSection> {
   bool _savingStatus = false;
   bool _restoring = false;
 
@@ -90,250 +91,72 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
     }
   }
 
-  void _goToMatchmaker() {
-    WorkspaceStore.setLastArea(WorkArea.matchmaker);
-    context.go('/home');
-  }
-
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
     final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
-    final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final Person? card = cards.card;
-    final bool matchmaker = WorkspaceStore.matchmakerEnabled;
-    final String firstName = profile.firstName ?? '';
 
-    // **The personal area speaks the home page's language**: the same paper
-    // cards, the same three type sizes and two inks, the same greeting — so
-    // moving between the two halves of the account never feels like moving
-    // between two apps.
-    return Theme(
-      data: theme.copyWith(
-        textTheme: HomeTypography.scale(theme.textTheme, dark: dark),
-      ),
-      child: Builder(
-        builder: (BuildContext context) => Scaffold(
-          body: SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-              children: <Widget>[
-                HomeGreeting(
-                  greeting: _greetingFor(TimeOfDay.now()),
-                  name: firstName.isEmpty ? 'שלום' : firstName,
-                  line: 'הכרטיס שלך, כפי שהחברים השדכנים רואים אותו',
-                ),
-                // **The way to the matchmaker's side is a card of its own,
-                // right under the greeting** — for somebody who is both, it is
-                // the other half of the account, not a footnote under it.
-                const SizedBox(height: 14),
-                if (cards.isDeleted)
-                  _RestoreCardPrompt(busy: _restoring, onRestore: _restoreCard)
-                else if (card == null)
-                  _CreateCardPrompt(
-                    gender: profile.gender,
-                    onCreate: () => PersonalAreaService.editCard(context),
-                  )
-                else ...<Widget>[
-                  _MyCardSummary(
-                    card: card,
-                    onEdit: () => PersonalAreaService.editCard(context),
-                  ),
-                  if (card.photosPaths.length < 2)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        'כדאי להוסיף עוד תמונה כדי לעזור לחברים להציג אותך בצורה טובה יותר.',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ),
-                  const SizedBox(height: 14),
-                  if (!cards.hasCard)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(PersonalCardCodec.draftHint(card) ?? ''),
-                    ),
-                  ProfileStatusChoices(
-                    title: 'הסטטוס שלי',
-                    status: card.profileStatus,
-                    gender: card.gender,
-                    enabled: !_savingStatus,
-                    onSelected: (ProfileStatus status) =>
-                        _setStatus(card, status),
-                  ),
-                ],
-                CardStatusTimestamp(
-                  ownerUid: context.read<CardAccessProvider>().uid,
-                ),
-                if (!cards.isDeleted)
-                  PrivateLookingBlock(
-                    onSaved: () => PersonalAreaService.offerUpdate(context),
-                  ),
-                // Without the user's own number nobody can find the card, so
-                // the question stays here until it is answered.
-                if (profile.myPhone == null) ...<Widget>[
-                  const SizedBox(height: 14),
-                  HomePaperCard(
-                    stripe: dark
-                        ? AppColors.secondaryDarkDm
-                        : AppColors.secondary,
-                    onTap: () async {
-                      final String? phone = await MyPhoneDialog.show(context);
-                      if (phone != null) {
-                        await profile.setMyPhone(phone);
-                      }
-                    },
-                    child: Row(
-                      children: <Widget>[
-                        const Icon(Icons.phone_outlined, size: 22),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                'הוספת המספר שלי',
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              Text(
-                                'בלעדיו חברים שמשדכים לא יוכלו למצוא את '
-                                'הכרטיס שלך',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right_rounded),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                TextButton.icon(
-                  icon: const Icon(Icons.lock_outline),
-                  label: const Text('ניהול ופרטיות'),
-                  onPressed: () => PersonalPrivacyScreen.open(context),
-                ),
-                TextButton.icon(
-                  icon: const Icon(Icons.settings_outlined),
-                  label: const Text('הגדרות וחשבון'),
-                  onPressed: () => context.push('/profile/settings'),
-                ),
-                const SizedBox(height: 20),
-                _ShareAppLink(gender: profile.gender),
-                if (matchmaker) ...<Widget>[
-                  const SizedBox(height: 14),
-                  _SwitchAreaCard(onTap: _goToMatchmaker),
-                ],
-              ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (cards.isDeleted)
+          _RestoreCardPrompt(busy: _restoring, onRestore: _restoreCard)
+        else if (card == null)
+          _CreateCardPrompt(
+            gender: context.watch<UserProfileProvider>().gender,
+            onCreate: () => PersonalAreaService.editCard(context),
+          )
+        else ...<Widget>[
+          _MyCardSummary(
+            card: card,
+            onEdit: () => PersonalAreaService.editCard(context),
+          ),
+          if (card.photosPaths.length < 2)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                'כדאי להוסיף עוד תמונה כדי לעזור לחברים להציג אותך בצורה טובה יותר.',
+                style: theme.textTheme.bodySmall,
+              ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static String _greetingFor(TimeOfDay now) {
-    final int hour = now.hour;
-    if (hour >= 5 && hour < 12) {
-      return 'בוקר טוב';
-    }
-    if (hour >= 12 && hour < 17) {
-      return 'צהריים טובים';
-    }
-    if (hour >= 17 && hour < 21) {
-      return 'ערב טוב';
-    }
-    return 'לילה טוב';
-  }
-}
-
-/// "שיתוף האפליקציה" — a small link at the foot of the page, drawn like the
-/// share line at the bottom of the matchmakers' home page: it opens the
-/// phone's share sheet with a ready message and the join link.
-class _ShareAppLink extends StatelessWidget {
-  const _ShareAppLink({required this.gender});
-
-  final Gender? gender;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Center(
-      child: Builder(
-        builder: (BuildContext anchor) => FooterLink(
-          icon: Icon(
-            Icons.share_outlined,
-            size: 17,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          label: 'שיתוף האפליקציה עם חברים',
-          theme: theme,
-          onTap: () async {
-            try {
-              await PersonalAreaService.invite(anchor);
-            } on Object {
-              // Nothing to share to is not worth a message.
-            }
-          },
-        ),
-      ),
-    );
-  }
-}
-
-/// "לעבור לאזור השדכן" — a whole card, near the top, for somebody who is also a
-/// matchmaker.
-class _SwitchAreaCard extends StatelessWidget {
-  const _SwitchAreaCard({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
-
-    return HomePaperCard(
-      stripe: ink,
-      onTap: onTap,
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: ink.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
+          const SizedBox(height: 14),
+          if (!cards.hasCard)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(PersonalCardCodec.draftHint(card) ?? ''),
             ),
-            child: Icon(Icons.swap_horiz_rounded, color: ink),
+          ProfileStatusChoices(
+            title: 'הסטטוס שלי',
+            status: card.profileStatus,
+            gender: card.gender,
+            enabled: !_savingStatus,
+            onSelected: (ProfileStatus status) => _setStatus(card, status),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'למעבר לאזור {השדכן|השדכנית}'.forGender(context.userGender),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  'המאגר, הרעיונות והלוח שלך',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          Icon(Icons.chevron_right_rounded, color: ink),
         ],
-      ),
+        CardStatusTimestamp(ownerUid: context.read<CardAccessProvider>().uid),
+        if (!cards.isDeleted)
+          PrivateLookingBlock(
+            onSaved: () => PersonalAreaService.offerUpdate(context),
+          ),
+        const SizedBox(height: 8),
+        Wrap(
+          alignment: WrapAlignment.center,
+          children: <Widget>[
+            TextButton.icon(
+              icon: const Icon(Icons.visibility_outlined),
+              label: const Text('מי רואה אותי'),
+              onPressed: () =>
+                  PersonalNav.openMatchmakers(context, section: 'approved'),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.lock_outline),
+              label: const Text('ניהול שיתוף ופרטיות'),
+              onPressed: () => PersonalPrivacyScreen.open(context),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

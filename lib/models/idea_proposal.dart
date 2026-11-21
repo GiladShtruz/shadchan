@@ -41,6 +41,7 @@ class IdeaProposal {
     required this.note,
     required this.sides,
     this.createdAt,
+    this.shared,
   });
 
   final String id;
@@ -66,6 +67,12 @@ class IdeaProposal {
   /// `{uid: {status: <MatchStatus.name>}}`.
   final Map<String, Map<String, dynamic>> sides;
   final DateTime? createdAt;
+
+  /// **The one idea both matchmakers work on** (2026-11-21): where it stands
+  /// — status and who was asked — written by whichever side moved it last.
+  /// Each phone's own copy in "הרעיונות שלי" follows it, so the two never
+  /// drift into two separate records that need reconciling.
+  final SharedIdeaState? shared;
 
   String get targetPersonId => (target['personId'] as String?) ?? '';
   String get candidatePersonId => (candidate['personId'] as String?) ?? '';
@@ -126,6 +133,7 @@ class IdeaProposal {
     }
     final Object? sides = data['sides'];
     final Object? created = data['createdAt'];
+    final SharedIdeaState? shared = SharedIdeaState.fromMap(data['idea']);
     return IdeaProposal(
       id: id,
       fromUid: from,
@@ -143,6 +151,67 @@ class IdeaProposal {
               e.key as String: Map<String, dynamic>.from(e.value as Map),
       },
       createdAt: created is Timestamp ? created.toDate() : null,
+      shared: shared,
+    );
+  }
+}
+
+/// Where a shared idea stands — one record for both matchmakers
+/// (`ideaProposals/{id}.idea`). The two local copies are oriented the same
+/// way (the man and the woman), so "שאלתי את הבחור" means the same on both.
+class SharedIdeaState {
+  const SharedIdeaState({
+    required this.status,
+    this.askedMaleAt,
+    this.askedFemaleAt,
+    this.updatedBy,
+    this.updatedAt,
+  });
+
+  final MatchStatus status;
+  final DateTime? askedMaleAt;
+  final DateTime? askedFemaleAt;
+  final String? updatedBy;
+  final DateTime? updatedAt;
+
+  /// A short print of what the two sides must agree on — the status and who
+  /// was asked — so a change is noticed once and never echoed back.
+  String get print => printOf(status, askedMaleAt, askedFemaleAt);
+
+  static String printOf(
+    MatchStatus status,
+    DateTime? askedMaleAt,
+    DateTime? askedFemaleAt,
+  ) =>
+      '${status.name}|${askedMaleAt == null ? '' : 'm'}|'
+      '${askedFemaleAt == null ? '' : 'f'}';
+
+  Map<String, Object?> toMap(String by) => <String, Object?>{
+    'status': status.name,
+    'askedMaleAt': askedMaleAt == null
+        ? null
+        : Timestamp.fromDate(askedMaleAt!),
+    'askedFemaleAt': askedFemaleAt == null
+        ? null
+        : Timestamp.fromDate(askedFemaleAt!),
+    'updatedBy': by,
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
+
+  static SharedIdeaState? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    MatchStatus? status;
+    for (final MatchStatus s in MatchStatus.values) {
+      if (s.name == raw['status']) status = s;
+    }
+    if (status == null) return null;
+    DateTime? time(Object? v) => v is Timestamp ? v.toDate() : null;
+    return SharedIdeaState(
+      status: status,
+      askedMaleAt: time(raw['askedMaleAt']),
+      askedFemaleAt: time(raw['askedFemaleAt']),
+      updatedBy: raw['updatedBy'] as String?,
+      updatedAt: time(raw['updatedAt']),
     );
   }
 }

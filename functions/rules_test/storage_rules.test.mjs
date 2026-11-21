@@ -179,3 +179,27 @@ test('news images are admin-controlled and disappear from reader access when unp
   await seed(db => updateDoc(doc(db, 'personalNews/news-image'), {published: false}));
   await assertFails(getBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path)));
 });
+
+test('a conversation\'s photos and recordings are read and written only by its two members', async () => {
+  const bucket = 'gs://demo-shadchan.appspot.com';
+  const chat = 'chatA_chatB';
+  const path = `chats/${chat}/v${++serial}.m4a`;
+  const meta = { contentType: 'audio/mp4' };
+  await assertSucceeds(
+    uploadBytes(ref(as('chatA').storage(bucket), path), new Uint8Array([1, 2, 3]), meta),
+  );
+  await assertSucceeds(getBytes(ref(as('chatB').storage(bucket), path)));
+  await assertFails(getBytes(ref(as('chatC').storage(bucket), path)));
+  await assertFails(
+    uploadBytes(ref(as('chatC').storage(bucket), `chats/${chat}/x.m4a`), new Uint8Array([1]), meta),
+  );
+  // Never replaced, never anything but a picture or a recording.
+  await assertFails(
+    uploadBytes(ref(as('chatA').storage(bucket), path), new Uint8Array([9]), meta),
+  );
+  await assertFails(
+    uploadBytes(ref(as('chatA').storage(bucket), `chats/${chat}/doc.pdf`), new Uint8Array([1]), {
+      contentType: 'application/pdf',
+    }),
+  );
+});

@@ -1691,7 +1691,7 @@ class ProposalScreen extends StatelessWidget {
                 AppNotice.show(
                   context,
                   ok
-                      ? 'אישרת. הרעיון ייפתח אצל שניכם כשתחליטו לשאול את החברים.'
+                      ? 'אישרת — הרעיון נפתח אצל שניכם, בסטטוס "רעיון".'
                       : 'לא הצלחנו לאשר. נסו שוב.',
                   isError: !ok,
                 );

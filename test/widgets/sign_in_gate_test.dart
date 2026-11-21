@@ -143,10 +143,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('ברוך הבא!'), findsOneWidget);
-      expect(find.text('כניסה לשדכן'), findsOneWidget);
-      expect(find.text('כניסה לרווק/ה'), findsOneWidget);
+      expect(find.text('איך תרצה להשתמש בשדכן?'), findsOneWidget);
+      expect(find.text('רווק/ה'), findsOneWidget);
+      expect(find.text('שדכן/ית'), findsOneWidget);
+      expect(find.text('רווק/ה וגם שדכן/ית'), findsOneWidget);
 
-      await tester.tap(find.text('כניסה לרווק/ה'));
+      await tester.tap(find.text('רווק/ה'));
       await tester.pumpAndSettle();
 
       // Both routes sign in the same way.
@@ -257,7 +259,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // "ברוך הבא!" first; the matchmaker's route then signs in as always.
-    await tester.tap(find.text('כניסה לשדכן'));
+    await tester.tap(find.text('שדכן/ית'));
     await tester.pumpAndSettle();
 
     expect(find.text(SignInScreen.headline), findsOneWidget);
