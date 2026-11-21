@@ -9,34 +9,30 @@ import 'package:shadchan/widgets/home_section.dart';
 /// connect with matchmakers you know, choose what to share, get more cards and
 /// ideas. Shown while sharing is off, until closed once.
 class NetworkOnboardingCard extends StatelessWidget {
-  const NetworkOnboardingCard({super.key, this.onSharingScreen = false});
+  const NetworkOnboardingCard({super.key});
 
-  /// Drawn on the sharing screen itself: the way on is to the matchmakers.
-  final bool onSharingScreen;
-
-  static const List<(IconData, String, String)> steps =
-      <(IconData, String, String)>[
-        (
-          Icons.handshake_outlined,
-          'מתחברים לשדכנים שמכירים',
-          'רק שדכנים מאנשי הקשר שלך, ורק אחרי ששניכם אישרתם',
-        ),
-        (
-          Icons.ios_share_rounded,
-          'בוחרים מה לשתף',
-          'הכל, אנשים מסוימים או הכל חוץ מ... — רק כרטיסים מלאים',
-        ),
-        (
-          Icons.auto_awesome_outlined,
-          'מקבלים עוד כרטיסים ורעיונות',
-          'רואים את מה ששדכנים מחוברים שיתפו, ומציעים להם רעיונות',
-        ),
-      ];
+  static const List<(IconData, String, String)>
+  steps = <(IconData, String, String)>[
+    (
+      Icons.handshake_outlined,
+      'מוצאים שדכנים מאנשי הקשר',
+      'שדכנים ששמורים אצלך בטלפון ומשתמשים בשדכן מופיעים מעצמם',
+    ),
+    (
+      Icons.ios_share_rounded,
+      'בוחרים מה לשתף עם כל שדכן',
+      'כל המאגר, אנשים נבחרים או הכל חוץ מ… — בנפרד לכל אחד, רק כרטיסים מלאים',
+    ),
+    (
+      Icons.auto_awesome_outlined,
+      'מקבלים גישה לעוד כרטיסים ורעיונות',
+      'רואים מה שדכנים שיתפו איתך, ומציעים להם רעיונות בצ\'אט',
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool onSharing = onSharingScreen;
     return HomePaperCard(
       padding: EdgeInsets.zero,
       child: Padding(
@@ -100,11 +96,9 @@ class NetworkOnboardingCard extends StatelessWidget {
               child: TextButton(
                 onPressed: () {
                   NetworkSharing.finishOnboarding();
-                  context.push(
-                    onSharing ? '/known-matchmakers' : '/network/sharing',
-                  );
+                  context.push('/known-matchmakers');
                 },
-                child: Text(onSharing ? 'לשדכנים שאני מכיר' : 'לבחירת מה לשתף'),
+                child: const Text('לשדכנים שאני מכיר'),
               ),
             ),
           ],

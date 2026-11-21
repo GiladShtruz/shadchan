@@ -73,17 +73,24 @@ void main() {
     );
   }
 
-  testWidgets('"שתף הכל" asks once, in the agreed words, before opening', (
+  testWidgets('"כל המאגר" for one matchmaker asks once, in the agreed words', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(390, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     NetworkSharing.debugReset();
-    NetworkSharing.finishOnboarding();
-    await tester.pumpWidget(harness(const SharingSettingsScreen()));
+    await tester.pumpWidget(
+      harness(
+        const SharingSettingsScreen(
+          readerUid: 'yonatan',
+          readerName: 'יונתן כהן',
+        ),
+      ),
+    );
     await tester.pump();
-    await tester.tap(find.text('שתף הכל'));
+    expect(find.text('מה אני משתף/ת עם יונתן'), findsOneWidget);
+    await tester.tap(find.text('כל המאגר'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(
@@ -94,16 +101,9 @@ void main() {
     await tester.tap(find.text('ביטול'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(NetworkSharing.mode, ShareMode.none);
-    // Agreeing shares — from now on.
-    await tester.tap(find.text('שתף הכל'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.text('לשתף'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(NetworkSharing.mode, ShareMode.all);
-    expect(NetworkSharing.since, isNotNull);
+    expect(NetworkSharing.choiceFor('yonatan').isOn, isFalse);
+    // Nothing for anybody else either: the choice is per matchmaker.
+    expect(NetworkSharing.readers, isEmpty);
     NetworkSharing.debugReset();
   });
 

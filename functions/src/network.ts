@@ -1,15 +1,15 @@
 /**
- * The network between connected matchmakers — the server side.
+ * Sharing cards between matchmakers — the server side.
  *
  * **A trust network, never a public database.** A matchmaker shares cards
- * from their own database with the matchmakers they are *connected* with
- * (`matchmakerConnections`, approved, between people who have each other in
- * their phones). The rules decide who reads what; this file does only what no
- * phone can do on its own behalf:
+ * from their own database with each matchmaker they know separately
+ * (`matchmakerShares/{owner}_{reader}`); a shared card is one published view
+ * (`networkCards/{owner}_{person}`) that names its `readers`. The rules decide
+ * who reads what; this file does only what no phone can do on its own behalf:
  *
- *  - serve a shared card's photos to a connected matchmaker (`sharedCardPhoto`)
- *    — through a callable, never a download URL, so ending the connection
- *    ends the photos;
+ *  - serve a shared card's photos to a matchmaker it is shared with
+ *    (`sharedCardPhoto`) — through a callable, never a download URL, so
+ *    taking a reader off the card ends the photos;
  *  - tell the other side about an idea offered to them, and its answer —
  *    in the inbox and as small system lines in the pair's chat, never as a
  *    push (only a request to connect is pushed);
@@ -25,7 +25,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentWritten, onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions';
 import { notify, mutes } from './notices';
-import { connectionId } from './matchmaker_connections';
+import { connectionId } from './matchmaker_shares';
 
 /** The largest photo returned inline. */
 export const MAX_SHARED_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -49,8 +49,11 @@ export interface SharedPhotoAccess {
   uid: string;
   ownerUid: string;
   path: string;
-  /** `matchmakerConnections/{a}_{b}` of the two, if any. */
-  connection: Record<string, unknown> | undefined;
+  /**
+   * `networkCards/{owner}_{person}` of the photo's card, if any — the card
+   * names who may read it.
+   */
+  card: Record<string, unknown> | undefined;
   /**
    * Whether an idea proposal between the two names this photo's card — the
    * candidate offered or the card it was offered for. Keeps an approved
@@ -75,9 +78,9 @@ export function mayReadSharedPhoto(a: SharedPhotoAccess): boolean {
     }
     return a.inProposal;
   }
-  if (a.connection?.status === 'approved') {
-    const uids = Array.isArray(a.connection.uids) ? a.connection.uids : [];
-    if (uids.includes(a.uid) && uids.includes(a.ownerUid)) return true;
+  if (a.card && a.card.ownerUid === a.ownerUid) {
+    const readers = Array.isArray(a.card.readers) ? a.card.readers : [];
+    if (readers.includes(a.uid)) return true;
   }
   return a.inProposal;
 }
@@ -110,15 +113,16 @@ export const sharedCardPhoto = onCall(
       throw new HttpsError('invalid-argument', 'נתיב לא תקין');
     }
     const db = getFirestore();
-    const [connection, partnership] = await Promise.all([
-      db.doc(`matchmakerConnections/${connectionId(uid, ownerUid)}`).get(),
+    const personId = path.split('/')[2];
+    const [card, partnership] = await Promise.all([
+      db.doc(`networkCards/${ownerUid}_${personId}`).get(),
       db.doc(`partnerships/${connectionId(uid, ownerUid)}`).get(),
     ]);
     let allowed = mayReadSharedPhoto({
       uid,
       ownerUid,
       path,
-      connection: connection.exists ? connection.data() : undefined,
+      card: card.exists ? card.data() : undefined,
       partnership: partnership.exists ? partnership.data() : undefined,
       inProposal: false,
     });
@@ -127,8 +131,8 @@ export const sharedCardPhoto = onCall(
         uid,
         ownerUid,
         path,
-        connection: undefined,
-        inProposal: await proposalNames(ownerUid, uid, path.split('/')[2]),
+        card: undefined,
+        inProposal: await proposalNames(ownerUid, uid, personId),
       });
     }
     if (!allowed) throw new HttpsError('permission-denied', 'אין גישה לכרטיס');
@@ -169,7 +173,7 @@ export function proposalNotice(
       push: false,
     };
   }
-  if (was === null && now === 'approved') {
+  if (was === null && (now === 'approved' || now === 'opened')) {
     // A couple space: the idea is already open on both phones.
     return {
       to: 'to',
@@ -184,7 +188,7 @@ export function proposalNotice(
       to: 'from',
       kind: 'ideaProposalApproved',
       title: `${doc.toName || 'השדכן/ית'} אישר/ה את הרעיון`,
-      body: `הרעיון ${candidate} ו${target} נפתח אצל שניכם`,
+      body: `${candidate} ו${target} — הרעיון ייפתח כשתחליטו לשאול את שניהם`,
       push: false,
     };
   }
@@ -234,8 +238,9 @@ export function proposalEvents(
   const events: string[] = [];
   if (was !== now) {
     // Between partners an idea opens at once, with no question asked.
-    if (was === null && now === 'approved') events.push(`נפתח רעיון משותף: ${pair}`);
-    if (was === 'pending' && now === 'approved') events.push(`הרעיון ${pair} אושר ונפתח`);
+    if (was === null && (now === 'approved' || now === 'opened')) events.push(`נפתח רעיון משותף: ${pair}`);
+    if (was === 'pending' && now === 'approved') events.push(`הרעיון ${pair} אושר`);
+    if (was === 'approved' && now === 'opened') events.push(`הרעיון ${pair} נפתח`);
     if (was === 'pending' && now === 'declined') events.push(`הרעיון ${pair} לא אושר`);
     if (was === 'pending' && now === 'withdrawn') events.push(`ההצעה ${pair} בוטלה`);
   }
@@ -389,19 +394,19 @@ export async function unshareCardOf(ownerUid: string, matchmakerUids: string[]):
       for (const doc of sent.docs) await doc.ref.delete();
     }
     const snap = await db
-      .collection('sharedCards')
-      .doc(uid)
-      .collection('cards')
+      .collection('networkCards')
+      .where('ownerUid', '==', uid)
       .where('cardOwnerUid', '==', ownerUid)
       .get();
     for (const doc of snap.docs) {
       await doc.ref.delete();
-      await deletePhotos(uid, doc.id);
+      await deletePhotos(uid, (doc.get('personId') as string) ?? '');
     }
   }
 }
 
 async function deletePhotos(ownerUid: string, personId: string): Promise<void> {
+  if (!personId) return;
   try {
     await getStorage().bucket().deleteFiles({ prefix: `sharedCards/${ownerUid}/${personId}/` });
   } catch (error) {

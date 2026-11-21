@@ -101,7 +101,7 @@ void main() {
     await openSignUp(tester, onResult: (MyPhoneOutcome r) => result = r);
 
     expect(
-      find.textContaining('אנשי קשר שלך שמנהלים כרטיס אישי'),
+      find.textContaining('שדכנים מאנשי הקשר שלך יזהו אותך'),
       findsOneWidget,
     );
     expect(find.textContaining('חברים שלך שמנהלים'), findsNothing);

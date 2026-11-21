@@ -31,6 +31,19 @@ class ScreenPerf {
 
   static final List<String> recent = <String>[];
 
+  /// Firestore reads/listens started anywhere in the network code, app-wide
+  /// — a screen's report shows how many it caused by the difference.
+  static int queries = 0;
+
+  /// Network card photos actually fetched (cache misses), app-wide.
+  static int photosLoaded = 0;
+
+  /// Network cards held in memory right now (pages + single reads).
+  static int Function() cardsInMemory = () => 0;
+
+  static void noteQuery([int n = 1]) => queries += n;
+  static void notePhoto() => photosLoaded++;
+
   void build() => builds++;
 
   /// The screen has something real on it (or knows it has nothing).
@@ -60,6 +73,9 @@ class ScreenPerf {
     } catch (_) {}
     final ImageCache cache = PaintingBinding.instance.imageCache;
     return _Snap(
+      queries: queries,
+      photos: photosLoaded,
+      cards: cardsInMemory(),
       listeners: listeners(),
       rssMb: rssMb,
       imagesMb: cache.currentSizeBytes ~/ (1024 * 1024),
@@ -70,16 +86,23 @@ class ScreenPerf {
 
 class _Snap {
   const _Snap({
+    required this.queries,
+    required this.photos,
+    required this.cards,
     required this.listeners,
     required this.rssMb,
     required this.imagesMb,
     required this.images,
   });
+  final int queries;
+  final int photos;
+  final int cards;
   final int listeners;
   final int rssMb;
   final int imagesMb;
   final int images;
 
   String get line =>
-      'listeners=$listeners rss=${rssMb}MB images=$images/${imagesMb}MB';
+      'listeners=$listeners queries=$queries cards=$cards photos=$photos '
+      'rss=${rssMb}MB images=$images/${imagesMb}MB';
 }

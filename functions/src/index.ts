@@ -67,8 +67,8 @@ const REGION = 'europe-west1';
 setGlobalOptions({ region: REGION, maxInstances: 5 });
 
 import {notify, g, Gender} from './notices';
-import { connectionId, joinedRecently, deleteConnectionsOf } from './matchmaker_connections';
-export { onMatchmakerConnectionWritten } from './matchmaker_connections';
+import { joinedRecently, deleteSharesOf } from './matchmaker_shares';
+export { onMatchmakerShareWritten } from './matchmaker_shares';
 export { createPersonalInvite, redeemPersonalInvite, revokePersonalInvite, confirmPersonalCardCurrent, remindMyMatchmakers, onPersonalNudgeCreated, onPersonalNewsWritten } from './personal_area';
 /** Every matchmaker the owner has approved. */
 async function approvedMatchmakers(ownerUid: string): Promise<string[]> {
@@ -610,10 +610,11 @@ async function announceJoinedMatchmakers(
     if (!joinedRecently(joinedAt, now)) continue;
     // Somebody who joined *before* the owner is not news to them.
     if (ownerJoined instanceof Timestamp && joinedAt !== null && ownerJoined.toMillis() > joinedAt) continue;
-    if ((await db.doc(`matchmakerConnections/${connectionId(ownerUid, uid)}`).get()).exists) continue;
+    if ((await db.doc(`matchmakerShares/${ownerUid}_${uid}`).get()).exists ||
+        (await db.doc(`matchmakerShares/${uid}_${ownerUid}`).get()).exists) continue;
     const name = ((helper.name as string | undefined) ?? '').trim() || 'חבר/ה מאנשי הקשר';
-    await notify(ownerUid, {kind: 'matchmakerJoined', title: `${name} הצטרף/ה לשדכן. רוצה להתחבר?`,
-      body: 'שדכנים שמכירים מתחברים — בלי לשתף את המאגר',
+    await notify(ownerUid, {kind: 'matchmakerJoined', title: `${name} הצטרף/ה לשדכן`,
+      body: 'אפשר לשתף אחד עם השני כרטיסים — אתם מחליטים מה',
       route: `/known-matchmakers/${uid}`}, pushed < 3, `matchmakerJoined_${uid}`);
     pushed++;
   }
@@ -936,8 +937,9 @@ export const onAccountDeleted = functionsV1
     await db.collection('databaseHashes').doc(uid).delete();
     await db.collection('fcmTokens').doc(uid).delete();
     await db.doc(`matchmakerActivity/${uid}`).delete();
-    // Every connection with another matchmaker, from either side.
-    await deleteConnectionsOf(uid);
+    // Every share with another matchmaker, either direction, and the cards
+    // this account published or could read.
+    await deleteSharesOf(uid);
     // The cards shared with them, ideas offered between them, chats.
     await deleteNetworkOf(uid);
     // A couple space: the database published to the partner, and the tie.

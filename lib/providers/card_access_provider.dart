@@ -19,7 +19,7 @@ import 'package:shadchan/services/card_link_consent.dart';
 import 'package:shadchan/services/card_sync_engine.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
-import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
@@ -616,7 +616,7 @@ class CardAccessProvider extends ChangeNotifier {
                 // "matchmaker_contact_found": counted for a matchmaker only,
                 // as a band of how many are new — never who.
                 if (WorkspaceStore.matchmakerEnabled && snap.exists) {
-                  MatchmakerConnections.noteContactsFound(
+                  MatchmakerShares.noteContactsFound(
                     _helpers.map((CardHelper h) => h.uid),
                   );
                 }

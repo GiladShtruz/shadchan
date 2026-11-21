@@ -43,11 +43,9 @@ class HomeGreetingAvatar extends StatelessWidget {
       // the photo goes. A bare "+" in a ring read as a button for something
       // else.
       final Color ground = dark
-          ? const Color(0xFF3A4247)
-          : const Color(0xFFDFE5E7);
-      final Color figure = dark
-          ? const Color(0xFF8A969C)
-          : const Color(0xFFFFFFFF);
+          ? AppColors.primaryLightDarkDm
+          : AppColors.primaryLight;
+      final Color figure = dark ? AppColors.primaryDarkDm : AppColors.white;
       final double badge = (size * 0.42).clamp(18.0, 26.0);
       return Semantics(
         button: true,

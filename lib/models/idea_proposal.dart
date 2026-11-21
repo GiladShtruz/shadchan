@@ -5,7 +5,12 @@ import 'package:shadchan/utils/enums.dart';
 
 enum IdeaProposalStatus {
   pending,
+
+  /// The side asked agreed — not yet an open idea.
   approved,
+
+  /// Opened: the friends are being asked; the idea is in both databases.
+  opened,
   declined,
   withdrawn;
 

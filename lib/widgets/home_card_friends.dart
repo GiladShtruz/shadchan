@@ -40,7 +40,7 @@ class CardFriendSlide {
   final DateTime lastActivityAt;
 }
 
-/// "החברים שלך במאגר" — on בית, under the two add buttons.
+/// "החברים שלך" — on בית, under the two add buttons.
 ///
 /// **Every friend in the database with a full card** — card text and a
 /// photo really on this device — whether the matchmaker wrote the card or the
@@ -58,7 +58,7 @@ class CardFriendSlide {
 class HomeCardFriendsSection extends StatefulWidget {
   const HomeCardFriendsSection({super.key});
 
-  static const String title = 'החברים שלך במאגר';
+  static const String title = 'החברים שלך';
   static const String cardOwnersLink = 'חברים שלי שמנהלים כרטיס אישי';
 
   /// How many slides the carousel holds at most.

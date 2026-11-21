@@ -1,10 +1,11 @@
-// Security rules for the network between connected matchmakers — shared
-// cards, idea proposals and chats — run against the Firestore emulator:
+// Security rules for sharing between matchmakers — published cards that
+// name their readers, idea proposals and chats — run against the Firestore
+// emulator:
 //
 //   cd functions && npm run test:rules
 //
-// Everything here is readable only across an approved connection, a single's
-// own card only with their consent, and each side of an idea writes only its
+// A card is read only by the matchmakers it names, a single's own card is
+// shared only with their consent, and each side of an idea writes only its
 // own half.
 import { readFileSync } from 'node:fs';
 import { test, before, after, beforeEach } from 'node:test';
@@ -20,13 +21,15 @@ import {
   setDoc,
   updateDoc,
   collection,
+  query,
+  where,
   serverTimestamp,
   writeBatch,
 } from 'firebase/firestore';
 
 const A = 'mmA'; // shares
-const B = 'mmB'; // connected to A
-const C = 'mmC'; // not connected
+const B = 'mmB'; // A shares with B
+const C = 'mmC'; // nothing with A
 const S = 'single1'; // a single with a personal card
 const PAIR = `${A}_${B}`;
 
@@ -47,14 +50,14 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, `matchmakerConnections/${PAIR}`), {
-      uids: [A, B], fromUid: A, toUid: B, status: 'approved',
-      names: { [A]: 'A', [B]: 'B' },
+    await setDoc(doc(db, `matchmakerShares/${A}_${B}`), {
+      ownerUid: A, readerUid: B, uids: [A, B], mode: 'all', count: 1,
+      ownerName: 'A', readerName: 'B',
     });
     await setDoc(doc(db, `cardAccess/${S}_${A}`), {
       ownerUid: S, matchmakerUid: A, status: 'approved', cardGranted: true,
     });
-    await setDoc(doc(db, `sharedCards/${A}/cards/p1`), card('p1'));
+    await setDoc(doc(db, `networkCards/${A}_p1`), card('p1'));
   });
 });
 
@@ -70,43 +73,57 @@ function card(personId, extra = {}) {
     firstName: 'נועה', lastName: 'כהן', gender: 'female', age: 25,
     description: 'כרטיס מלא', photoPaths: [`sharedCards/${A}/${personId}/1.jpg`],
     tags: [], status: 'available', identity: null, cardOwnerUid: null,
+    readers: [B], nameKey: 'נועה כהן',
     updatedAt: serverTimestamp(),
     ...extra,
   };
 }
 
-test('a shared card is read by a connected matchmaker, not by a stranger', async () => {
-  await assertSucceeds(getDoc(doc(as(B), `sharedCards/${A}/cards/p1`)));
-  await assertSucceeds(getDocs(collection(as(B), `sharedCards/${A}/cards`)));
-  await assertFails(getDoc(doc(as(C), `sharedCards/${A}/cards/p1`)));
-  await assertFails(getDocs(collection(as(C), `sharedCards/${A}/cards`)));
+test('a published card is read by the readers it names, not by a stranger', async () => {
+  await assertSucceeds(getDoc(doc(as(B), `networkCards/${A}_p1`)));
+  await assertSucceeds(
+    getDocs(query(collection(as(B), 'networkCards'), where('readers', 'array-contains', B))),
+  );
+  await assertFails(getDoc(doc(as(C), `networkCards/${A}_p1`)));
+  // Nobody lists anybody's whole database.
+  await assertFails(getDocs(collection(as(B), 'networkCards')));
+  await assertFails(
+    getDocs(query(collection(as(C), 'networkCards'), where('ownerUid', '==', A))),
+  );
+  await assertSucceeds(
+    getDocs(query(collection(as(A), 'networkCards'), where('ownerUid', '==', A))),
+  );
 });
 
-test('ending the connection ends the reading', async () => {
+test('taking a reader off the card ends the reading at once', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await updateDoc(doc(ctx.firestore(), `matchmakerConnections/${PAIR}`), { status: 'declined' });
+    await updateDoc(doc(ctx.firestore(), `networkCards/${A}_p1`), { readers: ['someoneElse'] });
   });
-  await assertFails(getDocs(collection(as(B), `sharedCards/${A}/cards`)));
+  await assertFails(getDoc(doc(as(B), `networkCards/${A}_p1`)));
 });
 
 test('only the owner shares, only a complete card, and never a phone', async () => {
-  await assertSucceeds(setDoc(doc(as(A), `sharedCards/${A}/cards/p2`), card('p2')));
-  await assertFails(setDoc(doc(as(B), `sharedCards/${A}/cards/p3`), card('p3')));
-  await assertFails(setDoc(doc(as(A), `sharedCards/${A}/cards/p4`), card('p4', { photoPaths: [] })));
-  await assertFails(setDoc(doc(as(A), `sharedCards/${A}/cards/p5`), card('p5', { description: '' })));
-  await assertFails(setDoc(doc(as(A), `sharedCards/${A}/cards/p6`), card('p6', { phone: '0501234567' })));
-  await assertFails(setDoc(doc(as(A), `sharedCards/${A}/cards/p7`), card('p7', { notes: 'פרטי' })));
+  await assertSucceeds(setDoc(doc(as(A), `networkCards/${A}_p2`), card('p2')));
+  await assertFails(setDoc(doc(as(B), `networkCards/${A}_p3`), card('p3')));
+  await assertFails(setDoc(doc(as(A), `networkCards/${A}_p4`), card('p4', { photoPaths: [] })));
+  await assertFails(setDoc(doc(as(A), `networkCards/${A}_p5`), card('p5', { description: '' })));
+  await assertFails(setDoc(doc(as(A), `networkCards/${A}_p6`), card('p6', { phone: '0501234567' })));
+  await assertFails(setDoc(doc(as(A), `networkCards/${A}_p7`), card('p7', { notes: 'פרטי' })));
+  // A card with no reader is not published at all.
+  await assertFails(setDoc(doc(as(A), `networkCards/${A}_p9`), card('p9', { readers: [] })));
+  // The id is always owner_person.
+  await assertFails(setDoc(doc(as(A), `networkCards/${B}_p2`), card('p2')));
 });
 
 test("a single's own card is shared only with the single's consent", async () => {
   await assertFails(
-    setDoc(doc(as(A), `sharedCards/${A}/cards/p8`), card('p8', { cardOwnerUid: S })),
+    setDoc(doc(as(A), `networkCards/${A}_p8`), card('p8', { cardOwnerUid: S })),
   );
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), `cardAccess/${S}_${A}`), { shareOnward: true });
   });
   await assertSucceeds(
-    setDoc(doc(as(A), `sharedCards/${A}/cards/p8`), card('p8', { cardOwnerUid: S })),
+    setDoc(doc(as(A), `networkCards/${A}_p8`), card('p8', { cardOwnerUid: S })),
   );
 });
 
@@ -135,7 +152,7 @@ function proposal(extra = {}) {
   };
 }
 
-test('an idea is offered only across a connection, for a shared card', async () => {
+test('an idea is offered only for a card shared with the one offering it', async () => {
   await assertSucceeds(setDoc(doc(as(B), 'ideaProposals/x1'), proposal()));
   await assertFails(
     setDoc(doc(as(C), 'ideaProposals/x2'), proposal({ fromUid: C, uids: [C, A] })),
@@ -153,6 +170,10 @@ test('only the side asked answers; each side writes only its own half', async ()
   );
   await assertSucceeds(
     updateDoc(doc(as(A), 'ideaProposals/x1'), { status: 'approved', updatedAt: serverTimestamp() }),
+  );
+  // Agreed is not open yet: either side opens it when they ask the friends.
+  await assertSucceeds(
+    updateDoc(doc(as(B), 'ideaProposals/x1'), { status: 'opened', updatedAt: serverTimestamp() }),
   );
   await assertSucceeds(
     updateDoc(doc(as(A), 'ideaProposals/x1'), {
@@ -176,7 +197,7 @@ function chat(extra = {}) {
   };
 }
 
-test('a chat is opened between connected matchmakers and read by its members', async () => {
+test('a chat is opened between matchmakers who share and read by its members', async () => {
   await assertSucceeds(setDoc(doc(as(B), `chats/${PAIR}`), chat()));
   await assertFails(
     setDoc(doc(as(C), `chats/${A}_${C}`), chat({ members: [A, C] })),
@@ -208,10 +229,10 @@ test('a chat is opened between connected matchmakers and read by its members', a
   );
 });
 
-test('after a disconnect the chat stays readable but takes no new messages', async () => {
+test('after sharing stops (and no phone book ties them) the chat stays readable but takes no new messages', async () => {
   await setDoc(doc(as(B), `chats/${PAIR}`), chat());
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await updateDoc(doc(ctx.firestore(), `matchmakerConnections/${PAIR}`), { status: 'declined' });
+    await updateDoc(doc(ctx.firestore(), `matchmakerShares/${A}_${B}`), { mode: 'none' });
   });
   await assertSucceeds(getDoc(doc(as(A), `chats/${PAIR}`)));
   await assertFails(
@@ -267,7 +288,7 @@ test('a card sent in a chat is read only by the matchmaker it was sent to', asyn
   await assertSucceeds(getDoc(doc(as(B), path)));
   await assertSucceeds(getDocs(collection(as(B), `sentCards/${A}/to/${B}/cards`)));
   await assertFails(getDoc(doc(as(C), path)));
-  // Never to a matchmaker who is not connected, never written by another.
+  // Never to a matchmaker A neither shares with nor knows, never by another.
   await assertFails(setDoc(doc(as(A), `sentCards/${A}/to/${C}/cards/s2`), card('s2')));
   await assertFails(setDoc(doc(as(B), `sentCards/${A}/to/${B}/cards/s3`), card('s3')));
   // The same whitelist as a shared card.

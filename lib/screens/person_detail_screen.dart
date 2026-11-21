@@ -490,14 +490,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     kind: 'single',
                   );
                 case 'shareInNetwork':
-                  if (NetworkSharing.chosen(person)) {
-                    NetworkSharing.remove(person);
-                  } else if (await SharingSettingsScreen.confirmAdding(
-                    context,
-                    count: 1,
-                  )) {
-                    NetworkSharing.add(<String>[person.id]);
-                  }
+                  await PersonShareSheet.show(context, person);
                 case 'board':
                   HomeBoardActions.toggle(
                     context,
@@ -599,9 +592,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                         const Icon(Icons.diversity_3_outlined),
                         const SizedBox(width: 10),
                         Text(
-                          NetworkSharing.chosen(person)
-                              ? 'הוצאה מהשיתוף עם שדכנים'
-                              : 'הוספה לשיתוף עם שדכנים',
+                          NetworkSharing.readersOf(person).isEmpty
+                              ? 'שיתוף עם שדכנים…'
+                              : 'משותף עם ${NetworkSharing.readersOf(person).length} שדכנים…',
                         ),
                       ],
                     ),

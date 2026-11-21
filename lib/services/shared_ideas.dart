@@ -12,6 +12,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/services/offline_guard.dart';
+import 'package:shadchan/services/partner_space.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:uuid/uuid.dart';
@@ -155,8 +156,11 @@ abstract final class SharedIdeas {
 
   static bool _reconciling = false;
 
-  /// Opens a local idea for every approved proposal this side has not opened
-  /// yet. Automatic: it runs inside [OfflineGuard.exempt].
+  /// Opens a local idea for every *opened* proposal this side has not opened
+  /// yet — an agreement ("approved") is not an idea until one of the two
+  /// decides to really ask the friends. A couple space's older proposals
+  /// were written "approved" and open at once. Automatic: it runs inside
+  /// [OfflineGuard.exempt].
   static Future<void> reconcile({
     required List<IdeaProposal> proposals,
     required String me,
@@ -167,7 +171,11 @@ abstract final class SharedIdeas {
     _reconciling = true;
     try {
       for (final IdeaProposal p in proposals) {
-        if (p.status != IdeaProposalStatus.approved) continue;
+        final bool open =
+            p.status == IdeaProposalStatus.opened ||
+            (p.status == IdeaProposalStatus.approved &&
+                PartnerSpace.isPartner(p.otherOf(me)));
+        if (!open) continue;
         if (links.containsKey(p.id)) continue;
         final Person? mine = people.getById(p.myPersonIdFor(me));
         if (mine == null) continue;

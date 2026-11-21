@@ -21,25 +21,26 @@ test('a shared photo path is exactly sharedCards/{owner}/{person}/{file}', () =>
   assert.equal(validSharedPhotoPath('a', 'sharedCards/a/p1/x/y.jpg'), false);
 });
 
-test('photos go to the owner and to an approved connection only', () => {
+test('photos go to the owner and to the readers the card names only', () => {
   const path = 'sharedCards/a/p1/x.jpg';
   const base = { ownerUid: 'a', path, inProposal: false };
-  assert.equal(mayReadSharedPhoto({ ...base, uid: 'a', connection: undefined }), true);
+  assert.equal(mayReadSharedPhoto({ ...base, uid: 'a', card: undefined }), true);
   assert.equal(
-    mayReadSharedPhoto({ ...base, uid: 'b', connection: { status: 'approved', uids: ['a', 'b'] } }),
+    mayReadSharedPhoto({ ...base, uid: 'b', card: { ownerUid: 'a', readers: ['b', 'c'] } }),
     true,
   );
   assert.equal(
-    mayReadSharedPhoto({ ...base, uid: 'b', connection: { status: 'pending', uids: ['a', 'b'] } }),
+    mayReadSharedPhoto({ ...base, uid: 'd', card: { ownerUid: 'a', readers: ['b', 'c'] } }),
     false,
   );
+  // A card row of somebody else never opens this owner's photos.
   assert.equal(
-    mayReadSharedPhoto({ ...base, uid: 'c', connection: { status: 'approved', uids: ['a', 'b'] } }),
+    mayReadSharedPhoto({ ...base, uid: 'b', card: { ownerUid: 'x', readers: ['b'] } }),
     false,
   );
-  assert.equal(mayReadSharedPhoto({ ...base, uid: 'b', connection: undefined }), false);
-  // An idea between the two keeps its photos after a disconnect.
-  assert.equal(mayReadSharedPhoto({ ...base, uid: 'b', connection: undefined, inProposal: true }), true);
+  assert.equal(mayReadSharedPhoto({ ...base, uid: 'b', card: undefined }), false);
+  // An idea between the two keeps its photos after the share stops.
+  assert.equal(mayReadSharedPhoto({ ...base, uid: 'b', card: undefined, inProposal: true }), true);
 });
 
 test('an idea proposal tells the side asked, and the asker of a yes', () => {
@@ -67,7 +68,10 @@ test('an idea proposal tells the side asked, and the asker of a yes', () => {
 test('a proposal writes small system lines into the pair\'s chat', () => {
   const names = { a: 'יונתן כהן', b: 'שרה לוי' };
   assert.deepEqual(proposalEvents('pending', 'approved', {}, {}, names, 'נועה ודוד'), [
-    'הרעיון נועה ודוד אושר ונפתח',
+    'הרעיון נועה ודוד אושר',
+  ]);
+  assert.deepEqual(proposalEvents('approved', 'opened', {}, {}, names, 'נועה ודוד'), [
+    'הרעיון נועה ודוד נפתח',
   ]);
   assert.deepEqual(
     proposalEvents('approved', 'approved', { a: { status: 'idea' } }, { a: { status: 'unavailable' } }, names, 'נועה ודוד'),
@@ -97,7 +101,7 @@ test('network notices sit under their own switches', () => {
 });
 
 test('a partner photo reaches the partner only while the couple space is active', () => {
-  const base = { ownerUid: 'a', path: 'partnerCards/a/p1/x.jpg', inProposal: false, connection: undefined };
+  const base = { ownerUid: 'a', path: 'partnerCards/a/p1/x.jpg', inProposal: false, card: undefined };
   assert.equal(validSharedPhotoPath('a', 'partnerCards/a/p1/x.jpg'), true);
   assert.equal(
     mayReadSharedPhoto({ ...base, uid: 'b', partnership: { status: 'active', uids: ['a', 'b'] } }),
@@ -107,9 +111,9 @@ test('a partner photo reaches the partner only while the couple space is active'
     mayReadSharedPhoto({ ...base, uid: 'b', partnership: { status: 'ended', uids: ['a', 'b'] } }),
     false,
   );
-  // A connection between matchmakers never opens a partner's database.
+  // A share between matchmakers never opens a partner's database.
   assert.equal(
-    mayReadSharedPhoto({ ...base, uid: 'c', connection: { status: 'approved', uids: ['a', 'c'] } }),
+    mayReadSharedPhoto({ ...base, uid: 'c', card: { ownerUid: 'a', readers: ['c'] } }),
     false,
   );
 });

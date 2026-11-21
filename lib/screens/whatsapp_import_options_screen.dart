@@ -44,11 +44,11 @@ class _WhatsAppImportOptionsScreenState
   bool _reprocess = false;
 
   DateTime? get _since => switch (_period) {
-        _Period.month => widget.now.subtract(const Duration(days: 30)),
-        _Period.threeMonths => widget.now.subtract(const Duration(days: 90)),
-        _Period.year => widget.now.subtract(const Duration(days: 365)),
-        _Period.all => null,
-      };
+    _Period.month => widget.now.subtract(const Duration(days: 30)),
+    _Period.threeMonths => widget.now.subtract(const Duration(days: 90)),
+    _Period.year => widget.now.subtract(const Duration(days: 365)),
+    _Period.all => null,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -63,8 +63,7 @@ class _WhatsAppImportOptionsScreenState
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: <Widget>[
-          Text('בחרו מה לקרוא מהקבוצה',
-              style: theme.textTheme.headlineSmall),
+          Text('בחרו מה לקרוא מהקבוצה', style: theme.textTheme.headlineSmall),
           const SizedBox(height: 8),
           const Text(
             'הודעות הקבוצה נקראות במכשיר. רק ההודעות שתבחרו יישלחו '
@@ -77,14 +76,16 @@ class _WhatsAppImportOptionsScreenState
             (_Period.threeMonths, '90 הימים האחרונים (מומלץ)'),
             (_Period.year, 'השנה האחרונה'),
             (_Period.all, 'כל ההיסטוריה'),
-          ].map((option) => RadioListTile<_Period>(
-                title: Text(option.$2),
-                value: option.$1,
-                groupValue: _period,
-                onChanged: (value) {
-                  if (value != null) setState(() => _period = value);
-                },
-              )),
+          ].map(
+            (option) => RadioListTile<_Period>(
+              title: Text(option.$2),
+              value: option.$1,
+              groupValue: _period,
+              onChanged: (value) {
+                if (value != null) setState(() => _period = value);
+              },
+            ),
+          ),
           if (widget.alreadyImported.isNotEmpty)
             CheckboxListTile(
               title: const Text('לקרוא מחדש הודעות שכבר יובאו'),
@@ -93,8 +94,7 @@ class _WhatsAppImportOptionsScreenState
                 'ותישאר מוגבלת ל-200 הודעות.',
               ),
               value: _reprocess,
-              onChanged: (value) =>
-                  setState(() => _reprocess = value ?? false),
+              onChanged: (value) => setState(() => _reprocess = value ?? false),
             ),
           const SizedBox(height: 12),
           Card(
@@ -103,8 +103,7 @@ class _WhatsAppImportOptionsScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text('הייבוא הקרוב',
-                      style: theme.textTheme.titleMedium),
+                  Text('הייבוא הקרוב', style: theme.textTheme.titleMedium),
                   const SizedBox(height: 10),
                   Text('הודעות מתאימות לתקופה: ${plan.eligible}'),
                   Text('כבר עובדו במכשיר: ${plan.skipped}'),
@@ -114,8 +113,10 @@ class _WhatsAppImportOptionsScreenState
                   if (plan.outsidePeriod > 0)
                     Text('מחוץ לתקופה: ${plan.outsidePeriod}'),
                   if (plan.undated > 0)
-                    Text('ללא תאריך מזוהה: ${plan.undated}. '
-                        'בחרו "כל ההיסטוריה" כדי לכלול אותן.'),
+                    Text(
+                      'ללא תאריך מזוהה: ${plan.undated}. '
+                      'בחרו "כל ההיסטוריה" כדי לכלול אותן.',
+                    ),
                   const SizedBox(height: 10),
                   const Text(
                     'עד 200 הודעות ו-5 בקשות AI בסבב. '

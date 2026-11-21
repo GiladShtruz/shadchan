@@ -31,6 +31,13 @@ abstract final class ContactHashUpload {
       ValueNotifier<Map<String, String>>(const <String, String>{});
 
   /// The owner's own name for [phoneHash], if their contacts have one.
+  /// The number saved in this phone for a hash — in memory only, never
+  /// uploaded. Lets "WhatsApp" reach a matchmaker this phone already has.
+  static final Map<String, String> contactPhones = <String, String>{};
+
+  static String? phoneFor(String? phoneHash) =>
+      phoneHash == null ? null : contactPhones[phoneHash];
+
   static String? nameFor(String? phoneHash) {
     if (phoneHash == null) {
       return null;
@@ -84,9 +91,16 @@ abstract final class ContactHashUpload {
             for (final Phone phone in contact.phones) phone.number,
           ],
       ];
-      final ({List<String> sorted, Map<String, String> names}) hashed =
-          await compute(_hashAll, plain);
+      final ({
+        List<String> sorted,
+        Map<String, String> names,
+        Map<String, String> phones,
+      })
+      hashed = await compute(_hashAll, plain);
       _lastScan = DateTime.now();
+      contactPhones
+        ..clear()
+        ..addAll(hashed.phones);
       if (!mapEquals(hashed.names, contactNames.value)) {
         contactNames.value = hashed.names;
       }
@@ -115,11 +129,15 @@ abstract final class ContactHashUpload {
   }
 
   /// [contacts] as `[name, number, number…]`; runs in an isolate.
-  static ({List<String> sorted, Map<String, String> names}) _hashAll(
-    List<List<String>> contacts,
-  ) {
+  static ({
+    List<String> sorted,
+    Map<String, String> names,
+    Map<String, String> phones,
+  })
+  _hashAll(List<List<String>> contacts) {
     final Set<String> hashes = <String>{};
     final Map<String, String> names = <String, String>{};
+    final Map<String, String> phones = <String, String>{};
     for (final List<String> contact in contacts) {
       if (contact.isEmpty) continue;
       final String name = contact.first;
@@ -129,17 +147,19 @@ abstract final class ContactHashUpload {
           continue;
         }
         hashes.add(hash);
+        phones.putIfAbsent(hash, () => number);
         if (name.isNotEmpty) {
           names.putIfAbsent(hash, () => name);
         }
       }
     }
-    return (sorted: hashes.toList()..sort(), names: names);
+    return (sorted: hashes.toList()..sort(), names: names, phones: phones);
   }
 
   static Future<void> forget() async {
     _lastScan = null;
     contactNames.value = const <String, String>{};
+    contactPhones.clear();
     await _settings?.deleteAll(<String>[_printKey, _atKey]);
   }
 }

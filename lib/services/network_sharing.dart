@@ -7,16 +7,22 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/card_access.dart';
+import 'package:shadchan/models/matchmaker_share.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/shared_card.dart';
 import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/services/sync_state_store.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/screen_perf.dart';
 
-/// How much of the database the connected matchmakers see.
+/// How much of the database one matchmaker shares with **one** other
+/// matchmaker. Every pair is decided on its own: sharing everything with
+/// יונתן says nothing about משה.
 enum ShareMode {
   /// Nothing — the default. Sharing is always a decision.
   none,
@@ -30,6 +36,13 @@ enum ShareMode {
   /// Every complete card except the friends picked one by one.
   allExcept;
 
+  MatchmakerShareMode get remote => switch (this) {
+    ShareMode.none => MatchmakerShareMode.none,
+    ShareMode.all => MatchmakerShareMode.all,
+    ShareMode.selected => MatchmakerShareMode.selected,
+    ShareMode.allExcept => MatchmakerShareMode.allExcept,
+  };
+
   static ShareMode byName(Object? name) {
     for (final ShareMode m in values) {
       if (m.name == name) return m;
@@ -38,51 +51,132 @@ enum ShareMode {
   }
 }
 
-/// Whether a friend's card can go to the connected matchmakers at all.
+/// Whether a friend's card can go to another matchmaker at all.
 enum ShareEligibility {
   /// A photo and card text — it can be shared.
   ready,
 
   /// No photo or no card text. **Only complete cards are ever shared**, even
-  /// under "שתף את כל המאגר".
+  /// under "כל המאגר".
   incomplete,
 
-  /// The friend keeps their own personal card, and has not said this
-  /// matchmaker may show it to other matchmakers (`cardAccess.shareOnward`).
+  /// The friend keeps their own personal card, and has not said their
+  /// matchmakers may show it to other matchmakers (`cardAccess.shareOnward`).
   awaitingConsent,
 
   /// Not a candidate to share: outside the database, a draft, married.
   notApplicable,
 }
 
-/// "שיתוף כרטיסים עם שדכנים מחוברים" — which cards of this matchmaker's
-/// database the matchmakers they are connected with may see, and the one
-/// place that writes them to `sharedCards/{uid}/cards`.
+/// What this matchmaker shares with one other matchmaker.
+@immutable
+class ShareChoice {
+  const ShareChoice(
+    this.mode, {
+    this.selected = const <String>{},
+    this.excluded = const <String>{},
+  });
+
+  static const ShareChoice off = ShareChoice(ShareMode.none);
+
+  final ShareMode mode;
+
+  /// "אנשים נבחרים": the friends picked for this matchmaker.
+  final Set<String> selected;
+
+  /// "כל המאגר חוץ מ…": the friends kept out.
+  final Set<String> excluded;
+
+  bool get isOn => mode != ShareMode.none;
+
+  /// Whether this choice includes [person] — eligibility aside. A single's
+  /// own personal card is included like any card: under "כל המאגר", or when
+  /// picked (their consent is checked by [NetworkSharing.eligibilityOf]).
+  bool includes(Person person) => switch (mode) {
+    ShareMode.none => false,
+    ShareMode.all => true,
+    ShareMode.selected => selected.contains(person.id),
+    ShareMode.allExcept => !excluded.contains(person.id),
+  };
+
+  ShareChoice copyWith({
+    ShareMode? mode,
+    Set<String>? selected,
+    Set<String>? excluded,
+  }) => ShareChoice(
+    mode ?? this.mode,
+    selected: selected ?? this.selected,
+    excluded: excluded ?? this.excluded,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'm': mode.name,
+    if (selected.isNotEmpty) 's': (selected.toList()..sort()),
+    if (excluded.isNotEmpty) 'x': (excluded.toList()..sort()),
+  };
+
+  static ShareChoice fromJson(Object? raw) {
+    if (raw is! Map) return off;
+    Set<String> ids(Object? list) => <String>{
+      if (list is List)
+        for (final Object? id in list)
+          if (id is String) id,
+    };
+    return ShareChoice(
+      ShareMode.byName(raw['m']),
+      selected: ids(raw['s']),
+      excluded: ids(raw['x']),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ShareChoice &&
+      other.mode == mode &&
+      setEquals(other.selected, selected) &&
+      setEquals(other.excluded, excluded);
+
+  @override
+  int get hashCode => Object.hash(
+    mode,
+    Object.hashAllUnordered(selected),
+    Object.hashAllUnordered(excluded),
+  );
+}
+
+/// Sharing cards with the matchmakers this matchmaker knows — **one decision
+/// per matchmaker**, and the one place that writes the published cards to
+/// `networkCards`.
 ///
-/// **Never a public database.** A shared card is readable only by
-/// matchmakers with an approved connection to this one (the rules check the
-/// connection on every read), view only, and without anything the matchmaker
-/// keeps for themselves — no phone, no notes ([SharedCardCodec]).
+/// **A card is published once, never copied per matchmaker.** Each shared
+/// friend is one document, `networkCards/{me}_{personId}`, naming its
+/// `readers` — the matchmakers whose choice includes it right now. Changing
+/// what יונתן sees rewrites the `readers` of the cards that moved; nothing
+/// is copied or deleted for him. A card nobody reads is removed.
 ///
-/// The choice is a synced setting (every phone of the account agrees), and
-/// the publish is idempotent: it reads what the server holds and writes only
-/// the difference, so two phones doing it at once cost nothing.
+/// **Never a public database.** Only the readers named read a card (the rules
+/// check `readers`), view only, and without anything the matchmaker keeps for
+/// themselves — no phone, no notes ([SharedCardCodec]).
+///
+/// The choices are a synced setting (every phone of the account agrees). The
+/// publish remembers a print of what it last put on the server, so an app
+/// open with nothing changed reads nothing at all.
 abstract final class NetworkSharing {
-  static const String modeKey = 'network.shareMode';
-  static const String selectedKey = 'network.shareSelected';
-  static const String excludedKey = 'network.shareExcluded';
-  static const String sinceKey = 'network.shareSince';
+  static const String choicesKey = 'network.shareChoices';
   static const String sentKey = 'network.sentCards';
   static const String onboardingKey = 'network.onboardingDone';
   static const String searchNetworkKey = 'people.searchNetwork';
+  static const String _printKey = 'network.publishedPrint';
+  static const String _legacyKey = 'network.legacyCleaned';
 
-  /// Bumped whenever the choice changes, for screens that show it.
+  /// Bumped whenever a choice changes, for screens that show it.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
-  /// What the last publish left on the server, for the settings screen.
+  /// How many cards the last publish left on the server (any reader).
   static final ValueNotifier<int?> publishedCount = ValueNotifier<int?>(null);
 
   static final Map<String, String> _pending = <String, String>{};
+  static Map<String, ShareChoice>? _choices;
 
   static String? _read(String key) {
     final String? pending = _pending[key];
@@ -113,24 +207,82 @@ abstract final class NetworkSharing {
     return <String>{};
   }
 
-  static ShareMode get mode => ShareMode.byName(_read(modeKey));
+  /// Every matchmaker this one decided something for, reader uid → choice.
+  static Map<String, ShareChoice> get choices {
+    final Map<String, ShareChoice>? cached = _choices;
+    if (cached != null) return cached;
+    final Map<String, ShareChoice> out = <String, ShareChoice>{};
+    final String? raw = _read(choicesKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          for (final MapEntry<Object?, Object?> e in decoded.entries) {
+            if (e.key is String) {
+              out[e.key! as String] = ShareChoice.fromJson(e.value);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return _choices = Map<String, ShareChoice>.unmodifiable(out);
+  }
 
-  /// Friends added to the share by hand — in every mode but [ShareMode.none].
-  static Set<String> get selected => _readSet(selectedKey);
+  /// What this matchmaker shares with [readerUid].
+  static ShareChoice choiceFor(String readerUid) =>
+      choices[readerUid] ?? ShareChoice.off;
 
-  /// Friends kept out by hand — they win over everything else.
-  static Set<String> get excluded => _readSet(excludedKey);
+  /// The matchmakers this one shares something with now.
+  static Iterable<String> get readers => <String>[
+    for (final MapEntry<String, ShareChoice> e in choices.entries)
+      if (e.value.isOn) e.key,
+  ];
 
-  /// When this matchmaker first opened their database to the network.
-  ///
-  /// **Cards already in the database before that moment are never opened
-  /// automatically**, even under "שתף הכל": they join only when the
-  /// matchmaker adds them ([selected]). "שתף הכל" shares every card added
-  /// from then on — and offers the earlier ones to add in one go.
-  static DateTime? get since => DateTime.tryParse(_read(sinceKey) ?? '');
+  /// Whether this matchmaker shares anything with anybody.
+  static bool get sharesAnything => readers.isNotEmpty;
+
+  /// Decides what [readerUid] sees — at once: the share row is written now
+  /// (so a stop is a stop even before the cards are rewritten), and the cards
+  /// follow on the next publish, which the [revision] bump triggers.
+  static Future<bool> setChoice({
+    required String readerUid,
+    required ShareChoice choice,
+    required String myName,
+    required String theirName,
+    required Iterable<Person> people,
+    CardAccess? Function(String ownerUid)? accessTo,
+  }) async {
+    final Map<String, ShareChoice> next = Map<String, ShareChoice>.of(choices);
+    if (choice.isOn) {
+      next[readerUid] = choice;
+    } else {
+      next.remove(readerUid);
+    }
+    _choices = Map<String, ShareChoice>.unmodifiable(next);
+    _write(
+      choicesKey,
+      jsonEncode(<String, Object?>{
+        for (final MapEntry<String, ShareChoice> e in next.entries)
+          e.key: e.value.toJson(),
+      }),
+    );
+    final int count = choice.isOn
+        ? sharedWith(readerUid, people, accessTo: accessTo).length
+        : 0;
+    // Only a row that exists or is worth writing: switching off a reader who
+    // never had a share writes nothing.
+    if (!choice.isOn && MatchmakerShares.mine(readerUid) == null) return true;
+    return MatchmakerShares.setMine(
+      readerUid: readerUid,
+      mode: choice.mode.remote,
+      count: count,
+      myName: myName,
+      theirName: theirName,
+    );
+  }
 
   /// Friends whose card was sent to a matchmaker one by one (chat) — their
-  /// photos stay in Storage even when they are not in the shared pool.
+  /// photos stay in Storage even when nobody else reads them.
   static Set<String> get sent => _readSet(sentKey);
 
   /// Whether the short "how sharing works" introduction was seen or closed.
@@ -145,62 +297,37 @@ abstract final class NetworkSharing {
   static set alsoSearchNetwork(bool on) =>
       _write(searchNetworkKey, on ? 'true' : 'false');
 
-  static void setMode(ShareMode mode) {
-    if (mode != ShareMode.none && since == null) {
-      _write(sinceKey, DateTime.now().toIso8601String());
-    }
-    _write(modeKey, mode.name);
-  }
-
-  static void setSelected(Set<String> ids) =>
-      _write(selectedKey, jsonEncode(ids.toList()..sort()));
-  static void setExcluded(Set<String> ids) =>
-      _write(excludedKey, jsonEncode(ids.toList()..sort()));
-
   static void noteSent(String personId) {
     final Set<String> ids = sent;
     if (ids.add(personId)) _write(sentKey, jsonEncode(ids.toList()..sort()));
   }
 
-  /// Adds [ids] to the share, in one go (the caller asked first — see
-  /// `SharingSettingsScreen.confirmAdding`). Sharing that was off becomes
-  /// "אנשים מסוימים".
-  static void add(Iterable<String> ids) {
-    final Set<String> add = ids.toSet();
-    if (add.isEmpty) return;
-    if (mode == ShareMode.none) setMode(ShareMode.selected);
-    setSelected(selected..addAll(add));
-    final Set<String> out = excluded;
-    if (out.intersection(add).isNotEmpty) setExcluded(out..removeAll(add));
-  }
-
-  /// Takes [person] out of the share: whatever put them in.
-  static void remove(Person person) {
-    final Set<String> picked = selected;
-    if (picked.remove(person.id)) setSelected(picked);
-    if (chosen(person)) setExcluded(excluded..add(person.id));
-  }
-
-  /// Test seam: every choice back to its default, and a start of sharing.
+  /// Test seam: every choice back to its default.
   @visibleForTesting
-  static void debugReset({DateTime? since}) {
+  static void debugReset() {
     for (final String key in <String>[
-      modeKey,
-      selectedKey,
-      excludedKey,
-      sinceKey,
+      choicesKey,
       sentKey,
       onboardingKey,
+      _printKey,
     ]) {
       _pending[key] = '';
     }
-    if (since != null) _pending[sinceKey] = since.toIso8601String();
+    _choices = null;
+    revision.value++;
+  }
+
+  /// Test seam: choices as if they had been made, without the server.
+  @visibleForTesting
+  static void debugSetChoices(Map<String, ShareChoice> choices) {
+    _choices = Map<String, ShareChoice>.unmodifiable(choices);
     revision.value++;
   }
 
   /// The account changed the settings box.
   static void forgetCache() {
     _pending.clear();
+    _choices = null;
     revision.value++;
   }
 
@@ -238,28 +365,20 @@ abstract final class NetworkSharing {
     return hasText && hasPhoto;
   }
 
-  /// Whether the matchmaker's choice includes [person]:
-  ///
-  ///  - nothing while sharing is off;
-  ///  - never a friend kept out by hand;
-  ///  - always a friend added by hand;
-  ///  - **a single's own personal card, by default** — the single already
-  ///    said their matchmakers may show it (eligibility checks that), and the
-  ///    matchmaker can still keep it out;
-  ///  - under "שתף הכל", every card added since sharing started ([since]) —
-  ///    never the older ones by themselves.
-  static bool chosen(Person person) => _Choice.now().includes(person);
+  /// The matchmakers [person]'s card goes to right now (eligibility aside).
+  static Set<String> readersOf(Person person) => <String>{
+    for (final MapEntry<String, ShareChoice> e in choices.entries)
+      if (e.value.includes(person)) e.key,
+  };
 
-  /// The friends shared right now: chosen and [ShareEligibility.ready].
-  ///
-  /// The choice is read once for the whole list — it used to be decoded from
-  /// the settings again for every friend, on every rebuild of a screen.
-  static List<Person> sharedNow(
+  /// The friends [readerUid] sees right now: chosen for them and ready.
+  static List<Person> sharedWith(
+    String readerUid,
     Iterable<Person> people, {
     CardAccess? Function(String ownerUid)? accessTo,
   }) {
-    final _Choice choice = _Choice.now();
-    if (choice.mode == ShareMode.none) return <Person>[];
+    final ShareChoice choice = choiceFor(readerUid);
+    if (!choice.isOn) return <Person>[];
     return <Person>[
       for (final Person p in people)
         if (choice.includes(p) &&
@@ -268,12 +387,28 @@ abstract final class NetworkSharing {
     ];
   }
 
-  /// Complete cards that could join the share and have not.
-  static List<Person> addable(
+  /// Every friend shared with at least one matchmaker.
+  static List<Person> sharedNow(
     Iterable<Person> people, {
     CardAccess? Function(String ownerUid)? accessTo,
   }) {
-    final _Choice choice = _Choice.now();
+    final Map<String, ShareChoice> all = choices;
+    if (all.values.every((ShareChoice c) => !c.isOn)) return <Person>[];
+    return <Person>[
+      for (final Person p in people)
+        if (all.values.any((ShareChoice c) => c.includes(p)) &&
+            eligibilityOf(p, accessTo: accessTo) == ShareEligibility.ready)
+          p,
+    ];
+  }
+
+  /// Complete cards that could be shared with [readerUid] and are not.
+  static List<Person> addableFor(
+    String readerUid,
+    Iterable<Person> people, {
+    CardAccess? Function(String ownerUid)? accessTo,
+  }) {
+    final ShareChoice choice = choiceFor(readerUid);
     return <Person>[
       for (final Person p in people)
         if (!choice.includes(p) &&
@@ -282,36 +417,18 @@ abstract final class NetworkSharing {
     ];
   }
 
-  /// Under "שתף הכל": the complete cards from before sharing started, which
-  /// were deliberately not opened by themselves.
-  static List<Person> earlierNotShared(
-    Iterable<Person> people, {
-    CardAccess? Function(String ownerUid)? accessTo,
-  }) {
-    final DateTime? start = since;
-    if (start == null || mode == ShareMode.none || mode == ShareMode.selected) {
-      return const <Person>[];
-    }
-    final Set<String> out = excluded;
-    return <Person>[
-      for (final Person p in addable(people, accessTo: accessTo))
-        if (p.createdAt.isBefore(start) && !out.contains(p.id)) p,
-    ];
-  }
-
   static bool _running = false;
   static bool _again = false;
 
-  /// Brings `sharedCards/{uid}/cards` to exactly [sharedNow]. Quiet on any
+  /// Brings `networkCards` to exactly what the choices say. Quiet on any
   /// failure — the next change or app open tries again.
   static Future<void> publish({
     required Iterable<Person> people,
     required String ownerName,
     CardAccess? Function(String ownerUid)? accessTo,
+    bool force = false,
   }) async {
     if (!FirebaseBootstrap.isReady) return;
-    // Sharing is off and the server holds nothing of it: nothing to read.
-    if (mode == ShareMode.none && publishedCount.value == 0) return;
     if (_running) {
       _again = true;
       return;
@@ -324,46 +441,94 @@ abstract final class NetworkSharing {
           people: people.toList(),
           ownerName: ownerName,
           accessTo: accessTo,
+          force: force,
         );
       } while (_again);
     } catch (error) {
       debugPrint('NetworkSharing: $error');
+      // Forget the print so the next run reads the server again.
+      _pending[_printKey] = '';
+      persistHomeSetting(_printKey, '');
     } finally {
       _running = false;
     }
   }
 
+  /// The search key a reader's query runs on: the full name, folded.
+  static String nameKeyOf(Person person) =>
+      SharedCardCodec.nameKey('${person.firstName} ${person.lastName}');
+
   static Future<void> _publishOnce({
     required List<Person> people,
     required String ownerName,
     CardAccess? Function(String ownerUid)? accessTo,
+    required bool force,
   }) async {
     final String? uid = await PersonalCardService.durableUid();
     if (uid == null) return;
+    await _cleanLegacy(uid);
+
+    // What the server should hold: each shared friend, with its readers.
+    final Map<String, ShareChoice> all = choices;
+    final Map<String, (Person, List<String>)> desired =
+        <String, (Person, List<String>)>{};
+    final Map<String, int> perReader = <String, int>{
+      for (final MapEntry<String, ShareChoice> e in all.entries)
+        if (e.value.isOn) e.key: 0,
+    };
+    for (final Person p in people) {
+      final List<String> readers = <String>[
+        for (final MapEntry<String, ShareChoice> e in all.entries)
+          if (e.value.includes(p)) e.key,
+      ]..sort();
+      if (readers.isEmpty) continue;
+      if (eligibilityOf(p, accessTo: accessTo) != ShareEligibility.ready) {
+        continue;
+      }
+      desired[p.id] = (p, readers);
+      for (final String r in readers) {
+        perReader[r] = (perReader[r] ?? 0) + 1;
+      }
+    }
+    final String print = SyncStateStore.fingerprint(<String, Object?>{
+      'owner': ownerName,
+      for (final MapEntry<String, (Person, List<String>)> e in desired.entries)
+        e.key: <Object?>[
+          SharedCardCodec.values(
+            e.value.$1,
+            ownerUid: uid,
+            ownerName: ownerName,
+          ),
+          e.value.$2,
+          CardPhotoPrivacy.shareable(e.value.$1),
+        ],
+    });
+    if (!force && _read(_printKey) == print) {
+      publishedCount.value = desired.length;
+      await _syncCounts(perReader);
+      return;
+    }
+
     final CollectionReference<Map<String, dynamic>> col = FirebaseFirestore
         .instance
-        .collection('sharedCards')
-        .doc(uid)
-        .collection('cards');
-    final QuerySnapshot<Map<String, dynamic>> remote = await col.get(
-      const GetOptions(source: Source.server),
-    );
+        .collection(SharedCardCodec.collection);
+    ScreenPerf.noteQuery();
+    final QuerySnapshot<Map<String, dynamic>> remote = await col
+        .where('ownerUid', isEqualTo: uid)
+        .get(const GetOptions(source: Source.server));
     final Map<String, Map<String, dynamic>> held =
         <String, Map<String, dynamic>>{
           for (final QueryDocumentSnapshot<Map<String, dynamic>> d
               in remote.docs)
-            d.id: d.data(),
+            (d.data()['personId'] as String?) ?? d.id: d.data(),
         };
-    final Map<String, Person> desired = <String, Person>{
-      for (final Person p in sharedNow(people, accessTo: accessTo)) p.id: p,
-    };
 
-    // Whatever is no longer chosen, complete or consented leaves first. A
-    // card also sent to somebody one by one keeps its photos for them.
+    // Whatever nobody reads any more leaves first. A card also sent to
+    // somebody one by one keeps its photos for them.
     final Set<String> sentOnes = sent;
     for (final String id in held.keys) {
       if (!desired.containsKey(id)) {
-        await col.doc(id).delete();
+        await col.doc(SharedCardCodec.docId(uid, id)).delete();
         if (!sentOnes.contains(id)) {
           await _deletePhotos(uid, id, keep: const <String>{});
         }
@@ -371,7 +536,10 @@ abstract final class NetworkSharing {
     }
 
     int count = 0;
-    for (final Person person in desired.values) {
+    for (final MapEntry<String, (Person, List<String>)> entry
+        in desired.entries) {
+      final Person person = entry.value.$1;
+      final List<String> readers = entry.value.$2;
       final List<File> files = <File>[];
       for (final String path in CardPhotoPrivacy.shareable(person)) {
         if (files.length >= SharedCardCodec.maxPhotos) break;
@@ -401,9 +569,13 @@ abstract final class NetworkSharing {
       final Map<String, dynamic>? before = held[person.id];
       final List<Object?> heldPaths =
           (before?['photoPaths'] as List?) ?? const <Object?>[];
+      final List<Object?> heldReaders =
+          ((before?['readers'] as List?) ?? const <Object?>[]).toList()
+            ..sort((Object? a, Object? b) => '$a'.compareTo('$b'));
       if (before != null &&
           _sameValues(values, before) &&
-          listEquals(heldPaths, paths)) {
+          listEquals(heldPaths, paths) &&
+          listEquals(heldReaders, readers)) {
         count++;
         continue;
       }
@@ -414,13 +586,14 @@ abstract final class NetworkSharing {
             .putFile(files[i], SettableMetadata(contentType: 'image/jpeg'));
       }
       await col
-          .doc(person.id)
+          .doc(SharedCardCodec.docId(uid, person.id))
           .set(
             SharedCardCodec.toRemote(
               person,
               ownerUid: uid,
               ownerName: ownerName,
               photoPaths: paths,
+              readers: readers,
             ),
           );
       if (!sentOnes.contains(person.id)) {
@@ -429,6 +602,39 @@ abstract final class NetworkSharing {
       count++;
     }
     publishedCount.value = count;
+    _pending[_printKey] = print;
+    persistHomeSetting(_printKey, print);
+    await _syncCounts(perReader);
+  }
+
+  /// Writes each reader's card count onto their share row, where it moved.
+  static Future<void> _syncCounts(Map<String, int> perReader) async {
+    for (final MapEntry<String, int> e in perReader.entries) {
+      await MatchmakerShares.updateCount(e.key, e.value);
+    }
+  }
+
+  /// The pre-2026-11-20 model kept one copy per card in
+  /// `sharedCards/{me}/cards`, readable by every connected matchmaker. Those
+  /// copies are removed once, by their owner — the old model is gone.
+  static Future<void> _cleanLegacy(String uid) async {
+    if (_read(_legacyKey) == 'true') return;
+    try {
+      ScreenPerf.noteQuery();
+      final QuerySnapshot<Map<String, dynamic>> old = await FirebaseFirestore
+          .instance
+          .collection('sharedCards')
+          .doc(uid)
+          .collection('cards')
+          .get();
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> d in old.docs) {
+        await d.reference.delete();
+      }
+      _pending[_legacyKey] = 'true';
+      persistHomeSetting(_legacyKey, 'true');
+    } catch (error) {
+      debugPrint('NetworkSharing legacy: $error');
+    }
   }
 
   static bool _sameValues(
@@ -456,35 +662,5 @@ abstract final class NetworkSharing {
     } catch (error) {
       debugPrint('NetworkSharing photos: $error');
     }
-  }
-
-  /// Stops sharing everything at once — "ביטול השיתוף".
-  static void stopAll() => setMode(ShareMode.none);
-}
-
-/// The sharing choice, read from the settings once.
-class _Choice {
-  _Choice(this.mode, this.selected, this.excluded, this.since);
-
-  factory _Choice.now() => _Choice(
-    NetworkSharing.mode,
-    NetworkSharing.selected,
-    NetworkSharing.excluded,
-    NetworkSharing.since,
-  );
-
-  final ShareMode mode;
-  final Set<String> selected;
-  final Set<String> excluded;
-  final DateTime? since;
-
-  bool includes(Person person) {
-    if (mode == ShareMode.none) return false;
-    if (excluded.contains(person.id)) return false;
-    if (selected.contains(person.id)) return true;
-    if ((person.cardOwnerUid ?? '').isNotEmpty) return true;
-    if (mode == ShareMode.selected) return false;
-    final DateTime? start = since;
-    return start == null || !person.createdAt.isBefore(start);
   }
 }

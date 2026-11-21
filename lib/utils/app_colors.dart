@@ -5,68 +5,89 @@ import 'package:shadchan/utils/enums.dart';
 enum MetricKind { friends, ideas, couples, weddings }
 
 abstract final class AppColors {
-  static const Color primary = Color(0xFF7F9EAA);
-  static const Color primaryLight = Color(0xFFD7E4EA);
-  static const Color primaryDark = Color(0xFF5F7F8C);
-  static const Color secondary = Color(0xFFC1845B);
-  static const Color secondaryLight = Color(0xFFEFE4D4);
+  // **The palette (2026-11-20, "וינטג' רענן") — the only seven colours the app
+  // is drawn in.** Everything else in this file is one of them, a light wash
+  // of one of them on white/cream, or one deepened toward the dark blue for
+  // text. Recommended weight on a screen: 70% cream/white, 15% blue and
+  // teal, 10% copper, 5% rose. Do not add a hue that is not here.
+  //
+  //  - [darkBlue]  #324754  text, headings, icons
+  //  - [blue]      #5F91A3  the main blue: highlights, central elements
+  //  - [teal]      #8FB7C4  light grounds, tags, rules between things
+  //  - [rose]      #C97891  complementary highlights, tags
+  //  - [copper]    #C98657  the main actions (FAB, send, CTA)
+  //  - [cream]     #FAF7F1  the page and wide areas
+  //  - [white]     #FFFFFF  cards, windows, clean content
+  static const Color darkBlue = Color(0xFF324754);
+  static const Color blue = Color(0xFF5F91A3);
+  static const Color teal = Color(0xFF8FB7C4);
+  static const Color rose = Color(0xFFC97891);
+  static const Color copper = Color(0xFFC98657);
+  static const Color cream = Color(0xFFFAF7F1);
+  static const Color white = Color(0xFFFFFFFF);
 
-  /// Deeper members of the two brand hues, for text and icons sitting on a
-  /// light wash of their own colour — the brand tone itself is too pale there
-  /// to stay readable.
-  static const Color primaryInk = Color(0xFF3F5A66);
-  static const Color secondaryInk = Color(0xFF8F5F3D);
+  static const Color primary = blue;
+
+  /// A light wash of [teal] — chips, selected rows, soft grounds.
+  static const Color primaryLight = Color(0xFFDDE9ED);
+
+  /// The blue a thing is *marked* in (a man's accent, an open idea). The
+  /// palette has one main blue; this is it.
+  static const Color primaryDark = blue;
+  static const Color secondary = copper;
+
+  /// A light wash of [copper] on cream.
+  static const Color secondaryLight = Color(0xFFF3E7DB);
+
+  /// Deeper members of the two hues, for text and icons on their own light
+  /// wash: the dark blue itself, and the copper drawn toward it.
+  static const Color primaryInk = darkBlue;
+  static const Color secondaryInk = Color(0xFF9C7356);
 
   /// What is drawn *on* a colour or on cream — a button's label, a ring
-  /// around a face, the inside of a framed box. Plain white: the near-white
-  /// "warm" shade this used to be was one more cream beside [cardCream].
-  static const Color surface = page;
+  /// around a face, the inside of a framed box.
+  static const Color surface = white;
 
-  /// The palette's one cream. Kept as a name of its own for the places that
-  /// read "the background tone", and the same colour as [cardCream].
-  static const Color background = cardCream;
+  /// The page.
+  static const Color background = cream;
 
-  /// **The page is white; what sits on it is cream.** The whole screen behind
-  /// everything — every scaffold, every bar — is plain white, the way a chat
-  /// list reads clean in daylight. A bounded thing on it — a card, a tile, a
-  /// sheet, a figure square — is the app's own cream.
-  ///
-  /// **One cream, `#FAF8F3`, everywhere.** It is light and nearly neutral, so
-  /// a card separates from the white page softly rather than as a block of
-  /// colour, and it is the only cream in the palette: cards, tiles, content
-  /// areas and secondary grounds all use it. There used to be four
-  /// (`#FBF6EE`, `#F7F0E4`, `#FFFDF8`, `#FCFAF5`) a few points apart, which
-  /// read as dirt rather than design wherever two of them met. Do not add a
-  /// second; a quieter or warmer ground is a wash of a brand colour instead.
-  static const Color page = Color(0xFFFFFFFF);
-  static const Color cardCream = Color(0xFFFAF8F3);
-  static const Color onPrimary = page;
-  static const Color onSecondary = Color(0xFF211D17);
-  static const Color onSurface = Color(0xFF211D17);
-  static const Color onSurfaceVariant = Color(0xFF7C7468);
-  static const Color outline = Color(0xFFE2D7C8);
-  static const Color error = Color(0xFFD32F2F);
-  static const Color divider = Color(0xFFE2D7C8);
+  /// **The page is cream; what sits on it is white** — the palette's own
+  /// rule ("קרם – רקע כללי", "לבן – כרטיסים, חלונות"). Every scaffold and
+  /// bar is [cream]; a bounded thing on it — a card, a tile, a sheet, a
+  /// figure square — is white.
+  static const Color page = cream;
 
-  static const Color statusIdea = primary;
-  static const Color statusChecking = Color(0xFFB99A55);
-  static const Color statusUnavailable = Color(0xFF948577);
-  static const Color statusRejected = Color(0xFFA96B49);
-  static const Color statusDating = Color(0xFF6F7A55);
-  static const Color statusDated = Color(0xFF948577);
-  static const Color statusMarried = Color(0xFF6F7A55);
+  /// The ground of a card. Kept under its old name (it was a cream once)
+  /// because widgets across the app name it; it is the palette's white.
+  static const Color card = white;
+  static const Color cardCream = card;
+  static const Color onPrimary = white;
+  static const Color onSecondary = white;
+  static const Color onSurface = darkBlue;
+  static const Color onSurfaceVariant = mutedInk;
+  static const Color outline = Color(0xFFE2E2DE);
+  static const Color error = Color(0xFFAB6E85);
+  static const Color divider = Color(0xFFE8E7E3);
 
-  /// The one green the app means "done, together" by, lifted for the dark
-  /// theme. Named here so no widget picks its own shade of it.
-  static const Color statusDatingDm = Color(0xFF9DB07A);
+  static const Color statusIdea = blue;
+  static const Color statusChecking = copper;
+  static const Color statusUnavailable = mutedInk;
+  static const Color statusRejected = copper;
+  static const Color statusDating = rose;
+  static const Color statusDated = mutedInk;
+  static const Color statusMarried = darkBlue;
 
-  static const Color softBlue = Color(0xFFD7E4EA);
-  static const Color softPink = Color(0xFFE6D4C0);
-  static const Color softGreen = Color(0xFFDDE3CF);
-  static const Color softPurple = Color(0xFFDDD7E7);
-  static const Color softSand = Color(0xFFE6D4C0);
-  static const Color softYellow = Color(0xFFEFE0B8);
-  static const Color softRose = Color(0xFFEFDDE4);
+  /// "Done, together", lifted for the dark theme.
+  static const Color statusDatingDm = femaleAccentDm;
+
+  /// Light washes of the palette, for grounds behind a mark.
+  static const Color softBlue = primaryLight;
+  static const Color softPink = Color(0xFFF5E7EB);
+  static const Color softGreen = Color(0xFFE6EFF2);
+  static const Color softPurple = Color(0xFFF5E7EB);
+  static const Color softSand = Color(0xFFF6ECE4);
+  static const Color softYellow = Color(0xFFF6ECE4);
+  static const Color softRose = Color(0xFFF5E7EB);
 
   /// What the two home entry cards are drawn in: their line drawing and the
   /// rule along their bottom edge.
@@ -95,13 +116,13 @@ abstract final class AppColors {
   /// instead of inventing a fifth convention.
   static const Color metricFriends = primaryDark;
   static const Color metricIdeas = secondary;
-  static const Color metricCouples = primary;
+  static const Color metricCouples = teal;
   static const Color metricWeddings = femaleAccent;
 
   /// The same four in the dark theme.
   static const Color metricFriendsDm = primaryDarkDm;
   static const Color metricIdeasDm = secondaryDarkDm;
-  static const Color metricCouplesDm = Color(0xFF8FB0BC);
+  static const Color metricCouplesDm = Color(0xFF9ABECA);
   static const Color metricWeddingsDm = femaleAccentDm;
 
   /// The metric colour for [dark] or light, in one call.
@@ -134,7 +155,7 @@ abstract final class AppColors {
   /// warm taupe of [onSurfaceVariant]: beside navy, the warm one reads as a
   /// third colour instead of as quieter text.
   static const Color headingInk = primaryInk;
-  static const Color mutedInk = Color(0xFF5E5C58);
+  static const Color mutedInk = Color(0xFF6A7880);
   static const Color headingInkDm = primaryDarkDm;
   static const Color mutedInkDm = onSurfaceVariantDm;
 
@@ -148,10 +169,10 @@ abstract final class AppColors {
       <({Color surface, Color ink})>[
         (surface: softRose, ink: femaleAccent),
         (surface: softBlue, ink: primaryDark),
-        (surface: softGreen, ink: statusDating),
-        (surface: softPurple, ink: Color(0xFF7A6E93)),
-        (surface: softSand, ink: statusRejected),
-        (surface: softYellow, ink: Color(0xFF8A7333)),
+        (surface: softPink, ink: femaleInk),
+        (surface: softGreen, ink: darkBlue),
+        (surface: secondaryLight, ink: secondaryInk),
+        (surface: softSand, ink: secondaryInk),
       ];
 
   /// Picks a stable pastel for [seed] so the same contact always keeps the same
@@ -169,29 +190,29 @@ abstract final class AppColors {
   // app with the lights down — and the copper, the rose and the light blue
   // carry the warmth on top of it. Nothing is `#000`, and nothing is the cold
   // near-black slate the theme used to be.
-  static const Color primaryDarkDm = Color(0xFFAFC7D0);
-  static const Color primaryLightDarkDm = Color(0xFF294C57);
-  static const Color secondaryDarkDm = Color(0xFFD6A17A);
-  static const Color secondaryLightDarkDm = Color(0xFF33383A);
-  static const Color backgroundDm = Color(0xFF1D262B);
-  static const Color surfaceDm = Color(0xFF263239);
-  static const Color onSurfaceDm = Color(0xFFEDE6DA);
-  static const Color onSurfaceVariantDm = Color(0xFFA8A49C);
-  static const Color outlineDm = Color(0xFF41525B);
-  static const Color dividerDm = Color(0xFF33434B);
+  static const Color primaryDarkDm = Color(0xFF9ABECA);
+  static const Color primaryLightDarkDm = Color(0xFF426170);
+  static const Color secondaryDarkDm = Color(0xFFD5A27E);
+  static const Color secondaryLightDarkDm = Color(0xFF495054);
+  static const Color backgroundDm = Color(0xFF1D2931);
+  static const Color surfaceDm = Color(0xFF26353F);
+  static const Color onSurfaceDm = cream;
+  static const Color onSurfaceVariantDm = Color(0xFFB4CDD4);
+  static const Color outlineDm = Color(0xFF4B5D69);
+  static const Color dividerDm = Color(0xFF3E525E);
 
   /// Per-gender accents. Men keep the app's stone blue; women get a muted
   /// rose-mauve picked to sit next to the copper/cream palette rather than a
   /// saturated pink.
   static const Color maleAccent = primaryDark;
   static const Color maleSurface = softBlue;
-  static const Color femaleAccent = Color(0xFFA9748A);
-  static const Color femaleSurface = Color(0xFFEFDDE4);
-  static const Color femaleAccentDm = Color(0xFFCFA3B5);
+  static const Color femaleAccent = rose;
+  static const Color femaleSurface = softRose;
+  static const Color femaleAccentDm = Color(0xFFD598A9);
 
   /// The rose as ink: [femaleAccent] deepened far enough to be read as text
   /// on its own light wash, the way [primaryInk] is to the blue.
-  static const Color femaleInk = Color(0xFF7E4D62);
+  static const Color femaleInk = Color(0xFF94677C);
 
   static Color genderAccent(Gender gender, {bool dark = false}) {
     if (gender != Gender.female) {
@@ -210,11 +231,11 @@ abstract final class AppColors {
   }
 
   /// Marks a person as a favorite in the people list.
-  static const Color favorite = Color(0xFFC2185B);
+  static const Color favorite = rose;
 
-  static const Color profileAvailable = Color(0xFF3E8E5A);
-  static const Color profileBusy = Color(0xFFC0392B);
-  static const Color profileOnBreak = Color(0xFFB07D18);
+  static const Color profileAvailable = blue;
+  static const Color profileBusy = rose;
+  static const Color profileOnBreak = copper;
 
   /// Quieter versions of the availability colours, drawn from the app's own
   /// warm palette instead of the traffic-light primaries. Used where the tag
@@ -222,18 +243,19 @@ abstract final class AppColors {
   static Color profileStatusSoftColor(ProfileStatus status) {
     switch (status) {
       case ProfileStatus.available:
-        return statusDating;
+        return blue;
       case ProfileStatus.busy:
-        return statusRejected;
+        return rose;
       case ProfileStatus.onBreak:
-        return statusChecking;
+        return copper;
       case ProfileStatus.mazelTov:
         return secondary;
     }
   }
 
   /// **The dot beside an availability tag.** Three states, three plain
-  /// colours: free is green, on a break is the palette's brown, taken is red.
+  /// colours, all from the palette: free is the blue, on a break the copper,
+  /// taken the rose.
   ///
   /// It exists because the *word* beside it no longer carries the state — the
   /// tag is written in the person's own gender colour, blue for a man and rose
@@ -253,7 +275,7 @@ abstract final class AppColors {
     }
   }
 
-  /// Colour for a person's availability tag: green / red / amber.
+  /// Colour for a person's availability tag: blue / rose / copper.
   static Color profileStatusColor(ProfileStatus status) {
     switch (status) {
       case ProfileStatus.available:

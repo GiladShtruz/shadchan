@@ -18,16 +18,16 @@ JOIN_CSS = """
 @font-face { font-family: 'Google Sans'; font-weight: 700;
   src: url('fonts/GoogleSans-Bold.woff') format('woff'); font-display: swap; }
 :root {
-  --paper: #FAF8F3; --card: #FFFFFF; --ink: #3F5A66; --body: #211D17;
-  --muted: #5E5C58; --copper: #C1845B; --copper-ink: #211D17;
-  --line: #E2D7C8; --wash: #EFE4D4; --blue-wash: #D7E4EA;
+  --paper: #FAF7F1; --card: #FFFFFF; --ink: #324754; --body: #324754;
+  --muted: #6A7880; --copper: #C98657; --copper-ink: #FFFFFF;
+  --line: #E2E2DE; --wash: #F3E7DB; --blue-wash: #DDE9ED;
   --shadow: 0 6px 22px rgba(33, 29, 23, 0.10), 0 1px 3px rgba(33, 29, 23, 0.06);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #1D262B; --card: #263239; --ink: #A9C3CE; --body: #EDE6DA;
-    --muted: #B5ADA1; --line: #3A4850; --wash: #2F3B42; --blue-wash: #2F3E46;
+    --paper: #1D2931; --card: #26353F; --ink: #9ABECA; --body: #FAF7F1;
+    --muted: #B4CDD4; --line: #4B5D69; --wash: #495054; --blue-wash: #426170;
     --shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
   }
 }
@@ -105,7 +105,7 @@ _TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#FAF8F3">
+<meta name="theme-color" content="#FAF7F1">
 <title>הוזמנת לשדכן</title>
 <meta name="description" content="שדכן — יומן אישי לניהול שידוכים בין חברים, עם אזור אישי לניהול כרטיס השידוכים שלך.">
 <link rel="icon" href="icon.png">

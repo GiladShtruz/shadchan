@@ -196,7 +196,11 @@ class AppMenuButton extends StatelessWidget {
         Icons.handshake_outlined,
         'שדכנים שאני מכיר',
       ),
-      _item(AppMenuAction.network, Icons.diversity_3_outlined, 'המאגר המשותף'),
+      _item(
+        AppMenuAction.network,
+        Icons.diversity_3_outlined,
+        'כרטיסים ששיתפו איתי',
+      ),
       _item(AppMenuAction.chats, Icons.chat_bubble_outline_rounded, 'צ\'אטים'),
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
       const PopupMenuDivider(height: 9),

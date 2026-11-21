@@ -750,7 +750,10 @@ abstract final class AppRouter {
       GoRoute(
         path: NetworkScreen.route,
         builder: (BuildContext context, GoRouterState state) {
-          return NetworkScreen(forPersonId: state.uri.queryParameters['for']);
+          return NetworkScreen(
+            forPersonId: state.uri.queryParameters['for'],
+            ownerUid: state.uri.queryParameters['owner'],
+          );
         },
         routes: <RouteBase>[
           GoRoute(
@@ -773,7 +776,10 @@ abstract final class AppRouter {
           GoRoute(
             path: 'sharing',
             builder: (BuildContext context, GoRouterState state) {
-              return const SharingSettingsScreen();
+              return SharingSettingsScreen(
+                readerUid: state.uri.queryParameters['with'],
+                readerName: state.uri.queryParameters['name'],
+              );
             },
           ),
         ],

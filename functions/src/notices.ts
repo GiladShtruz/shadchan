@@ -36,8 +36,9 @@ const PUSHED_KINDS = new Set([
   'adminAlert',
   // Matchmakers who know each other ("שדכנים שאני מכיר").
   'matchmakerJoined',
-  'connectionRequest',
-  'connectionApproved',
+  'shareRequest',
+  'shareOpened',
+  'shareStopped',
   // The network between connected matchmakers: only the single's own
   // question is pushed — offers and answers wait in the chat.
   'shareOnwardRequest',
@@ -63,8 +64,9 @@ export function categoryOf(kind: string): string {
     case 'accessRequest':
     case 'accessApproved':
     case 'accessDeclined':
-    case 'connectionRequest':
-    case 'connectionApproved':
+    case 'shareRequest':
+    case 'shareOpened':
+    case 'shareStopped':
     case 'statusReport':
       return 'access';
     case 'birthday':

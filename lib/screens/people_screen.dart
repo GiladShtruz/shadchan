@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/screens/friends_with_cards_screen.dart';
@@ -14,6 +16,7 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/shared_card.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
@@ -32,6 +35,7 @@ import 'package:shadchan/widgets/sort_direction_toggle.dart';
 import 'package:shadchan/widgets/network_link.dart';
 import 'package:shadchan/screens/network_screen.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
+import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/utils/shared_pool.dart';
@@ -76,6 +80,40 @@ class PeopleScreen extends StatefulWidget {
 
 class _PeopleScreenState extends State<PeopleScreen> {
   final TextEditingController _searchController = TextEditingController();
+
+  /// "גם אצל השדכנים שלי": the server's answer for the last query — a name
+  /// search on the cards shared with me, run on the server (20 results),
+  /// never a download of anybody's database.
+  String _networkQuery = '';
+  List<SharedCard> _networkResults = const <SharedCard>[];
+  bool _networkSearching = false;
+  Timer? _networkTimer;
+
+  void _searchNetwork(String query) {
+    if (query == _networkQuery) return;
+    _networkQuery = query;
+    _networkTimer?.cancel();
+    if (query.trim().length < 2) {
+      _networkResults = const <SharedCard>[];
+      return;
+    }
+    _networkTimer = Timer(const Duration(milliseconds: 350), () async {
+      if (!mounted) return;
+      setState(() => _networkSearching = true);
+      List<SharedCard> found = const <SharedCard>[];
+      try {
+        found = (await MatchmakerNetwork.page(
+          nameQuery: query,
+          limit: 20,
+        )).cards;
+      } catch (_) {}
+      if (!mounted || query != _networkQuery) return;
+      setState(() {
+        _networkResults = found;
+        _networkSearching = false;
+      });
+    });
+  }
 
   Gender? _selectedGender;
   RangeValues? _selectedAgeRange;
@@ -141,6 +179,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   @override
   void dispose() {
+    _networkTimer?.cancel();
     CoupleWorkspaceService.membership.removeListener(_coupleChanged);
     CoupleWorkspaceService.recordsRevision.removeListener(_coupleChanged);
     _searchController
@@ -343,13 +382,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
           );
 
-    // "גם אצל השדכנים שלי": the same search over the cards the connected
-    // matchmakers share — view only, each person once, never a friend who is
-    // already in this database.
-    final bool connected = MatchmakerNetwork.connectedNames.isNotEmpty;
+    // "גם אצל השדכנים שלי": the same search on the server, over the cards
+    // shared with me — view only, each person once, never a friend who is
+    // already in this database. The last choice is kept as the default.
+    final bool connected = MatchmakerShares.sharingWithMe.isNotEmpty;
     final bool alsoNetwork = connected && NetworkSharing.alsoSearchNetwork;
+    if (alsoNetwork) _searchNetwork(query);
     final List<SharedPoolEntry> external = alsoNetwork
-        ? _networkMatches(repository, query)
+        ? _networkMatches(repository)
         : const <SharedPoolEntry>[];
 
     return SearchResultsPanel(
@@ -374,6 +414,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
               pushLeavingSearch(context, '/people/${person.id}');
             },
           ),
+        if (alsoNetwork && _networkSearching && external.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: Center(
+              child: SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
         if (external.isNotEmpty) const SearchSectionTitle('אצל השדכנים שלי'),
         for (final SharedPoolEntry e in external)
           SearchResultRow(
@@ -387,7 +437,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
             subtitle: <String>[
               if (sharedSummaryOf(e.primary.person).isNotEmpty)
                 sharedSummaryOf(e.primary.person),
-              e.sourceLabel,
+              e.heldByMany
+                  ? 'מופיע אצל ${e.holders.length} שדכנים'
+                  : 'דרך ${e.primary.ownerName.isEmpty ? e.primary.ownerFirstName : e.primary.ownerName}',
             ].join(' · '),
             onTap: () {
               _closeSearch();
@@ -401,13 +453,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
     );
   }
 
-  List<SharedPoolEntry> _networkMatches(
-    PersonRepository repository,
-    String query,
-  ) {
+  List<SharedPoolEntry> _networkMatches(PersonRepository repository) {
     final List<Person> mine = repository.getAll();
-    final List<SharedPoolEntry> pool = SharedPool.build(
-      MatchmakerNetwork.cards.value,
+    return SharedPool.build(
+      _networkResults,
       myIdentities: <String>{
         for (final Person p in mine)
           if (!p.hidden && PhoneIdentity.hash(p.phone) != null)
@@ -419,12 +468,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
         if (MatchmakerNetwork.uid != null) MatchmakerNetwork.uid!,
       },
     );
-    return <SharedPoolEntry>[
-      for (final SharedPoolEntry e in pool)
-        if (e.primary.person.fullName.toLowerCase().contains(query) ||
-            (e.primary.person.city ?? '').toLowerCase().contains(query))
-          e,
-    ];
   }
 
   /// One quiet line under a name in the results: whatever of age, city and

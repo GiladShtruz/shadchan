@@ -149,12 +149,12 @@ flutter_launcher_icons:
 # at 256/384/512/768/1024 for mdpi…xxxhdpi and 256/512/768 for 1x/2x/3x.
 #
 # flutter_native_splash:
-#   color: "#FAF8F3"
+#   color: "#FAF7F1"
 #   image: "assets/icon/splash_logo.png"
 #   color_dark: "#211D17"
 #   image_dark: "assets/icon/splash_logo.png"
 #   android_12:
-#     color: "#FAF8F3"
+#     color: "#FAF7F1"
 #     color_dark: "#211D17"
 
 flutter:

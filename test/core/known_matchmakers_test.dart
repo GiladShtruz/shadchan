@@ -1,34 +1,54 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/models/card_access.dart';
-import 'package:shadchan/models/matchmaker_connection.dart';
+import 'package:shadchan/models/matchmaker_share.dart';
 import 'package:shadchan/utils/known_matchmakers.dart';
 
 const String me = 'me';
 
-MatchmakerConnection row(
-  String from,
-  String to,
-  MatchmakerConnectionStatus status, {
-  Map<String, String> names = const <String, String>{},
+MatchmakerShare share(
+  String owner,
+  String reader,
+  MatchmakerShareMode mode, {
+  int count = 0,
+  String ownerName = '',
   DateTime? updatedAt,
-}) => MatchmakerConnection(
-  id: MatchmakerConnection.idFor(from, to),
-  fromUid: from,
-  toUid: to,
-  status: status,
-  names: names,
+}) => MatchmakerShare(
+  ownerUid: owner,
+  readerUid: reader,
+  mode: mode,
+  count: count,
+  ownerName: ownerName,
   updatedAt: updatedAt,
 );
 
 void main() {
-  final DateTime now = DateTime(2026, 11, 16, 12);
+  final DateTime now = DateTime(2026, 11, 20, 12);
 
-  test('one document per pair, whoever asks', () {
-    expect(MatchmakerConnection.idFor('b', 'a'), 'a_b');
-    expect(MatchmakerConnection.idFor('a', 'b'), 'a_b');
+  test('one row per direction', () {
+    expect(MatchmakerShare.idFor('a', 'b'), 'a_b');
+    expect(MatchmakerShare.idFor('b', 'a'), 'b_a');
+    expect(MatchmakerShareMode.all.isActive, isTrue);
+    expect(MatchmakerShareMode.requested.isActive, isFalse);
+    expect(MatchmakerShareMode.none.isActive, isFalse);
   });
 
-  test('three groups: connected, requests, contacts — each person once', () {
+  test('everybody in the contacts is known — no request needed', () {
+    final KnownMatchmakerGroups groups = KnownMatchmakers.build(
+      me: me,
+      helpers: <CardHelper>[
+        const CardHelper(uid: 'a', name: 'אבי'),
+        const CardHelper(uid: 'b', name: 'בתיה'),
+      ],
+      shares: const <MatchmakerShare>[],
+    );
+    expect(groups.connected, isEmpty);
+    expect(groups.others.map((KnownMatchmaker m) => m.uid).toSet(), <String>{
+      'a',
+      'b',
+    });
+  });
+
+  test('"connected" is at least one active share, either way', () {
     final KnownMatchmakerGroups groups = KnownMatchmakers.build(
       me: me,
       helpers: <CardHelper>[
@@ -37,143 +57,117 @@ void main() {
         const CardHelper(uid: 'c', name: 'כרמל'),
         const CardHelper(uid: 'd', name: 'דנה'),
       ],
-      connections: <MatchmakerConnection>[
-        row(me, 'a', MatchmakerConnectionStatus.approved),
-        row('b', me, MatchmakerConnectionStatus.pending),
-        row(me, 'c', MatchmakerConnectionStatus.pending),
+      shares: <MatchmakerShare>[
+        share('a', me, MatchmakerShareMode.all, count: 12),
+        share(me, 'b', MatchmakerShareMode.selected, count: 3),
+        share('c', me, MatchmakerShareMode.none),
+        share(me, 'd', MatchmakerShareMode.requested),
       ],
     );
-    expect(groups.connected.map((m) => m.uid), <String>['a']);
-    expect(groups.connected.single.state, KnownMatchmakerState.connected);
-    // Waiting for me first, then my own.
-    expect(groups.requests.map((m) => m.uid), <String>['b', 'c']);
-    expect(groups.requests.first.state, KnownMatchmakerState.incoming);
-    expect(groups.requests.last.state, KnownMatchmakerState.outgoing);
-    expect(groups.incomingCount, 1);
-    expect(groups.contacts.map((m) => m.uid), <String>['d']);
-    expect(groups.contacts.single.state, KnownMatchmakerState.none);
+    expect(groups.connected.map((KnownMatchmaker m) => m.uid).toSet(), <String>{
+      'a',
+      'b',
+    });
+    final KnownMatchmaker a = groups.all.firstWhere(
+      (KnownMatchmaker m) => m.uid == 'a',
+    );
+    expect(a.sharesWithMe, isTrue);
+    expect(a.sharedWithMeCount, 12);
+    expect(a.iShareWith, isFalse);
+    final KnownMatchmaker b = groups.all.firstWhere(
+      (KnownMatchmaker m) => m.uid == 'b',
+    );
+    expect(b.iShareCount, 3);
+    // A stopped share is not a connection; a request leads the others.
+    expect(groups.others.first.uid, 'd');
+    expect(groups.others.first.askedMe, isTrue);
+    expect(groups.requestCount, 1);
   });
 
-  test('nobody is listed who was not already known', () {
+  test('a share row with a stranger lists them; a stopped one does not', () {
     final KnownMatchmakerGroups groups = KnownMatchmakers.build(
       me: me,
       helpers: const <CardHelper>[],
-      connections: <MatchmakerConnection>[
-        // A request from somebody not in my phone: they chose to reach me.
-        row(
-          'x',
-          me,
-          MatchmakerConnectionStatus.pending,
-          names: <String, String>{'x': 'יוסי'},
-        ),
-        // A "not now" with somebody no longer in my phone: gone.
-        row('y', me, MatchmakerConnectionStatus.declined),
-        row(me, 'z', MatchmakerConnectionStatus.declined),
+      shares: <MatchmakerShare>[
+        share('x', me, MatchmakerShareMode.all, ownerName: 'יונתן'),
+        share('y', me, MatchmakerShareMode.none, ownerName: 'משה'),
       ],
     );
-    expect(groups.requests.single.uid, 'x');
-    expect(groups.requests.single.name, 'יוסי');
-    expect(groups.requests.single.inContacts, isFalse);
-    expect(groups.contacts, isEmpty);
+    expect(groups.all.map((KnownMatchmaker m) => m.uid), <String>['x']);
+    expect(groups.connected.single.name, 'יונתן');
   });
 
-  test('saved in each other\'s phones lead the contacts, then activity', () {
+  test('the database size is shown only once the two share something', () {
     final KnownMatchmakerGroups groups = KnownMatchmakers.build(
       me: me,
       helpers: <CardHelper>[
+        CardHelper(uid: 'a', name: 'אבי', databaseCount: 40, lastActiveAt: now),
         CardHelper(
-          uid: 'recent',
-          name: 'א',
-          lastActiveAt: now.subtract(const Duration(hours: 1)),
-        ),
-        const CardHelper(uid: 'unknown', name: 'ב'),
-        CardHelper(
-          uid: 'mutual',
-          name: 'ג',
-          mutual: true,
-          lastActiveAt: now.subtract(const Duration(days: 20)),
-        ),
-        CardHelper(
-          uid: 'older',
-          name: 'ד',
-          lastActiveAt: now.subtract(const Duration(days: 3)),
+          uid: 'b',
+          name: 'בתיה',
+          databaseCount: 50,
+          lastActiveAt: now,
         ),
       ],
-      connections: const <MatchmakerConnection>[],
+      shares: <MatchmakerShare>[share('a', me, MatchmakerShareMode.all)],
     );
-    expect(groups.contacts.map((m) => m.uid), <String>[
-      'mutual',
-      'recent',
-      'older',
-      'unknown',
-    ]);
-    // Mutual is a priority, never a connection.
-    expect(groups.connected, isEmpty);
-    expect(groups.contacts.first.state, KnownMatchmakerState.none);
+    final KnownMatchmaker a = groups.connected.single;
+    final KnownMatchmaker b = groups.others.single;
+    expect(a.detailsLine, contains('40'));
+    expect(b.detailsLine.contains('50'), isFalse);
   });
 
-  test('the name saved in my phone wins over the one they signed up with', () {
+  test(
+    'the home carousel: new first, then most recently active, minus hidden',
+    () {
+      final KnownMatchmakerGroups groups = KnownMatchmakers.build(
+        me: me,
+        helpers: <CardHelper>[
+          CardHelper(
+            uid: 'old',
+            name: 'ותיק',
+            lastActiveAt: now.subtract(const Duration(days: 1)),
+            joinedAt: now.subtract(const Duration(days: 300)),
+          ),
+          CardHelper(
+            uid: 'active',
+            name: 'פעיל',
+            lastActiveAt: now,
+            joinedAt: now.subtract(const Duration(days: 100)),
+          ),
+          CardHelper(
+            uid: 'new',
+            name: 'חדש',
+            lastActiveAt: now.subtract(const Duration(days: 3)),
+            joinedAt: now.subtract(const Duration(days: 2)),
+          ),
+          const CardHelper(uid: 'hidden', name: 'מוסתר'),
+        ],
+        shares: const <MatchmakerShare>[],
+      );
+      final List<KnownMatchmaker> row = KnownMatchmakers.carousel(
+        groups,
+        hidden: <String>{'hidden'},
+        now: now,
+      );
+      expect(row.map((KnownMatchmaker m) => m.uid), <String>[
+        'new',
+        'active',
+        'old',
+      ]);
+      expect(row.first.isNew(now), isTrue);
+    },
+  );
+
+  test('a name saved in this phone wins over the one they gave themselves', () {
     final KnownMatchmakerGroups groups = KnownMatchmakers.build(
       me: me,
-      helpers: const <CardHelper>[
-        CardHelper(uid: 'a', name: 'Avi Cohen', phoneHash: 'h1'),
+      helpers: <CardHelper>[
+        const CardHelper(uid: 'a', name: 'Avi', phoneHash: 'h'),
       ],
-      connections: const <MatchmakerConnection>[],
-      nameOf: (CardHelper h) => h.phoneHash == 'h1' ? 'אבי מהישיבה' : null,
+      shares: const <MatchmakerShare>[],
+      nameOf: (CardHelper h) => h.phoneHash == 'h' ? 'אבי מהעבודה' : null,
     );
-    expect(groups.contacts.single.name, 'אבי מהישיבה');
-  });
-
-  test('a "not now" said to me waits thirty days; one I said does not', () {
-    final MatchmakerConnection toMe = row(
-      me,
-      'a',
-      MatchmakerConnectionStatus.declined,
-      updatedAt: now.subtract(const Duration(days: 3)),
-    );
-    expect(KnownMatchmakers.stateOf(toMe, me), KnownMatchmakerState.declined);
-    expect(toMe.canAskAgain(me, now), isFalse);
-    expect(toMe.canAskAgain(me, now.add(const Duration(days: 28))), isTrue);
-
-    final MatchmakerConnection byMe = row(
-      'a',
-      me,
-      MatchmakerConnectionStatus.declined,
-      updatedAt: now,
-    );
-    expect(KnownMatchmakers.stateOf(byMe, me), KnownMatchmakerState.none);
-    expect(byMe.canAskAgain(me, now), isTrue);
-  });
-
-  test('the details line is activity and database size, nothing typed', () {
-    final KnownMatchmaker m = KnownMatchmaker(
-      uid: 'a',
-      name: 'אבי',
-      state: KnownMatchmakerState.none,
-      lastActiveAt: DateTime.now(),
-      databaseCount: 40,
-    );
-    expect(m.detailsLine, 'פעיל היום · 40 חברים במאגר');
-  });
-
-  test('a row reads back from the server shape', () {
-    final MatchmakerConnection? c = MatchmakerConnection.fromMap(
-      'a_b',
-      <String, dynamic>{
-        'uids': <String>['a', 'b'],
-        'fromUid': 'a',
-        'toUid': 'b',
-        'status': 'pending',
-        'names': <String, Object?>{'a': ' אבי ', 'b': 'בתיה'},
-      },
-    );
-    expect(c, isNotNull);
-    expect(c!.isIncomingFor('b'), isTrue);
-    expect(c.isOutgoingFor('a'), isTrue);
-    expect(c.names['a'], 'אבי');
-    expect(
-      MatchmakerConnection.fromMap('x', <String, dynamic>{'status': 'odd'}),
-      isNull,
-    );
+    expect(groups.all.single.name, 'אבי מהעבודה');
   });
 }

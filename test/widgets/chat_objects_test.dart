@@ -65,8 +65,8 @@ void main() {
     await tester.pump();
     expect(find.text('רעיון: דוד ונועה'), findsOneWidget);
     expect(find.text('ממתין לתשובה שלך'), findsOneWidget);
-    expect(find.text('פותחים'), findsOneWidget);
-    expect(find.text('לא הפעם'), findsOneWidget);
+    expect(find.text('אישור'), findsOneWidget);
+    expect(find.text('דחייה'), findsOneWidget);
   });
 
   testWidgets('the state follows the idea; no buttons once it is answered', (
@@ -86,7 +86,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text('הרעיון לא אושר'), findsOneWidget);
-    expect(find.text('פותחים'), findsNothing);
+    expect(find.text('אישור'), findsNothing);
   });
 
   testWidgets('a card no longer shared says so instead of opening', (

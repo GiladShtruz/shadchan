@@ -118,8 +118,11 @@ abstract final class NotificationFeed {
     final String name = person.fullName.trim();
     if (name.isEmpty) return null;
     return '$name {הוסיף|הוסיפה} כרטיס אישי. רוצה לסנכרן עם הכרטיס הקיים?'
-        .forGender(person.gender == Gender.female ? Gender.female : Gender.male);
+        .forGender(
+          person.gender == Gender.female ? Gender.female : Gender.male,
+        );
   }
+
   static const Duration newCardsWindow = Duration(hours: 24);
 
   /// Every reminder that is due right now, in the shape [ReminderLog.sync]

@@ -341,8 +341,8 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
 /// The one dark grey the card's own captions are written in — "סטטוס" and
 /// "פעולות" — never a status colour.
 Color _cardLabelInk(ThemeData theme) => theme.brightness == Brightness.dark
-    ? const Color(0xFFD9D6D0)
-    : const Color(0xFF3B3A37);
+    ? AppColors.onSurfaceDm
+    : AppColors.darkBlue;
 
 class _CardTone {
   const _CardTone({

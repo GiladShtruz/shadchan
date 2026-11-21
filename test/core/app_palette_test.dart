@@ -5,28 +5,37 @@ import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 
 void main() {
-  test('the palette has exactly one cream, #FAF8F3, on a white page', () {
-    expect(AppColors.page, const Color(0xFFFFFFFF));
-    expect(AppColors.cardCream, const Color(0xFFFAF8F3));
-    expect(AppColors.background, AppColors.cardCream);
-    // The near-white "warm" shade is white now, not a second cream.
-    expect(AppColors.surface, AppColors.page);
+  test('the seven palette colours, exactly', () {
+    expect(AppColors.darkBlue, const Color(0xFF324754));
+    expect(AppColors.blue, const Color(0xFF5F91A3));
+    expect(AppColors.teal, const Color(0xFF8FB7C4));
+    expect(AppColors.rose, const Color(0xFFC97891));
+    expect(AppColors.copper, const Color(0xFFC98657));
+    expect(AppColors.cream, const Color(0xFFFAF7F1));
+    expect(AppColors.white, const Color(0xFFFFFFFF));
   });
 
-  test('the light theme draws cards, tiles and secondary grounds in it', () {
+  test('cream page, white cards', () {
+    expect(AppColors.page, AppColors.cream);
+    expect(AppColors.background, AppColors.cream);
+    expect(AppColors.cardCream, AppColors.white);
+    expect(AppColors.surface, AppColors.white);
+  });
+
+  test('the light theme draws the page cream and cards, tiles and grounds white', () {
     final ThemeData theme = AppTheme.lightTheme();
-    expect(theme.scaffoldBackgroundColor, AppColors.page);
-    expect(theme.colorScheme.surface, AppColors.cardCream);
-    expect(theme.cardColor, AppColors.cardCream);
-    expect(theme.colorScheme.surfaceContainerLow, AppColors.cardCream);
-    expect(ProfilePalette.surface(theme), AppColors.cardCream);
-    expect(ProfilePalette.warmSurface(theme), AppColors.cardCream);
+    expect(theme.scaffoldBackgroundColor, AppColors.cream);
+    expect(theme.colorScheme.surface, AppColors.white);
+    expect(theme.cardColor, AppColors.white);
+    expect(theme.colorScheme.surfaceContainerLow, AppColors.white);
+    expect(ProfilePalette.surface(theme), AppColors.white);
+    expect(ProfilePalette.canvas(theme), AppColors.cream);
   });
 
-  test('the brand colours are unchanged', () {
-    expect(AppColors.primary, const Color(0xFF7F9EAA));
-    expect(AppColors.primaryDark, const Color(0xFF5F7F8C));
-    expect(AppColors.secondary, const Color(0xFFC1845B));
-    expect(AppColors.femaleAccent, const Color(0xFFA9748A));
+  test('the roles are palette members', () {
+    expect(AppColors.primary, AppColors.blue);
+    expect(AppColors.secondary, AppColors.copper);
+    expect(AppColors.femaleAccent, AppColors.rose);
+    expect(AppColors.headingInk, AppColors.darkBlue);
   });
 }

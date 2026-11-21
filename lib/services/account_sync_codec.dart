@@ -220,6 +220,12 @@ abstract final class AccountSyncCodec {
     'contacts.health',
     // The day this phone started logging notifications (`ReminderLog.since`).
     'notifications.since',
+    // What this phone last published to `networkCards`, and the one-off
+    // removal of the pre-2026-11-20 `sharedCards` copies.
+    'network.publishedPrint',
+    'network.legacyCleaned',
+    // When this phone last read the share rows.
+    'network.sharesSyncedAt',
   ];
 
   static bool isSyncedSetting(String key) {

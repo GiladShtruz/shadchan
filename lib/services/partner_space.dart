@@ -542,7 +542,8 @@ abstract final class PartnerSpace {
         'uids': <String>[me, partner],
         'fromName': _short(myName),
         'toName': _short(target.ownerName),
-        'status': 'approved',
+        // Between partners an idea opens at once — no question asked.
+        'status': 'opened',
         'target': <String, Object?>{
           ...SharedCardCodec.values(
             target.person,
