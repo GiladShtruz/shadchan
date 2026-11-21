@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/screens/friends_with_cards_screen.dart';
@@ -500,102 +501,106 @@ class _PeopleScreenState extends State<PeopleScreen> {
       return _buildEmptyPeopleState(context, theme);
     }
 
-    return CustomScrollView(
-      slivers: <Widget>[
-        // "חברים שמנהלים כרטיס אישי בשדכן" — a clear tile at the head of
-        // the database: asking them for access is how their cards start
-        // keeping themselves up to date here.
-        const SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: FriendsWithCardsLink(),
-          ),
-        ),
-        // The cards the connected matchmakers share — or the way to connect.
-        const SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: NetworkLink(),
-          ),
-        ),
-        if (pendingContactDrafts.isNotEmpty)
-          SliverToBoxAdapter(
+    return AppRefreshIndicator(
+      scope: RefreshScope.records,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: <Widget>[
+          // "חברים שמנהלים כרטיס אישי בשדכן" — a clear tile at the head of
+          // the database: asking them for access is how their cards start
+          // keeping themselves up to date here.
+          const SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: _PendingContactDraftsBanner(
-                count: pendingContactDrafts.length,
-                onTap: () =>
-                    _completePendingContactDrafts(pendingContactDrafts),
-              ),
+              padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: FriendsWithCardsLink(),
             ),
           ),
-        if (_hasActiveFilters)
-          SliverToBoxAdapter(
+          // The cards the connected matchmakers share — or the way to connect.
+          const SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _buildActiveFilterChips(),
+              padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: NetworkLink(),
+            ),
+          ),
+          if (pendingContactDrafts.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _PendingContactDraftsBanner(
+                  count: pendingContactDrafts.length,
+                  onTap: () =>
+                      _completePendingContactDrafts(pendingContactDrafts),
                 ),
               ),
             ),
-          ),
-        if (totalCount > 0)
+          if (_hasActiveFilters)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _buildActiveFilterChips(),
+                  ),
+                ),
+              ),
+            ),
+          if (totalCount > 0)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _MembersBanner(count: totalCount),
+              ),
+            ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: _MembersBanner(count: totalCount),
+              child: _GenderTabs(
+                selected: _selectedGender,
+                onChanged: (Gender? gender) {
+                  setState(() {
+                    _selectedGender = gender;
+                  });
+                },
+              ),
             ),
           ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: _GenderTabs(
-              selected: _selectedGender,
-              onChanged: (Gender? gender) {
-                setState(() {
-                  _selectedGender = gender;
-                });
-              },
-            ),
-          ),
-        ),
-        if (visiblePeople.isEmpty)
-          const SliverFillRemaining(
-            hasScrollBody: false,
-            child: EmptyState(
-              icon: Icons.search,
-              title: 'לא נמצאו תוצאות',
-              subtitle: '{נסה|נסי} לשנות את החיפוש או את הסינון',
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-            sliver: _grid
-                ? SliverGrid.builder(
-                    itemCount: visiblePeople.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: MediaQuery.sizeOf(context).width >= 600
-                          ? 3
-                          : 2,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      mainAxisExtent: PersonListCard.tileExtent(context),
+          if (visiblePeople.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: EmptyState(
+                icon: Icons.search,
+                title: 'לא נמצאו תוצאות',
+                subtitle: '{נסה|נסי} לשנות את החיפוש או את הסינון',
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+              sliver: _grid
+                  ? SliverGrid.builder(
+                      itemCount: visiblePeople.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: MediaQuery.sizeOf(context).width >= 600
+                            ? 3
+                            : 2,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                        mainAxisExtent: PersonListCard.tileExtent(context),
+                      ),
+                      itemBuilder: (BuildContext context, int index) =>
+                          _personCard(visiblePeople[index], tile: true),
+                    )
+                  : SliverList.builder(
+                      itemCount: visiblePeople.length,
+                      itemBuilder: (BuildContext context, int index) =>
+                          _personCard(visiblePeople[index]),
                     ),
-                    itemBuilder: (BuildContext context, int index) =>
-                        _personCard(visiblePeople[index], tile: true),
-                  )
-                : SliverList.builder(
-                    itemCount: visiblePeople.length,
-                    itemBuilder: (BuildContext context, int index) =>
-                        _personCard(visiblePeople[index]),
-                  ),
-          ),
-      ],
+            ),
+        ],
+      ),
     );
   }
 

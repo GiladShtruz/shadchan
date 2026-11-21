@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
@@ -530,40 +531,44 @@ class _MatchesScreenState extends State<MatchesScreen> {
     PersonRepository personRepository, {
     required bool searching,
   }) {
-    return CustomScrollView(
-      controller: _listScroll,
-      slivers: <Widget>[
-        // Drawn during a search too. Which kinds of proposal a person has —
-        // two open, one closed — is exactly what somebody typing their name
-        // wants to know, and hiding the split at the moment they ask was the
-        // one time it mattered most.
-        // Always pinned, including while a proposal's actions are open: it is
-        // the way between the shelves, and it is one compact line.
-        SliverPersistentHeader(
-          pinned: true,
-          delegate: _PinnedCategories(
-            // Opaque, because the banners pass underneath it.
-            background: theme.scaffoldBackgroundColor,
-            extent: _CategoryChips.heightFor(context),
-            child: _CategoryChips(
-              selected: _category,
-              counts: <MatchCategory, int>{
-                for (final MatchCategory category in MatchCategory.values)
-                  category: groups[category]!.length,
-              },
-              onSelected: (MatchCategory category) =>
-                  setState(() => _category = category),
+    return AppRefreshIndicator(
+      scope: RefreshScope.records,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        controller: _listScroll,
+        slivers: <Widget>[
+          // Drawn during a search too. Which kinds of proposal a person has —
+          // two open, one closed — is exactly what somebody typing their name
+          // wants to know, and hiding the split at the moment they ask was the
+          // one time it mattered most.
+          // Always pinned, including while a proposal's actions are open: it is
+          // the way between the shelves, and it is one compact line.
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _PinnedCategories(
+              // Opaque, because the banners pass underneath it.
+              background: theme.scaffoldBackgroundColor,
+              extent: _CategoryChips.heightFor(context),
+              child: _CategoryChips(
+                selected: _category,
+                counts: <MatchCategory, int>{
+                  for (final MatchCategory category in MatchCategory.values)
+                    category: groups[category]!.length,
+                },
+                onSelected: (MatchCategory category) =>
+                    setState(() => _category = category),
+              ),
             ),
           ),
-        ),
-        ..._categorySlivers(
-          theme,
-          groups,
-          dueReminders,
-          personRepository,
-          searching: searching,
-        ),
-      ],
+          ..._categorySlivers(
+            theme,
+            groups,
+            dueReminders,
+            personRepository,
+            searching: searching,
+          ),
+        ],
+      ),
     );
   }
 

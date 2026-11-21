@@ -464,6 +464,30 @@ abstract final class ChatService {
     }
   }
 
+  /// Pull to refresh: asks the server for the list once, now. The live
+  /// listener keeps running; this only stops waiting for its next push. A
+  /// list that is not listened to (a failed start) is started again.
+  static Future<void> refresh() async {
+    final String? uid = _uid;
+    if (uid == null || _sub == null) {
+      _failures = 0;
+      await start();
+      return;
+    }
+    final QuerySnapshot<Map<String, dynamic>> snap = await FirebaseFirestore
+        .instance
+        .collection('chats')
+        .where('members', arrayContains: uid)
+        .limit(listLimit)
+        .get(const GetOptions(source: Source.server));
+    if (_uid != uid) return;
+    _apply(uid, <ChatThread>[
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs)
+        ?ChatThread.fromMap(d.id, d.data()),
+    ]);
+    loaded.value = true;
+  }
+
   static Timer? _retry;
   static int _failures = 0;
 

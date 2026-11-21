@@ -83,6 +83,18 @@ abstract final class OwnCardMirror {
     }
   }
 
+  /// **Retired (2026-11-21): the user is never one of their own friends.**
+  /// Nothing creates the mirror any more, and an old one is kept out of every
+  /// list by `SelfIdentity`. Marking it declined is a synced setting, so an
+  /// older version of the app on another phone of the account stops creating
+  /// it again too. The record itself is not deleted — it may carry notes or
+  /// ideas — only hidden from the lists.
+  static void retire() {
+    if (_read(declinedKey) != 'true') {
+      _write(declinedKey, 'true');
+    }
+  }
+
   /// A stand-in for copying a photo file, for tests.
   @visibleForTesting
   static Future<String?> Function(String sourcePath)? copyPhotoOverride;

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -147,13 +148,17 @@ class _ChatsScreenState extends State<ChatsScreen> {
           if (shown.isEmpty) {
             return const Center(child: Text('לא נמצאו שיחות'));
           }
-          return ListView.builder(
-            padding: const EdgeInsets.only(bottom: 88),
-            itemCount: shown.length,
-            itemBuilder: (BuildContext context, int i) => _ThreadRow(
-              key: ValueKey<String>(shown[i].id),
-              thread: shown[i],
-              me: me,
+          return AppRefreshIndicator(
+            scope: RefreshScope.chats,
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 88),
+              itemCount: shown.length,
+              itemBuilder: (BuildContext context, int i) => _ThreadRow(
+                key: ValueKey<String>(shown[i].id),
+                thread: shown[i],
+                me: me,
+              ),
             ),
           );
         },
@@ -209,67 +214,75 @@ class _EmptyChats extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final List<ChatCandidate> first = candidates.take(shown).toList();
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 96),
-      children: <Widget>[
-        Icon(
-          Icons.chat_bubble_outline_rounded,
-          size: 44,
-          color: theme.colorScheme.primary,
-        ),
-        const SizedBox(height: 10),
-        Text(
-          'עדיין אין שיחות',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w900,
+    return AppRefreshIndicator(
+      scope: RefreshScope.chats,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 28, 20, 96),
+        children: <Widget>[
+          Icon(
+            Icons.chat_bubble_outline_rounded,
+            size: 44,
+            color: theme.colorScheme.primary,
           ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'כאן יופיעו כל השיחות שלך — עם שדכנים ועם חברים שמנהלים כרטיס. '
-          'שיחה אחת קבועה עם כל אחד.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 20),
-        if (first.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 10),
           Text(
-            'אפשר להתחיל שיחה עם',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          for (final ChatCandidate c in first)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: ChatAvatar(name: c.name, radius: 22),
-              title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text(c.why),
-              trailing: const Icon(Icons.chat_bubble_outline_rounded),
-              onTap: () => ChatLauncher.open(
-                context,
-                otherUid: c.uid,
-                otherName: c.name,
-              ),
-            ),
-          if (candidates.length > shown)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton(
-                onPressed: () => NewChatSheet.show(context),
-                child: Text('לכל ${candidates.length} האנשים'),
-              ),
-            ),
-        ] else
-          Text(
-            'אפשר לפתוח שיחה עם השדכנים שרואים את הכרטיס שלך, עם חברים '
-            'שהכרטיס האישי שלהם אצלך, ועם שדכנים שמורים אצלך באנשי הקשר.',
+            'עדיין אין שיחות',
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
           ),
-      ],
+          const SizedBox(height: 6),
+          Text(
+            'כאן יופיעו כל השיחות שלך — עם שדכנים ועם חברים שמנהלים כרטיס. '
+            'שיחה אחת קבועה עם כל אחד.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 20),
+          if (first.isNotEmpty) ...<Widget>[
+            Text(
+              'אפשר להתחיל שיחה עם',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final ChatCandidate c in first)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: ChatAvatar(name: c.name, radius: 22),
+                title: Text(
+                  c.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(c.why),
+                trailing: const Icon(Icons.chat_bubble_outline_rounded),
+                onTap: () => ChatLauncher.open(
+                  context,
+                  otherUid: c.uid,
+                  otherName: c.name,
+                ),
+              ),
+            if (candidates.length > shown)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: () => NewChatSheet.show(context),
+                  child: Text('לכל ${candidates.length} האנשים'),
+                ),
+              ),
+          ] else
+            Text(
+              'אפשר לפתוח שיחה עם השדכנים שרואים את הכרטיס שלך, עם חברים '
+              'שהכרטיס האישי שלהם אצלך, ועם שדכנים שמורים אצלך באנשי הקשר.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1902,7 +1915,7 @@ class _Composer extends StatelessWidget {
               IconButton.filledTonal(
                 tooltip: 'הודעה קולית',
                 onPressed: busy ? null : onRecord,
-                icon: const Icon(Icons.mic_none_rounded),
+                icon: const Icon(Icons.mic_rounded),
               )
             else
               IconButton.filled(

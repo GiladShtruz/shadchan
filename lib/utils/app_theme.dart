@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
@@ -177,6 +178,19 @@ abstract final class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      // **No blank frame between two pages.** Android's default transition
+      // fades the old page out and the new one in over the theme's surface —
+      // white — and when the new page took a moment to build (the full card
+      // editor right after a contact was added) that white stayed on screen
+      // for a second or two. The sliding transition draws the new page over
+      // the old one, which stays visible until it is covered.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: SlideOverPageTransitionsBuilder(),
+          TargetPlatform.iOS: SlideOverPageTransitionsBuilder(),
+          TargetPlatform.macOS: SlideOverPageTransitionsBuilder(),
+        },
+      ),
       fontFamily: fontFamily,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: scaffoldBackgroundColor,
@@ -356,4 +370,15 @@ abstract final class AppTheme {
       ),
     );
   }
+}
+
+/// The iOS slide, at Material's pace: the new page slides in over the old
+/// one, which stays drawn until it is covered — so there is never a blank
+/// frame between two pages — in the 300ms every page change in the app has
+/// always taken, not Cupertino's slower 500ms.
+class SlideOverPageTransitionsBuilder extends CupertinoPageTransitionsBuilder {
+  const SlideOverPageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 300);
 }

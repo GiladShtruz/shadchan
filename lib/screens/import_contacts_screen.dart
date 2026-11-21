@@ -731,9 +731,8 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       return;
     }
     if (addedCount == 1 && single != null) {
-      // One friend: the confirmation that names them and offers their
-      // matches and the full card.
-      ContactsAddedCelebration.showNewFriend(context, single);
+      // One friend: "מעבר להתאמות" | "המשך הוספה", over the list as it is.
+      await ContactsAddedCelebration.askNext(context, single);
     } else if (addedCount < CommunityProfileStore.bulkImportNoticeFrom) {
       ContactsAddedCelebration.show(context, count: addedCount);
     }
@@ -754,7 +753,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     if (!mounted || !kept) {
       return;
     }
-    ContactsAddedCelebration.showNewFriend(context, person);
+    await ContactsAddedCelebration.askNext(context, person);
   }
 
   /// Takes the picked contacts off the add-friends list. They keep their place

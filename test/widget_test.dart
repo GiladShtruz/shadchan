@@ -3043,6 +3043,7 @@ Person _testPerson({
   String? phone,
   String? description,
   String? city,
+  ReligiousLevel? religiousLevel = ReligiousLevel.datiLeumi,
 }) {
   return Person(
     id: id,
@@ -3050,6 +3051,8 @@ Person _testPerson({
     lastName: lastName,
     gender: gender,
     manualAge: age,
+    // Age and style are hard conditions for a match (2026-11-21).
+    religiousLevel: religiousLevel,
     phone: phone,
     description: description,
     city: city,

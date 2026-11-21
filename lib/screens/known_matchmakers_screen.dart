@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -195,105 +196,110 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
           ),
         ],
       ),
-      body: CustomScrollView(
-        slivers: <Widget>[
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            sliver: SliverList.list(
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-                  child: Text(
-                    'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן. עם כל אחד מחליטים '
-                    'בנפרד מה לשתף — כל המאגר, אנשים נבחרים או כלום — ואפשר '
-                    'לדבר בצ\'אט או ב־WhatsApp גם בלי לשתף.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-                if (!NetworkSharing.sharesAnything &&
-                    !NetworkSharing.onboardingDone)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 10),
-                    child: NetworkOnboardingCard(),
-                  ),
-                const _SharingSummary(),
-                if (noContacts)
-                  _Notice(
-                    text:
-                        'כדי למצוא שדכנים שאת/ה מכיר/ה, צריך גישה לאנשי הקשר. '
-                        'רק אנשים ששמורים אצלך בטלפון יופיעו כאן.',
-                    action:
-                        _permission == ContactsPermissionState.permanentlyDenied
-                        ? 'פתיחת הגדרות הטלפון'
-                        : 'לאפשר גישה לאנשי קשר',
-                    onAction: _askForContacts,
-                  ),
-                if (myPhone == null)
-                  _Notice(
-                    text:
-                        'כדי ששדכנים שמכירים אותך ימצאו אותך כאן, צריך להוסיף '
-                        'את המספר שלך. הוא לא מוצג לאף אחד.',
-                    action: 'הוספת המספר שלי',
-                    onAction: () async {
-                      final UserProfileProvider profile = context
-                          .read<UserProfileProvider>();
-                      final String? phone = await MyPhoneDialog.show(
-                        context,
-                        purpose: MyPhonePurpose.matchmaker,
-                      );
-                      if (phone != null) await profile.setMyPhone(phone);
-                    },
-                  ),
-                if (_scanning || (loading && !noContacts))
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (groups.isEmpty)
+      body: AppRefreshIndicator(
+        scope: RefreshScope.matchmakers,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: <Widget>[
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              sliver: SliverList.list(
+                children: <Widget>[
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
                     child: Text(
-                      noContacts
-                          ? 'הרשימה תופיע אחרי שתאפשר/י גישה לאנשי הקשר.'
-                          : 'עוד לא מצאנו שדכנים מאנשי הקשר שלך בשדכן. '
-                                'כשמישהו מהם יצטרף, נעדכן אותך.',
-                      style: theme.textTheme.bodyMedium,
+                      'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן. עם כל אחד מחליטים '
+                      'בנפרד מה לשתף — כל המאגר, אנשים נבחרים או כלום — ואפשר '
+                      'לדבר בצ\'אט או ב־WhatsApp גם בלי לשתף.',
+                      style: theme.textTheme.bodySmall,
                     ),
                   ),
-              ],
+                  if (!NetworkSharing.sharesAnything &&
+                      !NetworkSharing.onboardingDone)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 10),
+                      child: NetworkOnboardingCard(),
+                    ),
+                  const _SharingSummary(),
+                  if (noContacts)
+                    _Notice(
+                      text:
+                          'כדי למצוא שדכנים שאת/ה מכיר/ה, צריך גישה לאנשי הקשר. '
+                          'רק אנשים ששמורים אצלך בטלפון יופיעו כאן.',
+                      action:
+                          _permission ==
+                              ContactsPermissionState.permanentlyDenied
+                          ? 'פתיחת הגדרות הטלפון'
+                          : 'לאפשר גישה לאנשי קשר',
+                      onAction: _askForContacts,
+                    ),
+                  if (myPhone == null)
+                    _Notice(
+                      text:
+                          'כדי ששדכנים שמכירים אותך ימצאו אותך כאן, צריך להוסיף '
+                          'את המספר שלך. הוא לא מוצג לאף אחד.',
+                      action: 'הוספת המספר שלי',
+                      onAction: () async {
+                        final UserProfileProvider profile = context
+                            .read<UserProfileProvider>();
+                        final String? phone = await MyPhoneDialog.show(
+                          context,
+                          purpose: MyPhonePurpose.matchmaker,
+                        );
+                        if (phone != null) await profile.setMyPhone(phone);
+                      },
+                    ),
+                  if (_scanning || (loading && !noContacts))
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (groups.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
+                      child: Text(
+                        noContacts
+                            ? 'הרשימה תופיע אחרי שתאפשר/י גישה לאנשי הקשר.'
+                            : 'עוד לא מצאנו שדכנים מאנשי הקשר שלך בשדכן. '
+                                  'כשמישהו מהם יצטרף, נעדכן אותך.',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (groups.connected.isNotEmpty)
-            ..._group(
-              'משתפים איתי / מחוברים',
-              AppColors.primary,
-              groups.connected,
-              groups.connected.length,
-            ),
-          if (groups.others.isNotEmpty)
-            ..._group(
-              groups.requestCount > 0
-                  ? 'עדיין לא משתפים · ${groups.requestCount} ביקשו ממך שיתוף'
-                  : 'עדיין לא משתפים',
-              AppColors.rose,
-              others,
-              groups.others.length,
-            ),
-          if (groups.others.length > _shownOthers)
-            SliverToBoxAdapter(
-              child: Center(
-                child: TextButton(
-                  onPressed: () => setState(
-                    () => _shownOthers += KnownMatchmakersScreen.pageSize,
-                  ),
-                  child: Text(
-                    'עוד ${groups.others.length - _shownOthers} שדכנים',
+            if (groups.connected.isNotEmpty)
+              ..._group(
+                'משתפים איתי / מחוברים',
+                AppColors.primary,
+                groups.connected,
+                groups.connected.length,
+              ),
+            if (groups.others.isNotEmpty)
+              ..._group(
+                groups.requestCount > 0
+                    ? 'עדיין לא משתפים · ${groups.requestCount} ביקשו ממך שיתוף'
+                    : 'עדיין לא משתפים',
+                AppColors.rose,
+                others,
+                groups.others.length,
+              ),
+            if (groups.others.length > _shownOthers)
+              SliverToBoxAdapter(
+                child: Center(
+                  child: TextButton(
+                    onPressed: () => setState(
+                      () => _shownOthers += KnownMatchmakersScreen.pageSize,
+                    ),
+                    child: Text(
+                      'עוד ${groups.others.length - _shownOthers} שדכנים',
+                    ),
                   ),
                 ),
               ),
-            ),
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
-        ],
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          ],
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/utils/personal_nav.dart';
 import 'package:shadchan/services/usage_actions.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
@@ -194,55 +195,59 @@ class _PersonalHomeState extends State<PersonalHome> {
     final String first = (profile.firstName ?? '').trim();
     void toMatchmakers() => PersonalNav.openMatchmakers(context);
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
-      children: <Widget>[
-        HomeGreeting(
-          greeting: _greeting(DateTime.now().hour),
-          name: first.isEmpty ? 'שלום' : first,
-        ),
-        const SizedBox(height: 14),
-        PersonalShortcuts(
-          onCard: () => PersonalNav.openCard(context),
-          onMatchmakers: toMatchmakers,
-        ),
-        // Only when there is real news around the owner.
-        PersonalWhatsNewSection(
-          card: hasCard ? card : null,
-          nextStep: hasCard
-              ? PersonalNextAction.stepFor(
-                  context,
-                  card: card,
-                  live: cards.hasCard,
-                ).kind
-              : null,
-          onMatchmakers: toMatchmakers,
-        ),
-        PersonalRecentMatchmakers(onSeeAll: toMatchmakers),
-        const SizedBox(height: 22),
-        if (hasCard)
-          PersonalNextAction(
-            card: card,
-            live: cards.hasCard,
-            onMatchmakers: toMatchmakers,
-          )
-        else ...<Widget>[
-          const PersonalSectionTitle(PersonalNextAction.title),
-          PersonalCardPrompt(
-            deleted: cards.isDeleted,
-            busy: _restoring,
-            onAction: cards.isDeleted
-                ? _restore
-                : () => PersonalAreaService.editCard(context),
+    return AppRefreshIndicator(
+      scope: RefreshScope.matchmakers,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+        children: <Widget>[
+          HomeGreeting(
+            greeting: _greeting(DateTime.now().hour),
+            name: first.isEmpty ? 'שלום' : first,
           ),
+          const SizedBox(height: 14),
+          PersonalShortcuts(
+            onCard: () => PersonalNav.openCard(context),
+            onMatchmakers: toMatchmakers,
+          ),
+          // Only when there is real news around the owner.
+          PersonalWhatsNewSection(
+            card: hasCard ? card : null,
+            nextStep: hasCard
+                ? PersonalNextAction.stepFor(
+                    context,
+                    card: card,
+                    live: cards.hasCard,
+                  ).kind
+                : null,
+            onMatchmakers: toMatchmakers,
+          ),
+          PersonalRecentMatchmakers(onSeeAll: toMatchmakers),
+          const SizedBox(height: 22),
+          if (hasCard)
+            PersonalNextAction(
+              card: card,
+              live: cards.hasCard,
+              onMatchmakers: toMatchmakers,
+            )
+          else ...<Widget>[
+            const PersonalSectionTitle(PersonalNextAction.title),
+            PersonalCardPrompt(
+              deleted: cards.isDeleted,
+              busy: _restoring,
+              onAction: cards.isDeleted
+                  ? _restore
+                  : () => PersonalAreaService.editCard(context),
+            ),
+          ],
+          PersonalCommunityFigure(visit: widget.visit),
+          if (hasCard) const PersonalWhoSees(),
+          const SizedBox(height: 22),
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+          _PersonalFooter(gender: profile.gender),
         ],
-        PersonalCommunityFigure(visit: widget.visit),
-        if (hasCard) const PersonalWhoSees(),
-        const SizedBox(height: 22),
-        const Divider(height: 1),
-        const SizedBox(height: 10),
-        _PersonalFooter(gender: profile.gender),
-      ],
+      ),
     );
   }
 }
