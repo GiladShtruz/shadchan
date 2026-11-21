@@ -1254,6 +1254,11 @@ class SharedCardScreen extends StatelessWidget {
                             color: theme.colorScheme.surface,
                             child: FutureBuilder<File?>(
                               future: MatchmakerNetwork.photo(ownerUid, path),
+                              // Already on the phone: no spinner flash.
+                              initialData: MatchmakerNetwork.photoNow(
+                                ownerUid,
+                                path,
+                              ),
                               builder: (BuildContext context, snap) {
                                 final File? f = snap.data;
                                 if (f == null) {
@@ -1261,7 +1266,18 @@ class SharedCardScreen extends StatelessWidget {
                                     child: CircularProgressIndicator(),
                                   );
                                 }
-                                return Image.file(f, fit: BoxFit.contain);
+                                // Decoded at the width it is drawn, not as
+                                // the whole camera frame.
+                                return Image.file(
+                                  f,
+                                  fit: BoxFit.contain,
+                                  cacheWidth:
+                                      (MediaQuery.sizeOf(context).width *
+                                              MediaQuery.devicePixelRatioOf(
+                                                context,
+                                              ))
+                                          .round(),
+                                );
                               },
                             ),
                           ),

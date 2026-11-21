@@ -285,7 +285,15 @@ class _MyCardSummary extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: Text('הכרטיס שלי', style: theme.textTheme.labelMedium),
+                // The way into the card is here, on the profile — no longer a
+                // shortcut on בית — so its heading reads as one.
+                child: Text(
+                  'הכרטיס שלי',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: accent,
+                  ),
+                ),
               ),
               ProfileStatusTag(
                 status: card.profileStatus,

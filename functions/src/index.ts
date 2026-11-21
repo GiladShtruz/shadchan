@@ -555,7 +555,14 @@ async function findHelpers(ownerUid: string): Promise<void> {
     }
   }
   const ref = db.doc(`users/${ownerUid}/private/helpers`);
-  await ref.set({helpers, friends, updatedAt: FieldValue.serverTimestamp()});
+  // `uids` — every account on either list, flat, so the chat rule can ask
+  // "do these two know each other?" in one document read instead of the
+  // five a phone-book check costs (Firestore stops a rule at ten).
+  const uids = [...new Set([
+    ...helpers.map((h) => h.uid as string),
+    ...friends.map((f) => f.uid as string),
+  ])].filter((u) => typeof u === 'string' && u.length > 0).slice(0, 2000);
+  await ref.set({helpers, friends, uids, updatedAt: FieldValue.serverTimestamp()});
   await announceJoinedMatchmakers(ownerUid, helpers);
   const card = await db.doc(`personalCards/${ownerUid}`).get();
   if (isActiveCard(card.data())) {

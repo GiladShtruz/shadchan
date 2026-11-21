@@ -670,6 +670,28 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   // --- Grouping -----------------------------------------------------------
 
+  Map<String, DateTime>? _recencyMemo;
+  Object? _recencyKey;
+
+  /// Every idea's last update — walked over the whole status ledger and every
+  /// person event, so it is computed once per change of either repository,
+  /// not on every rebuild of the page (a panel opening, a search letter, a
+  /// scroll that folds the tiles).
+  Map<String, DateTime> _recencyFor(
+    MatchRepository matches,
+    PersonRepository people,
+  ) {
+    final Object key = Object.hash(matches.revision, people.revision);
+    final Map<String, DateTime>? memo = _recencyMemo;
+    if (memo != null && key == _recencyKey) return memo;
+    _recencyKey = key;
+    return _recencyMemo = IdeaRecency.of(
+      matches: matches.getAll(),
+      statusEvents: matches.getAllStatusEvents(),
+      personEvents: people.getAllEvents(),
+    );
+  }
+
   /// Newest first inside every category.
   Map<MatchCategory, List<MatchIdea>> _groupMatches(
     List<MatchIdea> matches,
@@ -715,10 +737,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
     // Most recently updated first — opened, its status changed, or either
     // person's status changed. See [IdeaRecency]. The proposal somebody
     // followed a link to keeps its own place; the list is scrolled to it.
-    final Map<String, DateTime> recency = IdeaRecency.of(
-      matches: matches,
-      statusEvents: context.read<MatchRepository>().getAllStatusEvents(),
-      personEvents: personRepository.getAllEvents(),
+    final Map<String, DateTime> recency = _recencyFor(
+      context.read<MatchRepository>(),
+      personRepository,
     );
     int byLastUpdate(MatchIdea a, MatchIdea b) {
       final int byUpdate = (recency[b.id] ?? b.createdAt).compareTo(

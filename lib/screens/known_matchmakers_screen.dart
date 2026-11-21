@@ -458,7 +458,8 @@ class _GroupRow extends StatelessWidget {
   }
 }
 
-/// A matchmaker's face: their published photo, else an initial.
+/// A matchmaker's face: their published photo, else a plain flat figure of a
+/// person — never a first letter.
 class KnownMatchmakerFace extends StatelessWidget {
   const KnownMatchmakerFace({
     super.key,
@@ -474,22 +475,16 @@ class KnownMatchmakerFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final String? photo = photoUrl?.trim();
     final bool hasPhoto = photo != null && photo.isNotEmpty;
-    final String initial = name.trim().isEmpty
-        ? ''
-        : name.trim().characters.first;
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.primaryLight,
       foregroundImage: hasPhoto
           ? avatarImage(context, photo, diameter: radius * 2)
           : null,
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: AppColors.darkBlue,
-          fontWeight: FontWeight.w900,
-          fontSize: radius * 0.8,
-        ),
+      child: Icon(
+        Icons.person_rounded,
+        size: radius * 1.3,
+        color: AppColors.white,
       ),
     );
   }
@@ -594,8 +589,9 @@ class NewMark extends StatelessWidget {
 ///
 ///  - they share with me → "למאגר" (and "X כרטיסים");
 ///  - only I share with them → "צ'אט";
-///  - nothing yet → "פתיחת שיתוף" — straight to choosing what to share with
-///    them (never a vague "connect").
+///  - nothing yet → "שיתוף מאגר" — straight to choosing what to share with
+///    them (never a vague "connect"). Always one line: scaled down, never
+///    wrapped.
 class KnownMatchmakerAction extends StatelessWidget {
   const KnownMatchmakerAction({
     super.key,
@@ -641,7 +637,14 @@ class KnownMatchmakerAction extends StatelessWidget {
       button = FilledButton.tonal(
         style: style,
         onPressed: () => KnownMatchmakerActions.openSharing(context, m),
-        child: Text(m.askedMe ? 'לשתף בחזרה' : 'פתיחת שיתוף'),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            m.askedMe ? 'לשתף בחזרה' : 'שיתוף מאגר',
+            maxLines: 1,
+            softWrap: false,
+          ),
+        ),
       );
     }
     if (!m.sharesWithMe || compact) return button;

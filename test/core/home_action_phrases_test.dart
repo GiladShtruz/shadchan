@@ -87,18 +87,18 @@ void main() {
   });
 
   test('the action list: who first, then one short line', () {
-    expect(HomeActionLines.couple(male: yossi, female: noa), 'נועה × יוסי');
+    expect(HomeActionLines.couple(male: yossi, female: noa), 'יוסי ❤️ נועה');
     expect(
       HomeActionLines.ideaNext(MatchStage.newIdea, male: yossi, female: noa),
-      'לשאול את יוסי מה דעתו',
+      'לשאול את יוסי',
     );
     expect(
       HomeActionLines.ideaNext(MatchStage.askedMale, male: yossi, female: noa),
-      'מחכים לתשובה מיוסי',
+      'מחכים לתשובה מ־יוסי',
     );
     expect(
       HomeActionLines.pair(male: yossi, female: noa),
-      'רעיון מהמאגר: נועה × יוסי',
+      'רעיון מהמאגר: יוסי ❤️ נועה',
     );
     expect(HomeActionLines.pairNext(Gender.female), 'נראה מתאים? פתחי רעיון');
     expect(HomeActionLines.personNext(noa), 'לבדוק מה חדש אצלה');

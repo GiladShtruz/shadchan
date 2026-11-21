@@ -112,7 +112,7 @@ void main() {
     );
     expect(
       seen.headline,
-      'שבוע שעבר הגענו ל־120 רעיונות. השבוע היעד הוא 140 — שוברים את השיא.',
+      'שבוע שעבר הגענו ל־120 רעיונות. השבוע שוברים את השיא ומגיעים ל־140.',
     );
     // The bar is measured against the same figure the headline names.
     expect(seen.progressLabel, '40/140 רעיונות');

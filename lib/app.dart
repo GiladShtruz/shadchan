@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/user_scrolling.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -55,24 +56,29 @@ class App extends StatelessWidget {
           // app is inside it, so a tap on bare paper anywhere puts the keyboard
           // away. See [DismissKeyboardOnTap].
           child: DismissKeyboardOnTap(
-            child: AppUpdatePrompt(
-              enabled: checkForUpdates,
-              child: CloudSyncScheduler(
-                // Above the router rather than on a screen: a milestone is
-                // earned wherever the matchmaker happens to be working, and this
-                // has to be watching from all of them.
-                child: AchievementWatcher(
-                  // A single who matchmakes too finds their own personal card
-                  // among their friends, kept in step with it.
-                  child: OwnCardMirrorWatcher(
-                    // The app icon's number, kept equal to the bell's.
-                    child: AppBadgeSync(
-                      child: IncomingBackupImportListener(
-                        child: IncomingSharedProfileListener(
-                          // The line that says the app is offline, above
-                          // every screen. See [OfflineBanner].
-                          child: OfflineBanner(
-                            child: child ?? const SizedBox.shrink(),
+            // Counts the scrolls on screen, so a sync batch from another
+            // phone redraws the page after the fling, not during it. See
+            // [UserScrolling].
+            child: UserScrolling.listener(
+              child: AppUpdatePrompt(
+                enabled: checkForUpdates,
+                child: CloudSyncScheduler(
+                  // Above the router rather than on a screen: a milestone is
+                  // earned wherever the matchmaker happens to be working, and this
+                  // has to be watching from all of them.
+                  child: AchievementWatcher(
+                    // A single who matchmakes too finds their own personal card
+                    // among their friends, kept in step with it.
+                    child: OwnCardMirrorWatcher(
+                      // The app icon's number, kept equal to the bell's.
+                      child: AppBadgeSync(
+                        child: IncomingBackupImportListener(
+                          child: IncomingSharedProfileListener(
+                            // The line that says the app is offline, above
+                            // every screen. See [OfflineBanner].
+                            child: OfflineBanner(
+                              child: child ?? const SizedBox.shrink(),
+                            ),
                           ),
                         ),
                       ),

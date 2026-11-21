@@ -14,14 +14,16 @@ abstract final class AppColors {
   //  - [darkBlue]  #324754  text, headings, icons
   //  - [blue]      #5F91A3  the main blue: highlights, central elements
   //  - [teal]      #8FB7C4  light grounds, tags, rules between things
-  //  - [rose]      #C97891  complementary highlights, tags
+  //  - [rose]      #A3647E  a bordeaux-mauve (2026-11-21, was the lighter
+  //                         #C97891): women, complementary highlights — the
+  //                         notification badge's family, never a light pink
   //  - [copper]    #C98657  the main actions (FAB, send, CTA)
   //  - [cream]     #FAF7F1  the page and wide areas
   //  - [white]     #FFFFFF  cards, windows, clean content
   static const Color darkBlue = Color(0xFF324754);
   static const Color blue = Color(0xFF5F91A3);
   static const Color teal = Color(0xFF8FB7C4);
-  static const Color rose = Color(0xFFC97891);
+  static const Color rose = Color(0xFFA3647E);
   static const Color copper = Color(0xFFC98657);
   static const Color cream = Color(0xFFFAF7F1);
   static const Color white = Color(0xFFFFFFFF);
@@ -82,12 +84,12 @@ abstract final class AppColors {
 
   /// Light washes of the palette, for grounds behind a mark.
   static const Color softBlue = primaryLight;
-  static const Color softPink = Color(0xFFF5E7EB);
+  static const Color softPink = Color(0xFFF2E4EA);
   static const Color softGreen = Color(0xFFE6EFF2);
-  static const Color softPurple = Color(0xFFF5E7EB);
+  static const Color softPurple = Color(0xFFF2E4EA);
   static const Color softSand = Color(0xFFF6ECE4);
   static const Color softYellow = Color(0xFFF6ECE4);
-  static const Color softRose = Color(0xFFF5E7EB);
+  static const Color softRose = Color(0xFFF2E4EA);
 
   /// What the two home entry cards are drawn in: their line drawing and the
   /// rule along their bottom edge.
@@ -201,18 +203,18 @@ abstract final class AppColors {
   static const Color outlineDm = Color(0xFF4B5D69);
   static const Color dividerDm = Color(0xFF3E525E);
 
-  /// Per-gender accents. Men keep the app's stone blue; women get a muted
-  /// rose-mauve picked to sit next to the copper/cream palette rather than a
-  /// saturated pink.
+  /// Per-gender accents. Men keep the app's stone blue; women get the
+  /// bordeaux-mauve [rose] — the same family as the notification badge — and
+  /// never a light pink.
   static const Color maleAccent = primaryDark;
   static const Color maleSurface = softBlue;
   static const Color femaleAccent = rose;
   static const Color femaleSurface = softRose;
-  static const Color femaleAccentDm = Color(0xFFD598A9);
+  static const Color femaleAccentDm = Color(0xFFCD95AB);
 
   /// The rose as ink: [femaleAccent] deepened far enough to be read as text
   /// on its own light wash, the way [primaryInk] is to the blue.
-  static const Color femaleInk = Color(0xFF94677C);
+  static const Color femaleInk = Color(0xFF7E4A61);
 
   static Color genderAccent(Gender gender, {bool dark = false}) {
     if (gender != Gender.female) {

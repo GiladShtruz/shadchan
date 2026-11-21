@@ -66,10 +66,14 @@ class PersonalHomeScreen extends StatelessWidget {
   }
 }
 
-/// What a matchmaker who also keeps a card sees of it on the one home: the
-/// way to the card and to "השדכנים שלי", anything new around the card, the
-/// one step worth doing for it, and who sees it — between the matchmaker's
-/// own blocks, with no heading that splits the page into two worlds.
+/// What a matchmaker who also keeps a card sees of it on the one home, under
+/// the "השדכנים שלי" row: anything new around the card and the one step worth
+/// doing for it — between the matchmaker's own blocks, with no heading that
+/// splits the page into two worlds.
+///
+/// **No shortcut buttons.** "הכרטיס שלי" lives prominently on the profile,
+/// and "השדכנים שלי" is the row of faces above this block; two large buttons
+/// about them only repeated both. Who sees the card is that same row.
 class PersonalHomeBlock extends StatelessWidget {
   const PersonalHomeBlock({super.key});
 
@@ -82,10 +86,6 @@ class PersonalHomeBlock extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        PersonalShortcuts(
-          onCard: () => PersonalNav.openCard(context),
-          onMatchmakers: toMatchmakers,
-        ),
         PersonalWhatsNewSection(
           card: hasCard ? card : null,
           nextStep: hasCard
@@ -104,7 +104,6 @@ class PersonalHomeBlock extends StatelessWidget {
             live: cards.hasCard,
             onMatchmakers: toMatchmakers,
           ),
-          const PersonalWhoSees(),
         ] else ...<Widget>[
           const SizedBox(height: 14),
           PersonalCardPrompt(

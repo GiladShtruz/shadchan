@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/chat_service.dart';
@@ -8,9 +9,17 @@ import 'package:shadchan/widgets/app_glyphs.dart';
 
 /// The one bottom bar of the app.
 ///
-/// Read right to left: בית | צ'אטים | פרופיל | המאגר שלי | הרעיונות שלי, with
+/// Read right to left: בית | צ'אטים | פרופיל | המאגר | רעיונות, with
 /// "פרופיל" in the middle, drawn as the user's own face in a circle that
-/// floats a little above the bar. A single who does not matchmake has a
+/// rises a little above the bar.
+///
+/// **The bar itself is the ordinary height of a navigation bar.** It used to
+/// reserve the circle's full height, and since the strip above the bar was
+/// painted in the page colour the bar read as tall as the circle. Now the
+/// Scaffold reserves only [barHeight]; the circle is painted [lift] above the
+/// bar's top edge over the page, and [_OverflowStack] lets a tap on that
+/// raised part still reach it (a tap beside the circle there goes to the
+/// page, as it should). A single who does not matchmake has a
 /// short bar — בית | צ'אטים | פרופיל | השדכנים שלי — and never the database
 /// or the ideas.
 ///
@@ -28,16 +37,16 @@ class ShellBottomBar extends StatelessWidget {
   final int selected;
   final ValueChanged<int> onSelected;
 
-  static const double barHeight = 62;
+  static const double barHeight = 58;
 
   /// How far the profile circle rises above the bar's top edge.
-  static const double lift = 16;
+  static const double lift = 18;
 
-  static const double faceRadius = 23;
+  static const double faceRadius = 21;
 
   /// The labels in order, for tests and screen readers.
   static List<String> labelsFor({required bool matchmaker}) => matchmaker
-      ? const <String>['בית', 'צ\'אטים', 'פרופיל', 'המאגר שלי', 'הרעיונות שלי']
+      ? const <String>['בית', 'צ\'אטים', 'פרופיל', 'המאגר', 'רעיונות']
       : const <String>['בית', 'צ\'אטים', 'פרופיל', 'השדכנים שלי'];
 
   @override
@@ -113,36 +122,86 @@ class ShellBottomBar extends StatelessWidget {
         ),
     ];
 
-    return SizedBox(
-      height: barHeight + bottom + lift,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: barHeight + bottom,
-            child: Material(
+    // The stack is the outermost box of the bar, sized by its first child
+    // to the bar alone; the row of items hangs [lift] above it.
+    return _OverflowStack(
+      overflow: lift,
+      children: <Widget>[
+        SizedBox(
+          height: barHeight + bottom,
+          width: double.infinity,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
               color: background,
-              elevation: 8,
-              shadowColor: Colors.black26,
-              child: const SizedBox.expand(),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 10,
+                  offset: Offset(0, -2),
+                ),
+              ],
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: bottom,
-            height: barHeight + lift,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: items,
-            ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottom,
+          top: -lift,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: items,
           ),
-        ],
-      ),
+        ),
+      ],
     );
+  }
+}
+
+/// A [Stack] that answers taps up to [overflow] pixels above its own top
+/// edge, where the profile circle is painted.
+///
+/// Every [RenderBox] refuses a position outside its own size before asking
+/// its children, so the stack has to be the bar's outermost box and has to
+/// make the exception itself; its children are then asked as usual, and a
+/// tap above the bar that lands on no item (beside the circle) is refused and
+/// goes to the page.
+class _OverflowStack extends Stack {
+  const _OverflowStack({required this.overflow, super.children})
+    : super(clipBehavior: Clip.none);
+
+  final double overflow;
+
+  @override
+  RenderStack createRenderObject(BuildContext context) => _RenderOverflowStack(
+    overflow: overflow,
+    textDirection: Directionality.maybeOf(context),
+  );
+
+  @override
+  void updateRenderObject(BuildContext context, RenderStack renderObject) {
+    super.updateRenderObject(context, renderObject);
+    (renderObject as _RenderOverflowStack).overflow = overflow;
+  }
+}
+
+class _RenderOverflowStack extends RenderStack {
+  _RenderOverflowStack({required this.overflow, super.textDirection})
+    : super(clipBehavior: Clip.none);
+
+  double overflow;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final Rect area = Rect.fromLTRB(0, -overflow, size.width, size.height);
+    if (!area.contains(position)) {
+      return false;
+    }
+    if (hitTestChildren(result, position: position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
   }
 }
 
@@ -227,7 +286,7 @@ class _ProfileItem extends StatelessWidget {
                 children: <Widget>[
                   Container(
                     key: const ValueKey<String>('shell-profile-face'),
-                    padding: const EdgeInsets.all(3),
+                    padding: const EdgeInsets.all(2.5),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: ring,
@@ -263,7 +322,7 @@ class _ProfileItem extends StatelessWidget {
                             ),
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     label,
                     style: theme.textTheme.labelSmall?.copyWith(
@@ -272,7 +331,7 @@ class _ProfileItem extends StatelessWidget {
                       fontWeight: active ? FontWeight.w800 : FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),

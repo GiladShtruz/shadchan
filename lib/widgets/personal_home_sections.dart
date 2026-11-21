@@ -143,7 +143,8 @@ class PersonalCardPrompt extends StatelessWidget {
   }
 }
 
-/// A matchmaker friend's face: their published photo, else an initial.
+/// A matchmaker friend's face: their published photo, else a plain flat
+/// figure of a person.
 class MatchmakerFace extends StatelessWidget {
   const MatchmakerFace({super.key, required this.friend, this.radius = 24});
   final MatchmakerFriend friend;
@@ -151,24 +152,18 @@ class MatchmakerFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final String? photo = friend.photoUrl?.trim();
     final bool hasPhoto = photo != null && photo.isNotEmpty;
-    final String initial = friend.name.trim().isEmpty
-        ? ''
-        : friend.name.trim().characters.first;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.softBlue,
+      backgroundColor: AppColors.primaryLight,
       foregroundImage: hasPhoto
           ? avatarImage(context, photo, diameter: radius * 2)
           : null,
-      child: Text(
-        initial,
-        style: theme.textTheme.titleMedium?.copyWith(
-          color: AppColors.primaryDark,
-          fontWeight: FontWeight.w900,
-        ),
+      child: Icon(
+        Icons.person_rounded,
+        size: radius * 1.3,
+        color: AppColors.white,
       ),
     );
   }

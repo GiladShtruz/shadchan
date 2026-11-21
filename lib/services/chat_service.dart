@@ -386,14 +386,23 @@ abstract final class ChatService {
   /// The chat on the screen right now, so its own pushes are not announced.
   static String? openChatId;
 
-  /// How many conversations the list holds at most.
-  static const int listLimit = 200;
+  /// How many conversations the list reads at most.
+  static const int listLimit = 500;
 
   static String directId(String a, String b) =>
       a.compareTo(b) < 0 ? '${a}_$b' : '${b}_$a';
 
   /// Starts the list — once Firebase is up and somebody is signed in. Safe
-  /// to call often; called again by itself when Firebase comes up later.
+  /// to call often; called again by itself when Firebase comes up later, and
+  /// after a refused or dropped listener.
+  ///
+  /// **The query has no `orderBy`, on purpose.** Ordering by `lastAt` needed
+  /// a composite index — until it is built every list read fails, and the
+  /// screen waited on a spinner for good — and it silently left out every
+  /// conversation that has no `lastAt` (those an earlier version wrote).
+  /// `array-contains` alone needs no index and returns them all; the list is
+  /// sorted on the phone, which for a few hundred conversations costs
+  /// nothing.
   static Future<void> start() async {
     if (_uid != null && _sub != null) return;
     if (_starting) return;
@@ -407,18 +416,23 @@ abstract final class ChatService {
     _starting = true;
     try {
       final String? uid = await PersonalCardService.durableUid();
-      if (uid == null) return;
+      if (uid == null) {
+        // Not signed in (yet): nothing to wait for on the list screen.
+        loaded.value = true;
+        return;
+      }
       _uid = uid;
       await _sub?.cancel();
+      _retry?.cancel();
       _sub = FirebaseFirestore.instance
           .collection('chats')
           .where('members', arrayContains: uid)
-          .orderBy('lastAt', descending: true)
           .limit(listLimit)
           .snapshots()
           .listen(
             (QuerySnapshot<Map<String, dynamic>> snap) {
               if (_uid != uid) return;
+              _failures = 0;
               _apply(uid, <ChatThread>[
                 for (final QueryDocumentSnapshot<Map<String, dynamic>> d
                     in snap.docs)
@@ -428,15 +442,39 @@ abstract final class ChatService {
             },
             onError: (Object error) {
               _log(error);
-              // A dropped listener is started again on the next resume.
               _sub = null;
+              // The screen stops waiting — it shows what it has, or the
+              // empty state — and the list is asked for again shortly.
+              loaded.value = true;
+              _scheduleRetry();
             },
           );
+      // Offline with nothing cached the server never answers: stop showing
+      // a spinner after a few seconds — the list (or the empty state with
+      // people to write to) is drawn, and fills in when the server answers.
+      Timer(const Duration(seconds: 6), () {
+        if (_uid == uid) loaded.value = true;
+      });
     } catch (error, stackTrace) {
       _log(error, stackTrace);
+      loaded.value = true;
+      _scheduleRetry();
     } finally {
       _starting = false;
     }
+  }
+
+  static Timer? _retry;
+  static int _failures = 0;
+
+  /// 5s, 10s, 20s … up to two minutes between attempts.
+  static void _scheduleRetry() {
+    _retry?.cancel();
+    final int seconds = (5 << _failures.clamp(0, 5)).clamp(5, 120);
+    _failures++;
+    _retry = Timer(Duration(seconds: seconds), () {
+      if (_sub == null) unawaited(start());
+    });
   }
 
   static void _onFirebaseReady() {
@@ -478,6 +516,9 @@ abstract final class ChatService {
   }
 
   static Future<void> stop() async {
+    _retry?.cancel();
+    _retry = null;
+    _failures = 0;
     await _sub?.cancel();
     _sub = null;
     _uid = null;
@@ -496,6 +537,8 @@ abstract final class ChatService {
 
   /// The other member of a direct chat, read off its id (`{a}_{b}`, sorted).
   static String otherOfId(String chatId, String me) {
+    // Without knowing who "me" is, either half could be the other side.
+    if (me.isEmpty) return '';
     final int cut = chatId.indexOf('_');
     if (cut <= 0) return '';
     final String a = chatId.substring(0, cut);
@@ -878,8 +921,11 @@ class ChatMessagesController extends ChangeNotifier {
 
   void _listen() {
     if (!FirebaseBootstrap.isReady) {
+      // Opened before Firebase is up (a push tapped on a cold start): listen
+      // as soon as it is, instead of leaving the conversation blank.
       loaded = true;
       refused = true;
+      FirebaseBootstrap.readyListenable.addListener(_onFirebaseReady);
       return;
     }
     unawaited(_sub?.cancel());
@@ -910,8 +956,14 @@ class ChatMessagesController extends ChangeNotifier {
         );
   }
 
-  /// Listens again — after the first message created the conversation, or
-  /// after the connection came back.
+  void _onFirebaseReady() {
+    if (!FirebaseBootstrap.isReady) return;
+    FirebaseBootstrap.readyListenable.removeListener(_onFirebaseReady);
+    if (!_disposed) _listen();
+  }
+
+  /// Listens again — after the first message created the conversation (from
+  /// either side), or after the connection came back.
   void resubscribe() {
     if (_disposed) return;
     if (_sub != null && !refused) return;
@@ -952,6 +1004,7 @@ class ChatMessagesController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    FirebaseBootstrap.readyListenable.removeListener(_onFirebaseReady);
     unawaited(_sub?.cancel());
     _sub = null;
     super.dispose();

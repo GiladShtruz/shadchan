@@ -9,7 +9,7 @@ void main() {
     expect(AppColors.darkBlue, const Color(0xFF324754));
     expect(AppColors.blue, const Color(0xFF5F91A3));
     expect(AppColors.teal, const Color(0xFF8FB7C4));
-    expect(AppColors.rose, const Color(0xFFC97891));
+    expect(AppColors.rose, const Color(0xFFA3647E));
     expect(AppColors.copper, const Color(0xFFC98657));
     expect(AppColors.cream, const Color(0xFFFAF7F1));
     expect(AppColors.white, const Color(0xFFFFFFFF));
@@ -22,15 +22,18 @@ void main() {
     expect(AppColors.surface, AppColors.white);
   });
 
-  test('the light theme draws the page cream and cards, tiles and grounds white', () {
-    final ThemeData theme = AppTheme.lightTheme();
-    expect(theme.scaffoldBackgroundColor, AppColors.cream);
-    expect(theme.colorScheme.surface, AppColors.white);
-    expect(theme.cardColor, AppColors.white);
-    expect(theme.colorScheme.surfaceContainerLow, AppColors.white);
-    expect(ProfilePalette.surface(theme), AppColors.white);
-    expect(ProfilePalette.canvas(theme), AppColors.cream);
-  });
+  test(
+    'the light theme draws the page cream and cards, tiles and grounds white',
+    () {
+      final ThemeData theme = AppTheme.lightTheme();
+      expect(theme.scaffoldBackgroundColor, AppColors.cream);
+      expect(theme.colorScheme.surface, AppColors.white);
+      expect(theme.cardColor, AppColors.white);
+      expect(theme.colorScheme.surfaceContainerLow, AppColors.white);
+      expect(ProfilePalette.surface(theme), AppColors.white);
+      expect(ProfilePalette.canvas(theme), AppColors.cream);
+    },
+  );
 
   test('the roles are palette members', () {
     expect(AppColors.primary, AppColors.blue);

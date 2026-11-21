@@ -128,7 +128,7 @@ void main() {
     // And there is no way round it any more. This is the assertion that would
     // fail if somebody put the skip back.
     expect(find.text('המשך בלי להתחבר'), findsNothing);
-    expect(find.text('המאגר שלי'), findsNothing);
+    expect(find.text('המאגר'), findsNothing);
   });
 
   testWidgets('a fresh install opens on the two ways in, before sign-in', (
@@ -246,7 +246,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(SignInScreen.returningHeadline), findsNothing);
-    expect(find.text('המאגר שלי'), findsWidgets);
+    expect(find.text('המאגר'), findsWidgets);
   });
 
   testWidgets('a brand-new install is asked to start, not to complete', (
@@ -324,7 +324,7 @@ void main() {
       expect(find.text('המאגר עדיין לא נטען'), findsOneWidget);
       expect(find.text('ניסיון חוזר'), findsOneWidget);
       expect(find.text('להמשיך לצפייה בלבד'), findsNothing);
-      expect(find.text('המאגר שלי'), findsNothing);
+      expect(find.text('המאגר'), findsNothing);
       expect(OfflineGuard.blocking, isTrue);
 
       // Read: the guard lets edits through again.
@@ -392,7 +392,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('אימות כתובת המייל'), findsOneWidget);
-    expect(find.text('המאגר שלי'), findsNothing);
+    expect(find.text('המאגר'), findsNothing);
   });
 
   testWidgets('an account waiting for deletion opens on the offer to restore', (
@@ -410,7 +410,7 @@ void main() {
 
     expect(find.text('החשבון מתוזמן למחיקה'), findsOneWidget);
     expect(find.text('שחזור החשבון'), findsOneWidget);
-    expect(find.text('המאגר שלי'), findsNothing);
+    expect(find.text('המאגר'), findsNothing);
   });
 }
 

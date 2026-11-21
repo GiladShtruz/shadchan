@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:shadchan/screens/known_matchmakers_screen.dart' show NewMark;
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/card_link_dialog.dart';
@@ -23,7 +23,6 @@ import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/person_navigation.dart';
 import 'package:shadchan/utils/phone_identity.dart';
-import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -331,12 +330,12 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
         .toList();
     final ThemeData theme = Theme.of(context);
 
-    // Three clear tabs — "אישרו לי גישה" first and open by default, because
-    // that is the list a matchmaker works from; asking and waiting are the
-    // two other states, each in its own place.
+    // Two tabs — "אישרו לי גישה" first and open by default, because that is
+    // the list a matchmaker works from; "בקשות גישה" holds asking (on top)
+    // and waiting (quietly, at the foot).
     final int initialTab = widget.requestOwnerUid != null ? 1 : 0;
     return DefaultTabController(
-      length: 3,
+      length: 2,
       initialIndex: initialTab,
       child: Scaffold(
         appBar: AppBar(
@@ -380,8 +379,7 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
                   labelPadding: const EdgeInsets.symmetric(horizontal: 4),
                   tabs: <Widget>[
                     _CountTab('אישרו לי גישה', approved.length),
-                    _CountTab('אפשר לבקש גישה', toAsk.length),
-                    _CountTab('ביקשתי ומחכה', pending.length),
+                    _CountTab('בקשות גישה', toAsk.length),
                   ],
                 ),
               ],
@@ -393,14 +391,14 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
             : TabBarView(
                 children: <Widget>[
                   _ApprovedTab(friends: approved),
-                  _ToAskTab(
-                    friends: toAsk,
+                  _RequestsTab(
+                    toAsk: toAsk,
+                    pending: pending,
                     now: now,
                     emptyText: friends.isEmpty && !access.helpersLoaded
                         ? 'הרשימה תופיע לאחר החיבור לחשבון.'
                         : 'אין כרגע חברים חדשים לבקש מהם גישה.',
                   ),
-                  _PendingTab(friends: pending),
                 ],
               ),
         bottomNavigationBar: SafeArea(
@@ -471,7 +469,7 @@ class _ApprovedTab extends StatelessWidget {
     if (friends.isEmpty) {
       return const _EmptyTab(
         'עוד אין חברים שאישרו לך גישה לכרטיס שלהם.\n'
-        'בלשונית "אפשר לבקש גישה" אפשר לבקש.',
+        'בלשונית "בקשות גישה" אפשר לבקש.',
       );
     }
     return ListView.builder(
@@ -491,81 +489,80 @@ class _ApprovedTab extends StatelessWidget {
   }
 }
 
-/// "אפשר לבקש גישה": the friends who added a card this week first, each as
-/// "חדש! משה הוסיף כרטיס אישי · בקש גישה"; then everybody else.
-class _ToAskTab extends StatelessWidget {
-  const _ToAskTab({
-    required this.friends,
+/// "בקשות גישה": on top, the friends who keep a card and have not been
+/// asked yet — the ones who joined this week first, each with a small "חדש"
+/// — every row with "בקש גישה". At the foot, quiet and grey, those already
+/// asked who have not answered: "ממתין לאישור", and nothing to press. A
+/// friend who has not approved may well have chosen not to; the app does not
+/// nudge them again and again, and does not crowd the matchmaker with them.
+class _RequestsTab extends StatelessWidget {
+  const _RequestsTab({
+    required this.toAsk,
+    required this.pending,
     required this.now,
     required this.emptyText,
   });
-  final List<FriendWithCard> friends;
+  final List<FriendWithCard> toAsk;
+  final List<FriendWithCard> pending;
   final DateTime now;
   final String emptyText;
 
   @override
   Widget build(BuildContext context) {
-    if (friends.isEmpty) return _EmptyTab(emptyText);
+    if (toAsk.isEmpty && pending.isEmpty) return _EmptyTab(emptyText);
+    final ThemeData theme = Theme.of(context);
+    final bool hasPendingHeader = pending.isNotEmpty;
+    // Rows: [intro] toAsk… [pending header] pending…
+    final int count =
+        1 + toAsk.length + (hasPendingHeader ? 1 + pending.length : 0);
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(8, 10, 8, 24),
-      itemCount: friends.length + 1,
+      itemCount: count,
       itemBuilder: (BuildContext context, int index) {
         if (index == 0) {
           return Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
             child: Text(
-              'עם גישה, הכרטיס שלהם מתעדכן אצלך במאגר מעצמו.',
-              style: Theme.of(context).textTheme.bodySmall,
+              toAsk.isEmpty
+                  ? 'אין כרגע חברים חדשים לבקש מהם גישה.'
+                  : 'עם גישה, הכרטיס שלהם מתעדכן אצלך במאגר מעצמו.',
+              style: theme.textTheme.bodySmall,
             ),
           );
         }
-        final FriendWithCard friend = friends[index - 1];
-        return friend.isNew(now)
-            ? _NewCardRow(
-                key: ValueKey<String>(friend.ownerUid),
-                friend: friend,
-              )
-            : _WaitingRow(
-                key: ValueKey<String>(friend.ownerUid),
-                friend: friend,
-              );
+        final int i = index - 1;
+        if (i < toAsk.length) {
+          final FriendWithCard friend = toAsk[i];
+          return _WaitingRow(
+            key: ValueKey<String>(friend.ownerUid),
+            friend: friend,
+            isNew: friend.isNew(now),
+          );
+        }
+        final int k = i - toAsk.length;
+        if (k == 0) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(8, 22, 8, 4),
+            child: Text(
+              'ממתינים לאישור',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: AppColors.mutedInk,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          );
+        }
+        final FriendWithCard friend = pending[k - 1];
+        return _PendingRow(
+          key: ValueKey<String>(friend.ownerUid),
+          friend: friend,
+        );
       },
     );
   }
 }
 
-/// "ביקשתי ומחכה": a compact list, each row with a WhatsApp link that opens a
-/// chat with the friend and a gentle reminder already written.
-class _PendingTab extends StatelessWidget {
-  const _PendingTab({required this.friends});
-  final List<FriendWithCard> friends;
-
-  @override
-  Widget build(BuildContext context) {
-    if (friends.isEmpty) {
-      return const _EmptyTab('אין בקשות שממתינות לאישור.');
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
-      itemCount: friends.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, indent: 60),
-      itemBuilder: (BuildContext context, int index) => _PendingRow(
-        key: ValueKey<String>(friends[index].ownerUid),
-        friend: friends[index],
-      ),
-    );
-  }
-}
-
-/// The reminder a matchmaker sends a friend who has not answered yet.
-String pendingReminderMessage(Gender? friendGender) =>
-    'היי, ביקשתי ממך גישה לכרטיס שלך בשדכן 🙂 אשמח אם '
-    '${switch (friendGender) {
-      Gender.female => 'תאשרי',
-      Gender.male => 'תאשר',
-      _ => 'תאשר/י',
-    }} כשמתאים לך.';
-
+/// One friend already asked: grey and quiet, no button.
 class _PendingRow extends StatelessWidget {
   const _PendingRow({super.key, required this.friend});
   final FriendWithCard friend;
@@ -574,36 +571,33 @@ class _PendingRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Person? person = friend.person;
-    final String? phone = person?.phone;
-    final bool canWrite = phone != null && phone.trim().isNotEmpty;
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      leading: ExcludeSemantics(
-        child: IgnorePointer(
-          child: person != null
-              ? PersonAvatar(person: person, radius: 20)
-              : _InitialAvatar(name: friend.name),
+    return Opacity(
+      opacity: 0.6,
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        leading: ExcludeSemantics(
+          child: IgnorePointer(
+            child: person != null
+                ? PersonAvatar(person: person, radius: 18)
+                : const _InitialAvatar(radius: 18),
+          ),
         ),
-      ),
-      title: Text(
-        friend.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.w800,
+        title: Text(
+          friend.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: AppColors.mutedInk,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-      ),
-      subtitle: const Text('ממתין לאישור'),
-      trailing: TextButton.icon(
-        onPressed: canWrite
-            ? () => WhatsAppUtils.openChatWithText(
-                phone,
-                pendingReminderMessage(person?.gender),
-              )
-            : null,
-        icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
-        label: const Text('תזכורת'),
+        trailing: Text(
+          'ממתין לאישור',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: AppColors.mutedInk,
+          ),
+        ),
       ),
     );
   }
@@ -749,7 +743,7 @@ class _ApprovedRow extends StatelessWidget {
     if (person == null) {
       // Access came a moment ago; the card is still on its way down.
       return ListTile(
-        leading: _InitialAvatar(name: friend.name),
+        leading: const _InitialAvatar(),
         title: Text(friend.name),
         subtitle: const Text('הכרטיס נטען…'),
       );
@@ -1020,8 +1014,11 @@ class _BigFriendCardState extends State<_BigFriendCard> {
 /// not open, and the picture is not a way into anything — nothing here can
 /// be viewed, saved, shared or forwarded until the friend says yes.
 class _WaitingRow extends StatelessWidget {
-  const _WaitingRow({super.key, required this.friend});
+  const _WaitingRow({super.key, required this.friend, this.isNew = false});
   final FriendWithCard friend;
+
+  /// Joined this week: a small "חדש" beside the name.
+  final bool isNew;
 
   @override
   Widget build(BuildContext context) {
@@ -1052,7 +1049,7 @@ class _WaitingRow extends StatelessWidget {
                         ownerUid: friend.ownerUid,
                         ownerPhoneHash: friend.phoneHash!,
                       ),
-                child: const Text('בקשת גישה'),
+                child: Text('{בקש|בקשי} גישה'.forGender(context.userGender)),
               ),
     };
     return Padding(
@@ -1064,11 +1061,11 @@ class _WaitingRow extends StatelessWidget {
             child: IgnorePointer(
               child: person != null
                   ? PersonAvatar(person: person, radius: 22)
-                  : _InitialAvatar(name: friend.name),
+                  : const _InitialAvatar(),
             ),
           ),
           const SizedBox(width: 10),
-          Expanded(
+          Flexible(
             child: Text(
               friend.name,
               maxLines: 1,
@@ -1078,6 +1075,9 @@ class _WaitingRow extends StatelessWidget {
               ),
             ),
           ),
+          if (isNew) ...<Widget>[const SizedBox(width: 6), const NewMark()],
+          const Spacer(),
+          const SizedBox(width: 8),
           action,
         ],
       ),
@@ -1085,118 +1085,20 @@ class _WaitingRow extends StatelessWidget {
   }
 }
 
-/// A friend whose card was made in the last week, and who has not been asked
-/// yet: drawn ahead of everything, on a warm wash, as one sentence —
-/// "חדש! משה הוסיף כרטיס אישי · בקש גישה".
-class _NewCardRow extends StatelessWidget {
-  const _NewCardRow({super.key, required this.friend});
-  final FriendWithCard friend;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
-    final CardAccessProvider access = context.watch<CardAccessProvider>();
-    final bool busy = access.isBusy('request:${friend.ownerUid}');
-    final Person? person = friend.person;
-    final String first = friend.name.trim().split(RegExp(r'\s+')).first;
-    final String added = switch (person?.gender) {
-      Gender.female => 'הוסיפה',
-      Gender.male => 'הוסיף',
-      _ => 'הוסיף/ה',
-    };
-    final VoidCallback? ask = friend.phoneHash == null || busy
-        ? null
-        : () => CardInviteFlow.requestAccess(
-            context,
-            person ?? _standIn(friend),
-            ownerUid: friend.ownerUid,
-            ownerPhoneHash: friend.phoneHash!,
-          );
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      child: Material(
-        color: warm.withValues(alpha: dark ? 0.16 : 0.08),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: warm.withValues(alpha: 0.45)),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: ask,
-          child: Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 12, 10),
-            child: Row(
-              children: <Widget>[
-                ExcludeSemantics(
-                  child: person != null
-                      ? PersonAvatar(person: person, radius: 22)
-                      : _InitialAvatar(name: friend.name),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text.rich(
-                    TextSpan(
-                      children: <InlineSpan>[
-                        TextSpan(
-                          text: 'חדש! ',
-                          style: TextStyle(
-                            color: warm,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        TextSpan(text: '$first $added כרטיס אישי · '),
-                        TextSpan(
-                          text: '{בקש|בקשי} גישה'.forGender(context.userGender),
-                          style: TextStyle(
-                            color: dark
-                                ? AppColors.primaryDarkDm
-                                : AppColors.primaryDark,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-                if (busy) ...<Widget>[
-                  const SizedBox(width: 8),
-                  const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
+/// A friend with no photo here: a plain flat figure of a person.
 class _InitialAvatar extends StatelessWidget {
-  const _InitialAvatar({required this.name});
-  final String name;
+  const _InitialAvatar({this.radius = 22});
+  final double radius;
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final String trimmed = name.trim();
     return CircleAvatar(
-      radius: 22,
-      backgroundColor: AppColors.softBlue,
-      child: Text(
-        trimmed.isEmpty ? '' : trimmed.characters.first,
-        style: theme.textTheme.titleMedium?.copyWith(
-          color: AppColors.primaryDark,
-          fontWeight: FontWeight.w900,
-        ),
+      radius: radius,
+      backgroundColor: AppColors.primaryLight,
+      child: Icon(
+        Icons.person_rounded,
+        size: radius * 1.3,
+        color: AppColors.white,
       ),
     );
   }

@@ -160,8 +160,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('בית'), findsWidgets);
-    expect(find.text('המאגר שלי'), findsWidgets);
-    expect(find.text('הרעיונות שלי'), findsWidgets);
+    // The bar's short names (2026-11-21): "המאגר" and "רעיונות".
+    expect(find.text('המאגר'), findsWidgets);
+    expect(find.text('רעיונות'), findsWidgets);
   });
 
   testWidgets('Onboarding asks how the app will be used — three answers', (
@@ -439,8 +440,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('בית'), findsOneWidget);
-      expect(find.text('המאגר שלי'), findsOneWidget);
-      expect(find.text('הרעיונות שלי'), findsOneWidget);
+      expect(find.text('המאגר'), findsOneWidget);
+      expect(find.text('רעיונות'), findsOneWidget);
       expect(find.text('הלל'), findsOneWidget);
       expect(find.text('התאמות'), findsOneWidget);
       expect(find.text('הוספת רעיון'), findsOneWidget);
@@ -866,11 +867,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // **The row says who, then what**: "שרה × דוד", and under it a brand-new
+    // **The row says who, then what**: "דוד ❤️ שרה", and under it a brand-new
     // proposal's step — the boy is asked first.
-    const String action = 'שרה × דוד';
+    const String action = 'דוד ❤️ שרה';
     await _scrollHomeTo(tester, find.text(action));
-    expect(find.text('לשאול את דוד מה דעתו'), findsOneWidget);
+    expect(find.text('לשאול את דוד'), findsOneWidget);
 
     // Nobody pinned this proposal: it is on the list because it is open.
     expect(
@@ -897,7 +898,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.text('רעיונות פתוחים'));
     await tester.pump();
-    expect(find.text('דוד & שרה'), findsOneWidget);
+    expect(find.text('דוד ❤️ שרה'), findsOneWidget);
     // The chips scroll sideways on a narrow phone.
     await tester.ensureVisible(find.text('הצעות מהמאגר'));
     await tester.pump();
@@ -1615,11 +1616,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     // The banner carries the page's own name now, not the wordmark: only בית
-    // has no name of its own, so only בית signs itself. "הרעיונות שלי" is
-    // therefore on screen twice — the bar and the tab at the foot — which is
-    // what the count below says.
+    // has no name of its own, so only בית signs itself. The tab at the foot
+    // is the short "רעיונות".
     expect(find.byType(ShadchanWordmark), findsNothing);
-    expect(find.text('הרעיונות שלי'), findsNWidgets(2));
+    expect(find.text('הרעיונות שלי'), findsOneWidget);
+    expect(find.text('רעיונות'), findsOneWidget);
     // And the search row is part of the bar, so it never folds away.
     expect(find.byType(ShadchanSearchBottom), findsOneWidget);
 
@@ -1648,7 +1649,7 @@ void main() {
     await tester.drag(find.byType(MatchIdeaCard).first, const Offset(0, -220));
     await tester.pumpAndSettle();
     expect(find.text('פתוחים'), findsOneWidget);
-    expect(find.text('הרעיונות שלי'), findsNWidgets(2));
+    expect(find.text('הרעיונות שלי'), findsOneWidget);
     expect(find.byType(ShadchanSearchBottom), findsOneWidget);
 
     await tester.ensureVisible(find.text('סגירת פעולות'));
@@ -2584,8 +2585,8 @@ void main() {
           'השדכנים שלי',
         ]);
         expect(find.text('השדכנים שלי'), findsWidgets);
-        expect(find.text('המאגר שלי'), findsNothing);
-        expect(find.text('הרעיונות שלי'), findsNothing);
+        expect(find.text('המאגר'), findsNothing);
+        expect(find.text('רעיונות'), findsNothing);
         expect(find.textContaining('למעבר לאזור'), findsNothing);
         // The database is not reachable by a link either.
         AppRouter.router.go('/people');
@@ -2617,8 +2618,8 @@ void main() {
         'בית',
         'צ\'אטים',
         'פרופיל',
-        'המאגר שלי',
-        'הרעיונות שלי',
+        'המאגר',
+        'רעיונות',
       ]);
       // In RTL the first item is at the right: the profile face sits between
       // צ'אטים and המאגר שלי, raised above the bar.
@@ -2847,7 +2848,14 @@ void main() {
     // The person whose name matched, then the idea itself.
     expect(rows, findsNWidgets(2));
     expect(find.text('אנשים'), findsOneWidget);
-    expect(find.text('רעיונות'), findsOneWidget);
+    // "רעיונות" heads the results, and is also the tab's name in the bar.
+    expect(
+      find.descendant(
+        of: find.byType(SearchResultsPanel),
+        matching: find.text('רעיונות'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(rows.last);
     await tester.pump();

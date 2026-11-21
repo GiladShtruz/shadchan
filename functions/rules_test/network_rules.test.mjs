@@ -375,6 +375,17 @@ test('a matchmaker may send a candidate card to a single tied by a card', async 
   await assertFails(setDoc(doc(as(C), `sentCards/${C}/to/${S}/cards/s9`), card('s9')));
 });
 
+test('a chat can be started with somebody who has me in their phone book, one way', async () => {
+  // C has nothing with S — except that the server found S among C's contacts.
+  await assertFails(sendBatch(as(S), S, C, 'x', 'היי'));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `users/${C}/private/helpers`), { uids: [S] });
+  });
+  // Either side may write first.
+  await assertSucceeds(sendBatch(as(S), S, C, 'h1', 'היי'));
+  await assertSucceeds(sendBatch(as(C), C, S, 'h2', 'שלום'));
+});
+
 test('a card sent in a chat is read only by the matchmaker it was sent to', async () => {
   const path = `sentCards/${A}/to/${B}/cards/s1`;
   await assertSucceeds(setDoc(doc(as(A), path), card('s1')));
