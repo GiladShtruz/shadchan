@@ -68,7 +68,7 @@ abstract final class AppColors {
   static const Color onSurface = darkBlue;
   static const Color onSurfaceVariant = mutedInk;
   static const Color outline = Color(0xFFE2E2DE);
-  static const Color error = Color(0xFFAB6E85);
+  static const Color error = rose;
   static const Color divider = Color(0xFFE8E7E3);
 
   static const Color statusIdea = blue;
@@ -124,7 +124,7 @@ abstract final class AppColors {
   /// The same four in the dark theme.
   static const Color metricFriendsDm = primaryDarkDm;
   static const Color metricIdeasDm = secondaryDarkDm;
-  static const Color metricCouplesDm = Color(0xFF9ABECA);
+  static const Color metricCouplesDm = softHighlightDm;
   static const Color metricWeddingsDm = femaleAccentDm;
 
   /// The metric colour for [dark] or light, in one call.
@@ -158,7 +158,9 @@ abstract final class AppColors {
   /// third colour instead of as quieter text.
   static const Color headingInk = primaryInk;
   static const Color mutedInk = Color(0xFF6A7880);
-  static const Color headingInkDm = primaryDarkDm;
+
+  /// Headings at night are the cream, never a blue on the blue.
+  static const Color headingInkDm = onSurfaceDm;
   static const Color mutedInkDm = onSurfaceVariantDm;
 
   static Color heading({bool dark = false}) => dark ? headingInkDm : headingInk;
@@ -187,21 +189,43 @@ abstract final class AppColors {
     return initialsPastels[hash % initialsPastels.length];
   }
 
-  // **Dark mode is the palette at night, not black.** The neutrals are a deep
-  // stone blue taken from [primary]'s own hue — the page reads as the same
-  // app with the lights down — and the copper, the rose and the light blue
-  // carry the warmth on top of it. Nothing is `#000`, and nothing is the cold
-  // near-black slate the theme used to be.
-  static const Color primaryDarkDm = Color(0xFF9ABECA);
-  static const Color primaryLightDarkDm = Color(0xFF426170);
-  static const Color secondaryDarkDm = Color(0xFFD5A27E);
-  static const Color secondaryLightDarkDm = Color(0xFF495054);
-  static const Color backgroundDm = Color(0xFF1D2931);
-  static const Color surfaceDm = Color(0xFF26353F);
-  static const Color onSurfaceDm = cream;
-  static const Color onSurfaceVariantDm = Color(0xFFB4CDD4);
-  static const Color outlineDm = Color(0xFF4B5D69);
-  static const Color dividerDm = Color(0xFF3E525E);
+  // **Dark mode has a palette of its own (2026-11-21), not the light one
+  // with the lights down.** The light palette laid on a dark ground reads
+  // grey and washed out, so the night set is tuned for it: a deep blue page,
+  // cards a step lighter, a third step for what is active, two warm creams of
+  // text, and the accents lifted to stay alive on the dark. The same brand,
+  // not the same colours.
+  //
+  //  - [backgroundDm]    #1B2C35  the page
+  //  - [surfaceDm]       #304954  ordinary cards, the search field, sheets
+  //  - [surfaceActiveDm] #3F606D  a raised/active card, a selected row
+  //  - [onSurfaceDm]     #F5F1E8  headings and important text
+  //  - [onSurfaceVariantDm] #B8C8CD  secondary text
+  //  - [primaryDarkDm]   #79B4C5  the blue — men, open ideas, highlights
+  //  - [femaleAccentDm]  #B86A87  the bordeaux-mauve — women, the badge
+  //  - [secondaryDarkDm] #D49262  the terracotta — CTA, "+", progress
+  //  - [softHighlightDm] #E8B78F  the peach — gentle highlights
+  //
+  // Never the light [teal] or [copper] on the dark ground: their night
+  // versions are [primaryDarkDm] and [secondaryDarkDm].
+  static const Color backgroundDm = Color(0xFF1B2C35);
+  static const Color surfaceDm = Color(0xFF304954);
+  static const Color surfaceActiveDm = Color(0xFF3F606D);
+  static const Color onSurfaceDm = Color(0xFFF5F1E8);
+  static const Color onSurfaceVariantDm = Color(0xFFB8C8CD);
+  static const Color primaryDarkDm = Color(0xFF79B4C5);
+  static const Color secondaryDarkDm = Color(0xFFD49262);
+  static const Color softHighlightDm = Color(0xFFE8B78F);
+
+  /// Washes on the dark ground: the active surface for the blue, and the
+  /// terracotta laid over a card at a fifth.
+  static const Color primaryLightDarkDm = surfaceActiveDm;
+  static const Color secondaryLightDarkDm = Color(0xFF515857);
+
+  /// Rules and borders: a step lighter than a card, so a field or a card's
+  /// edge is seen without a line that shouts.
+  static const Color outlineDm = Color(0xFF4F6F7C);
+  static const Color dividerDm = Color(0xFF3F5A66);
 
   /// Per-gender accents. Men keep the app's stone blue; women get the
   /// bordeaux-mauve [rose] — the same family as the notification badge — and
@@ -210,7 +234,12 @@ abstract final class AppColors {
   static const Color maleSurface = softBlue;
   static const Color femaleAccent = rose;
   static const Color femaleSurface = softRose;
-  static const Color femaleAccentDm = Color(0xFFCD95AB);
+  static const Color femaleAccentDm = Color(0xFFB86A87);
+
+  /// The bordeaux as text on a dark card: [femaleAccentDm] drawn toward the
+  /// cream far enough to be read (≈4:1 on [surfaceDm]) — the night twin of
+  /// [femaleInk].
+  static const Color femaleInkDm = Color(0xFFCD99A9);
 
   /// The rose as ink: [femaleAccent] deepened far enough to be read as text
   /// on its own light wash, the way [primaryInk] is to the blue.

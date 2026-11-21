@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -181,7 +182,7 @@ class HomeWeeklyProgress extends StatelessWidget {
     final bool full = progress.progress >= 1;
     final Color fill = full
         ? (dark ? AppColors.statusDatingDm : AppColors.statusDating)
-        : (dark ? AppColors.secondaryDarkDm : AppColors.secondary);
+        : (dark ? AppColors.secondaryDarkDm : context.tokens.ctaAccent);
     final String? sub = progress.subline;
     final int? ideas = progress.rankIdeas;
     // Clean and compact, no card of its own: the line, a thin scale, and —
@@ -212,7 +213,7 @@ class HomeWeeklyProgress extends StatelessWidget {
                   minHeight: 4,
                   backgroundColor: dark
                       ? AppColors.primaryLightDarkDm
-                      : AppColors.primaryLight,
+                      : context.tokens.maleWash,
                   valueColor: AlwaysStoppedAnimation<Color>(fill),
                 ),
           ),

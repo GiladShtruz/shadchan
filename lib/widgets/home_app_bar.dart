@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
 /// The app's own mark, on nothing.
@@ -23,12 +24,16 @@ class ShadchanLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color? color = this.color == null
+        ? null
+        : context.tokens.adapt(this.color!);
     final ThemeData theme = Theme.of(context);
     final Color ink =
         color ??
         (theme.brightness == Brightness.dark
             ? AppColors.primaryDarkDm
-            : AppColors.primary);
+            : context.tokens.maleAccent);
 
     return ColorFiltered(
       colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),
@@ -162,7 +167,7 @@ class HomeBarButton extends StatelessWidget {
                     IconTheme.merge(
                       data: IconThemeData(
                         size: 20,
-                        color: AppColors.heading(dark: dark),
+                        color: context.tokens.textPrimary,
                       ),
                       child: icon,
                     ),
@@ -175,7 +180,7 @@ class HomeBarButton extends StatelessWidget {
                           height: 8,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: AppColors.error,
+                            color: context.tokens.badge,
                             border: Border.all(
                               color: dark
                                   ? theme.colorScheme.surfaceContainerHighest
@@ -200,7 +205,7 @@ class HomeBarButton extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.error,
+                  color: context.tokens.badge,
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
                     color: theme.scaffoldBackgroundColor,
@@ -213,7 +218,7 @@ class HomeBarButton extends StatelessWidget {
                     fontSize: 10,
                     height: 1,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: context.tokens.onBadge,
                   ),
                 ),
               ),
@@ -287,7 +292,9 @@ class HomeGreeting extends StatelessWidget {
               TextSpan(
                 text: name,
                 style: TextStyle(
-                  color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+                  color: dark
+                      ? AppColors.secondaryDarkDm
+                      : context.tokens.ctaAccent,
                 ),
               ),
             ],

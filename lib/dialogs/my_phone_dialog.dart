@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/phone_identity.dart';
@@ -271,7 +271,7 @@ class _MyPhoneDialogState extends State<_MyPhoneDialog> {
           Text(
             note,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: AppColors.mutedInk,
+              color: context.tokens.textSecondary,
             ),
           ),
         ],
@@ -297,7 +297,9 @@ class _MyPhoneDialogState extends State<_MyPhoneDialog> {
                 ? null
                 : () =>
                       Navigator.of(context).pop(const MyPhoneOutcome.skipped()),
-            style: TextButton.styleFrom(foregroundColor: AppColors.mutedInk),
+            style: TextButton.styleFrom(
+              foregroundColor: context.tokens.textSecondary,
+            ),
             child: Text(widget.required ? 'דילוג' : 'ביטול'),
           ),
       ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/activity_stats.dart';
@@ -138,6 +139,8 @@ class _FigureTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
 
     return Material(

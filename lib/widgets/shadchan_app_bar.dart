@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
@@ -337,6 +338,8 @@ class ShadchanSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final AppTokens tokens = context.tokens;
+    final bool dark = theme.brightness == Brightness.dark;
     final bool hasText = controller.text.trim().isNotEmpty;
     final VoidCallback? cleared = onCleared;
 
@@ -373,19 +376,33 @@ class ShadchanSearchField extends StatelessWidget {
               // there is nothing left to hand back.
               onTapOutside: (PointerDownEvent event) =>
                   FocusManager.instance.primaryFocus?.unfocus(),
-              style: theme.textTheme.bodyMedium,
+              // The card colour, a border a step lighter, the main text
+              // colour typed and the secondary one for the placeholder.
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: tokens.textPrimary,
+              ),
+              cursorColor: tokens.maleAccent,
               decoration: InputDecoration(
                 isDense: true,
                 filled: true,
-                fillColor: theme.colorScheme.surface,
+                fillColor: tokens.surface,
                 hintText: hintText,
-                prefixIcon: const Icon(Icons.search, size: 20),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                border: border(theme.colorScheme.outlineVariant),
-                enabledBorder: border(theme.colorScheme.outlineVariant),
-                focusedBorder: border(
-                  theme.colorScheme.primary.withValues(alpha: 0.6),
+                hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                  color: tokens.textSecondary,
                 ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  size: 20,
+                  color: tokens.textSecondary,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                border: border(
+                  dark ? tokens.outline : theme.colorScheme.outlineVariant,
+                ),
+                enabledBorder: border(
+                  dark ? tokens.outline : theme.colorScheme.outlineVariant,
+                ),
+                focusedBorder: border(tokens.maleAccent.withValues(alpha: 0.7)),
                 suffixIcon: hasText
                     ? IconButton(
                         icon: const Icon(Icons.clear, size: 20),

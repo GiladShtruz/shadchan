@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/screens/network_screen.dart';
 import 'package:shadchan/screens/sharing_settings_screen.dart';
@@ -1022,6 +1023,8 @@ class _ProfileTagPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1194,7 +1197,7 @@ class _FriendCardTileState extends State<_FriendCardTile> {
                 borderRadius: BorderRadius.circular(16),
                 backgroundColor: dark
                     ? theme.colorScheme.surfaceContainerHighest
-                    : AppColors.cardCream,
+                    : context.tokens.surface,
                 onTapIndex: (int index) => widget.onOpenCard(
                   person.photosPaths.indexOf(photos[index]),
                 ),
@@ -1510,7 +1513,7 @@ class _ProfileInlineActions extends StatelessWidget {
         icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 21),
         label: whatsappLabel,
         onTap: onWhatsApp,
-        ink: _whatsappGreen,
+        ink: context.tokens.adapt(_whatsappGreen),
       ),
       ContactChannel.sms => (
         icon: const Icon(Icons.sms_outlined, size: 21),
@@ -2267,7 +2270,7 @@ class _NoteComposerState extends State<_NoteComposer> {
             tooltip: canSend ? 'שליחה' : 'הקלטת הערה קולית',
             style: IconButton.styleFrom(
               backgroundColor: accent,
-              foregroundColor: Colors.white,
+              foregroundColor: context.tokens.onAccent,
             ),
             onPressed: _sending
                 ? null
@@ -4929,7 +4932,7 @@ class _HistoryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final PersonEvent head = entry.head;
-    final Color color = _eventColor(head.type);
+    final Color color = context.tokens.adapt(_eventColor(head.type));
     final PersonRepository people = context.read<PersonRepository>();
     Person? relatedOf(PersonEvent event) {
       final String? id = event.relatedPersonId;

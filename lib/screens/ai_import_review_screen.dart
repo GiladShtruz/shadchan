@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/imported_banner.dart';
@@ -171,7 +172,9 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color slate = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color slate = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
     final List<_Draft> attention = _attention;
     final List<_Draft> ready = _ready;
     final List<_Draft> duplicates = _duplicates;

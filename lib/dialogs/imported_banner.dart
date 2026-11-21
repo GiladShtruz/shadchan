@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 
 /// "נוספו X אנשים למאגר" — the moment an import finishes.
 ///
@@ -53,7 +53,9 @@ class _ImportedBannerState extends State<ImportedBanner> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color tone = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color tone = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return GestureDetector(
       onTap: () => Navigator.of(context).maybePop(),

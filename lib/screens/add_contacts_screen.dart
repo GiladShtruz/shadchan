@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/add_contacts_intro_dialog.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
@@ -131,16 +132,14 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
 
     final Color selectedBackground = theme.brightness == Brightness.dark
         ? theme.colorScheme.primary
-        : AppColors.primaryDark;
-    final Color selectedForeground = theme.brightness == Brightness.dark
-        ? AppColors.onSurface
-        : AppColors.onPrimary;
+        : context.tokens.maleAccent;
+    final Color selectedForeground = context.tokens.onAccent;
     final Color unselectedBackground = theme.brightness == Brightness.dark
         ? theme.colorScheme.surface
         : AppColors.onPrimary;
     final Color unselectedForeground = theme.brightness == Brightness.dark
         ? theme.colorScheme.onSurface
-        : AppColors.primaryDark;
+        : context.tokens.maleAccent;
 
     return ChangeNotifierProvider<AddContactsSession>.value(
       value: session,

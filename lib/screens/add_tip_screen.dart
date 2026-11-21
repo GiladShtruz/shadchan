@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/tips_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
 /// "הוספת טיפ" — where a matchmaker writes a tip for every other matchmaker.
@@ -162,7 +162,7 @@ class _AddTipScreenState extends State<AddTipScreen> {
                   style: FilledButton.styleFrom(
                     backgroundColor: theme.brightness == Brightness.dark
                         ? theme.colorScheme.primary
-                        : AppColors.primaryDark,
+                        : context.tokens.maleAccent,
                     foregroundColor: theme.colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: const StadiumBorder(),
@@ -239,9 +239,9 @@ class _MyTipRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color tone = switch (tip.status) {
-      TipStatus.approved => AppColors.blue,
+      TipStatus.approved => context.tokens.maleAccent,
       TipStatus.rejected => theme.colorScheme.onSurfaceVariant,
-      TipStatus.pending => AppColors.secondary,
+      TipStatus.pending => context.tokens.ctaAccent,
     };
 
     return Container(

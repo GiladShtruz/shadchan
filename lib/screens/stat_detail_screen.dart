@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
@@ -920,6 +921,8 @@ class _Bar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     final double factor = maxValue == 0 ? 0 : value / maxValue;
 

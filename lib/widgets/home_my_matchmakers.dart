@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/screens/chats_screen.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/matchmaker_friends.dart';
 import 'package:shadchan/utils/personal_nav.dart';
 import 'package:shadchan/widgets/personal_home_sections.dart';
@@ -194,7 +194,7 @@ class _Card extends StatelessWidget {
       child: Material(
         color: theme.colorScheme.surface,
         elevation: 1,
-        shadowColor: AppColors.darkBlue.withValues(alpha: 0.18),
+        shadowColor: context.tokens.textPrimary.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -211,8 +211,8 @@ class _Card extends StatelessWidget {
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: friend.canReadCard
-                          ? AppColors.primary
-                          : AppColors.teal,
+                          ? context.tokens.maleAccent
+                          : context.tokens.lightAccent,
                       width: 2,
                     ),
                   ),
@@ -236,7 +236,9 @@ class _Card extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: requested ? AppColors.copper : AppColors.mutedInk,
+                      color: requested
+                          ? context.tokens.ctaAccent
+                          : context.tokens.textSecondary,
                     ),
                   ),
                 ),

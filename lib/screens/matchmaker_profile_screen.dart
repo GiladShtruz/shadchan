@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/avatar_image.dart';
 import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 import 'package:flutter/services.dart';
@@ -241,7 +242,9 @@ class _AdminAccountCardState extends State<_AdminAccountCard> {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.secondary.withValues(alpha: 0.5)),
+        border: Border.all(
+          color: context.tokens.ctaAccent.withValues(alpha: 0.5),
+        ),
       ),
       child: FutureBuilder<AccountHealth?>(
         future: _health,
@@ -253,10 +256,10 @@ class _AdminAccountCardState extends State<_AdminAccountCard> {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  const Icon(
+                  Icon(
                     Icons.admin_panel_settings_outlined,
                     size: 18,
-                    color: AppColors.secondary,
+                    color: context.tokens.ctaAccent,
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -366,11 +369,11 @@ class _Header extends StatelessWidget {
       radius: _radius,
       backgroundColor: theme.brightness == Brightness.dark
           ? theme.colorScheme.surfaceContainerHighest
-          : AppColors.primaryLight,
-      child: const Icon(
+          : context.tokens.maleWash,
+      child: Icon(
         Icons.person_outline,
         size: _radius,
-        color: AppColors.primary,
+        color: context.tokens.maleAccent,
       ),
     );
 
@@ -467,7 +470,9 @@ class _BenefitCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color accent = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),

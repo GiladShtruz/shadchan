@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
@@ -445,8 +446,8 @@ class _Slide extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       backgroundColor: dark
                           ? AppColors.primaryDarkDm
-                          : AppColors.primaryDark,
-                      foregroundColor: Colors.white,
+                          : context.tokens.maleAccent,
+                      foregroundColor: context.tokens.onAccent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),

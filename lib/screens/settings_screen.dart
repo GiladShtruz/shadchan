@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/screens/partner_space_screen.dart';
 import 'package:shadchan/services/partner_space.dart';
 import 'package:flutter/material.dart';
@@ -87,7 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: 'ניהול',
                 accent: dark
                     ? AppColors.femaleAccentDm
-                    : AppColors.femaleAccent,
+                    : context.tokens.femaleAccent,
                 children: <Widget>[
                   SettingsRow(
                     icon: Icons.inbox_outlined,
@@ -185,7 +186,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // pass the app on, and what other matchmakers wrote.
             SettingsGroup(
               title: 'פעולות נוספות',
-              accent: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+              accent: dark
+                  ? AppColors.secondaryDarkDm
+                  : context.tokens.ctaAccent,
               children: <Widget>[
                 if (CommunityLinks.hasUpdatesGroup)
                   SettingsRow(

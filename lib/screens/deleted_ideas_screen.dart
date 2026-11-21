@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -102,7 +103,7 @@ class _DeletedIdeaRow extends StatelessWidget {
     }
 
     return HomePaperCard(
-      stripe: AppColors.secondary,
+      stripe: context.tokens.ctaAccent,
       padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
       child: Row(
         children: <Widget>[

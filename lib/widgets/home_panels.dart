@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/art_tint.dart';
@@ -75,9 +76,13 @@ class DatabaseIdeasCta extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color copper = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
-    final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
-    final Color paper = dark ? AppColors.surfaceDm : AppColors.page;
+    final Color copper = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
+    final Color blue = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
+    final Color paper = dark ? AppColors.surfaceDm : context.tokens.background;
     return Semantics(
       button: true,
       label: '${HomeHeroBand.title}. לצפייה ברעיונות',
@@ -169,7 +174,7 @@ class DatabaseIdeasCta extends StatelessWidget {
                     child: Text(
                       'להצצה',
                       style: theme.textTheme.labelMedium?.copyWith(
-                        color: Colors.white,
+                        color: context.tokens.onAccent,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -207,7 +212,9 @@ class HomeArtTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color ink = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -298,10 +305,10 @@ class HomeActionCards extends StatelessWidget {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color peopleInk = dark
         ? AppColors.primaryDarkDm
-        : AppColors.addPeopleAccent;
+        : context.tokens.maleAccent;
     final Color ideaInk = dark
         ? AppColors.secondaryDarkDm
-        : AppColors.addIdeaAccent;
+        : context.tokens.ctaAccent;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -662,7 +669,9 @@ class _HomeDatingBannerState extends State<HomeDatingBanner> {
             start: -24,
             child: _CelebrationOrb(
               size: 104,
-              color: _celebrationGold.withValues(alpha: dark ? 0.08 : 0.10),
+              color: context.tokens
+                  .adapt(_celebrationGold)
+                  .withValues(alpha: dark ? 0.08 : 0.10),
             ),
           ),
           PositionedDirectional(
@@ -756,6 +765,8 @@ class _CelebrationOrb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     return Container(
       width: size,
       height: size,
@@ -884,10 +895,10 @@ class _CoupleFaces extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(color: paper, shape: BoxShape.circle),
-              child: const Icon(
+              child: Icon(
                 Icons.favorite,
                 size: 15,
-                color: AppColors.femaleAccent,
+                color: context.tokens.femaleAccent,
               ),
             ),
           ),
@@ -930,7 +941,9 @@ class DatingCouplesStrip extends StatelessWidget {
     // The rose-to-honey wash a dating couple's own card wears on "הרעיונות
     // שלי", and nothing around it: no frame, no glow, no sparkle — the wash and
     // the rose ink of the words are the whole decoration.
-    final Color rose = dark ? AppColors.femaleAccentDm : AppColors.femaleAccent;
+    final Color rose = dark
+        ? AppColors.femaleAccentDm
+        : context.tokens.femaleAccent;
     final Color surface = theme.colorScheme.surface;
     final String couples = count == 1
         ? 'זוג אחד שלך יוצא'
@@ -950,11 +963,15 @@ class DatingCouplesStrip extends StatelessWidget {
               end: AlignmentDirectional.bottomEnd,
               colors: <Color>[
                 Color.alphaBlend(
-                  AppColors.softRose.withValues(alpha: dark ? 0.26 : 0.95),
+                  context.tokens.femaleWash.withValues(
+                    alpha: dark ? 0.26 : 0.95,
+                  ),
                   surface,
                 ),
                 Color.alphaBlend(
-                  AppColors.softYellow.withValues(alpha: dark ? 0.14 : 0.70),
+                  context.tokens
+                      .adapt(AppColors.softYellow)
+                      .withValues(alpha: dark ? 0.14 : 0.70),
                   surface,
                 ),
               ],
@@ -994,7 +1011,7 @@ class DatingCouplesStrip extends StatelessWidget {
                           ?.copyWith(
                             fontWeight: FontWeight.w800,
                             height: 1.3,
-                            color: dark ? rose : AppColors.femaleInk,
+                            color: dark ? rose : context.tokens.femaleInk,
                           ),
                 ),
               ),

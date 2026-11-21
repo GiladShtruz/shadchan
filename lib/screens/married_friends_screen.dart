@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/person_navigation.dart';
@@ -162,7 +163,7 @@ class _MarriedHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.secondaryDarkDm : AppColors.secondaryInk;
+    final Color ink = dark ? AppColors.secondaryDarkDm : context.tokens.ctaInk;
 
     return Container(
       width: double.infinity,
@@ -174,7 +175,7 @@ class _MarriedHeader extends StatelessWidget {
           end: AlignmentDirectional.bottomEnd,
           colors: <Color>[
             AppColors.softYellow.withValues(alpha: dark ? 0.16 : 0.85),
-            AppColors.softRose.withValues(alpha: dark ? 0.16 : 0.85),
+            context.tokens.femaleWash.withValues(alpha: dark ? 0.16 : 0.85),
           ],
         ),
       ),
@@ -285,9 +286,9 @@ class _CoupleCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
             border: Border.all(
-              color: AppColors.statusMarried.withValues(
-                alpha: dark ? 0.45 : 0.3,
-              ),
+              color: context.tokens
+                  .adapt(AppColors.statusMarried)
+                  .withValues(alpha: dark ? 0.45 : 0.3),
             ),
           ),
           child: Column(
@@ -320,7 +321,7 @@ class _CoupleCard extends StatelessWidget {
               Text(
                 'מזל טוב 💍',
                 style: theme.textTheme.labelMedium?.copyWith(
-                  color: AppColors.statusMarried,
+                  color: context.tokens.adapt(AppColors.statusMarried),
                   fontWeight: FontWeight.w800,
                 ),
               ),

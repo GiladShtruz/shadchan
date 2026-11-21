@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/screens/known_matchmakers_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -192,13 +193,15 @@ class _Card extends StatelessWidget {
     final KnownMatchmaker m = matchmaker;
     final String name = m.name.trim().isEmpty ? 'שדכן/ית' : m.name.trim();
     final String? photo = m.photoUrl?.trim();
-    final Color ring = m.sharesWithMe ? AppColors.primary : AppColors.teal;
+    final Color ring = m.sharesWithMe
+        ? context.tokens.maleAccent
+        : context.tokens.lightAccent;
     return SizedBox(
       width: width,
       child: Material(
         color: theme.colorScheme.surface,
         elevation: 1,
-        shadowColor: AppColors.darkBlue.withValues(alpha: 0.18),
+        shadowColor: context.tokens.textPrimary.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -228,7 +231,7 @@ class _Card extends StatelessWidget {
                       // No photo: a plain, flat figure of a person — never
                       // a first letter.
                       child: CircleAvatar(
-                        backgroundColor: AppColors.primaryLight,
+                        backgroundColor: context.tokens.maleWash,
                         foregroundImage: photo == null || photo.isEmpty
                             ? null
                             : avatarImage(context, photo, diameter: _photo),

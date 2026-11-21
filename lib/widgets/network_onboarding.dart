@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/network_sharing.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 /// The short introduction a matchmaker meets before sharing anything: the
@@ -66,11 +66,11 @@ class NetworkOnboardingCard extends StatelessWidget {
                   children: <Widget>[
                     CircleAvatar(
                       radius: 14,
-                      backgroundColor: AppColors.softBlue,
+                      backgroundColor: context.tokens.maleWash,
                       child: Icon(
                         steps[i].$1,
                         size: 16,
-                        color: AppColors.primaryDark,
+                        color: context.tokens.maleAccent,
                       ),
                     ),
                     const SizedBox(width: 10),

@@ -1,4 +1,5 @@
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/reminders_bell_button.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -16,7 +17,6 @@ import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/dialogs/access_permissions_dialog.dart';
 import 'package:shadchan/screens/personal_privacy_screen.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/matchmaker_friends.dart';
 import 'package:shadchan/widgets/personal_home_sections.dart';
 
@@ -484,9 +484,9 @@ class MatchmakerFriendRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: requested
-                          ? AppColors.secondary
+                          ? context.tokens.ctaAccent
                           : f.canReadCard
-                          ? AppColors.primaryDark
+                          ? context.tokens.maleAccent
                           : null,
                       fontWeight: requested ? FontWeight.w800 : null,
                     ),

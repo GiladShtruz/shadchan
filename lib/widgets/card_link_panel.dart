@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
@@ -10,7 +11,6 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/card_history_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/card_updates_seen.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -234,14 +234,14 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
               Text(
                 'לכל היסטוריית השינויים',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppColors.mutedInk,
+                  color: context.tokens.textSecondary,
                 ),
               ),
               // `chevron_right` draws pointing left in RTL — the forward way.
-              const Icon(
+              Icon(
                 Icons.chevron_right_rounded,
                 size: 18,
-                color: AppColors.mutedInk,
+                color: context.tokens.textSecondary,
               ),
             ],
           ),
@@ -339,7 +339,7 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
                       : 'ל$name יש כרטיס אישי שהוא מנהל בעצמו',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: row?.status == CardAccessStatus.declined
-                        ? AppColors.mutedInk
+                        ? context.tokens.textSecondary
                         : null,
                   ),
                 ),
@@ -368,7 +368,7 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: HomePaperCard(
-        stripe: AppColors.secondary,
+        stripe: context.tokens.ctaAccent,
         onTap: synced ? () => _openHistory(person.id) : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

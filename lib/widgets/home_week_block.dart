@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/services/community_goal_service.dart';
@@ -216,10 +217,12 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
             goal: _goal,
           )
         : null;
-    final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color warm = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
 
     return HomePaperCard(
-      stripe: dark ? AppColors.primaryDarkDm : AppColors.primary,
+      stripe: dark ? AppColors.primaryDarkDm : context.tokens.maleAccent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -297,6 +300,8 @@ class _Figure extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     final ThemeData theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
@@ -445,7 +450,7 @@ class _ChallengeBar extends StatelessWidget {
                       minHeight: 7,
                       backgroundColor: dark
                           ? AppColors.dividerDm
-                          : AppColors.primaryLight,
+                          : context.tokens.maleWash,
                       valueColor: AlwaysStoppedAnimation<Color>(fill),
                     );
                   },

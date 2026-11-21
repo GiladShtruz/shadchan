@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/avatar_image.dart';
 import 'dart:io';
 
@@ -120,9 +121,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // long column of blue: copper for the matchmaker's own number, blue for
     // the account, rose for what other matchmakers see, the light blue for
     // the settings.
-    final Color copper = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
-    final Color rose = dark ? AppColors.femaleAccentDm : AppColors.femaleAccent;
-    final Color sky = dark ? AppColors.metricCouplesDm : AppColors.primary;
+    final Color copper = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
+    final Color rose = dark
+        ? AppColors.femaleAccentDm
+        : context.tokens.femaleAccent;
+    final Color sky = dark
+        ? AppColors.metricCouplesDm
+        : context.tokens.maleAccent;
 
     final List<Widget> sections = <Widget>[
       // 1. Who this is: the photograph, the full name, and the one line they
@@ -825,14 +832,16 @@ class UserProfileAvatar extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
-                color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+                color: dark
+                    ? AppColors.secondaryDarkDm
+                    : context.tokens.ctaAccent,
                 shape: BoxShape.circle,
                 border: Border.all(color: theme.colorScheme.surface, width: 2),
               ),
               child: Icon(
                 hasPhoto ? Icons.edit : Icons.add_a_photo_outlined,
                 size: 14,
-                color: AppColors.surface,
+                color: context.tokens.onAccent,
               ),
             ),
           ),

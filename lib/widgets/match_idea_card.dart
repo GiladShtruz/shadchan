@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/dialogs/match_journal_sheet.dart';
@@ -449,6 +450,8 @@ class _EdgeStripe extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     return AccentStripe(color: color, atStart: atStart, height: height);
   }
 }
@@ -811,7 +814,7 @@ class _StatusLine extends StatelessWidget {
                     color: match.status == MatchStatus.dating
                         ? (dark
                               ? AppColors.femaleAccentDm
-                              : AppColors.femaleAccent)
+                              : context.tokens.femaleAccent)
                         : theme.colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 4),
@@ -825,7 +828,7 @@ class _StatusLine extends StatelessWidget {
                         color: match.status == MatchStatus.dating
                             ? (dark
                                   ? AppColors.femaleAccentDm
-                                  : AppColors.femaleAccent)
+                                  : context.tokens.femaleAccent)
                             : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -1401,6 +1404,8 @@ class _ActionsBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color tint = context.tokens.adapt(this.tint);
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Widget? below = footer;
     return Column(
@@ -1528,7 +1533,9 @@ class _DatingPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.femaleAccentDm : AppColors.femaleAccent;
+    final Color ink = dark
+        ? AppColors.femaleAccentDm
+        : context.tokens.femaleAccent;
     final DateTime? since = startedAt;
     final int every = match.checkInEveryDays ?? DatingCheckIn.defaultEveryDays;
 
@@ -2002,29 +2009,29 @@ class _Middle extends StatelessWidget {
             color: status == MatchStatus.dated
                 ? (Theme.of(context).brightness == Brightness.dark
                       ? AppColors.femaleAccentDm
-                      : AppColors.femaleAccent)
+                      : context.tokens.femaleAccent)
                 : AppColors.matchState(
                     status,
                     dark: Theme.of(context).brightness == Brightness.dark,
                   ),
           ),
           if (dating) ...<Widget>[
-            const Positioned(
+            Positioned(
               top: -9,
               right: -7,
               child: Icon(
                 Icons.auto_awesome,
                 size: 11,
-                color: AppColors.secondary,
+                color: context.tokens.ctaAccent,
               ),
             ),
-            const Positioned(
+            Positioned(
               bottom: -8,
               left: -6,
               child: Icon(
                 Icons.auto_awesome,
                 size: 9,
-                color: AppColors.femaleAccent,
+                color: context.tokens.femaleAccent,
               ),
             ),
           ],

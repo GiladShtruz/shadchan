@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/screens/known_matchmakers_screen.dart' show NewMark;
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -546,7 +547,7 @@ class _RequestsTab extends StatelessWidget {
             child: Text(
               'ממתינים לאישור',
               style: theme.textTheme.labelMedium?.copyWith(
-                color: AppColors.mutedInk,
+                color: context.tokens.textSecondary,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -588,14 +589,14 @@ class _PendingRow extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodyMedium?.copyWith(
-            color: AppColors.mutedInk,
+            color: context.tokens.textSecondary,
             fontWeight: FontWeight.w600,
           ),
         ),
         trailing: Text(
           'ממתין לאישור',
           style: theme.textTheme.labelSmall?.copyWith(
-            color: AppColors.mutedInk,
+            color: context.tokens.textSecondary,
           ),
         ),
       ),
@@ -1094,7 +1095,7 @@ class _InitialAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.primaryLight,
+      backgroundColor: context.tokens.maleWash,
       child: Icon(
         Icons.person_rounded,
         size: radius * 1.3,
@@ -1115,7 +1116,9 @@ class FriendsWithCardsLink extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color ink = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
     return Material(
       color: dark ? AppColors.surfaceDm : theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(16),

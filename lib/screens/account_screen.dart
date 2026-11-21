@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/account_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
@@ -32,7 +33,7 @@ class AccountScreen extends StatelessWidget {
           children: <Widget>[
             SettingsGroup(
               title: 'מחובר כעת',
-              accent: AppColors.primaryDark,
+              accent: context.tokens.maleAccent,
               children: <Widget>[
                 SettingsRow(
                   icon: Icons.mail_outline_rounded,
@@ -59,7 +60,7 @@ class AccountScreen extends StatelessWidget {
             ),
             SettingsGroup(
               title: 'דרכי התחברות',
-              accent: AppColors.secondary,
+              accent: context.tokens.ctaAccent,
               children: <Widget>[
                 _MethodRow(
                   icon: Icons.account_circle_outlined,
@@ -100,7 +101,7 @@ class AccountScreen extends StatelessWidget {
             if (providers.contains('password'))
               SettingsGroup(
                 title: 'סיסמה',
-                accent: AppColors.femaleAccent,
+                accent: context.tokens.femaleAccent,
                 children: <Widget>[
                   SettingsRow(
                     icon: Icons.lock_reset_rounded,
@@ -259,7 +260,10 @@ class _MethodRow extends StatelessWidget {
       title: name,
       subtitle: linked ? 'מקושר' : 'לא מקושר',
       trailing: linked
-          ? Icon(Icons.check_circle_rounded, color: AppColors.statusMarried)
+          ? Icon(
+              Icons.check_circle_rounded,
+              color: context.tokens.adapt(AppColors.statusMarried),
+            )
           : onLink == null
           ? null
           : TextButton(

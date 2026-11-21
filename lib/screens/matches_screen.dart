@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
@@ -1452,6 +1453,8 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final BorderRadius radius = BorderRadius.circular(12);
 
     // The app's one cream inside, every one of them — white page, cream

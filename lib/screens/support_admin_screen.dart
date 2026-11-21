@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/admin_stats_tab.dart';
 import 'dart:typed_data';
 
@@ -280,14 +281,14 @@ class _WaitingReportsBanner extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: AppColors.secondary.withValues(alpha: 0.14),
+        color: context.tokens.ctaAccent.withValues(alpha: 0.14),
       ),
       child: Row(
         children: <Widget>[
-          const Icon(
+          Icon(
             Icons.mark_email_unread_outlined,
             size: 20,
-            color: AppColors.secondary,
+            color: context.tokens.ctaAccent,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -341,14 +342,14 @@ class _ReportCard extends StatelessWidget {
       case SupportReportStatus.inProgress:
         return theme.colorScheme.primary;
       case SupportReportStatus.done:
-        return AppColors.statusDating;
+        return AppColors.statusDating; // adapted where drawn
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color tone = _tone(theme);
+    final Color tone = context.tokens.adapt(_tone(theme));
     final String name = report.authorName.isEmpty
         ? 'ללא שם'
         : report.authorName;

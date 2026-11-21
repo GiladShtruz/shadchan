@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
 /// How to get a WhatsApp export into the app, step by step.
@@ -40,7 +41,9 @@ class WhatsAppExportGuideScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color slate = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color slate = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
 
     return Scaffold(
       appBar: AppBar(title: const Text('ייצוא מוואטסאפ')),

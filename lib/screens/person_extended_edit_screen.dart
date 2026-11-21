@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/photo_share_switch.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
@@ -1132,7 +1133,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
                 _ => 'הטלפון של החבר/ה',
               },
               style: theme.textTheme.bodySmall?.copyWith(
-                color: AppColors.mutedInk,
+                color: context.tokens.textSecondary,
               ),
             ),
             const SizedBox(height: 8),
@@ -1245,7 +1246,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             Text(
               'לסידור וסינון המאגר שלך. לא מופיעות בכרטיס שנשלח.',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: AppColors.mutedInk,
+                color: context.tokens.textSecondary,
               ),
             ),
             const SizedBox(height: 8),
@@ -1263,7 +1264,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             Text(
               'עד ${TagCatalog.maxChosen} תגיות. יופיעו אצל השדכנים שקיבלו גישה לכרטיס.',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: AppColors.mutedInk,
+                color: context.tokens.textSecondary,
               ),
             ),
             const SizedBox(height: 8),
@@ -2016,7 +2017,7 @@ class _PhotoThumb extends StatelessWidget {
             start: 3,
             child: _ThumbBadge(
               icon: Icons.star_border_rounded,
-              color: AppColors.secondary,
+              color: context.tokens.ctaAccent,
               tooltip: 'קביעה כתמונה ראשית',
               onTap: onMakePrimary,
             ),
@@ -2042,6 +2043,8 @@ class _ThumbBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     final ThemeData theme = Theme.of(context);
     return Tooltip(
       message: tooltip,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -383,7 +384,7 @@ class _ShareWithScreenState extends State<_ShareWithScreen> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: HomePaperCard(
-                    stripe: AppColors.secondary,
+                    stripe: context.tokens.ctaAccent,
                     child: Text(
                       '$_first ביקש/ה שתשתף/י איתו/ה כרטיסים. את/ה מחליט/ה מה.',
                       style: theme.textTheme.bodyLarge,
@@ -482,11 +483,13 @@ class _ModeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Material(
-      color: selected ? AppColors.primaryLight : theme.colorScheme.surface,
+      color: selected ? context.tokens.maleWash : theme.colorScheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
-          color: selected ? AppColors.primary : theme.colorScheme.outline,
+          color: selected
+              ? context.tokens.maleAccent
+              : theme.colorScheme.outline,
           width: selected ? 1.6 : 1,
         ),
       ),
@@ -501,7 +504,9 @@ class _ModeTile extends StatelessWidget {
                 selected
                     ? Icons.radio_button_checked_rounded
                     : Icons.radio_button_unchecked_rounded,
-                color: selected ? AppColors.primary : theme.colorScheme.outline,
+                color: selected
+                    ? context.tokens.maleAccent
+                    : theme.colorScheme.outline,
               ),
               const SizedBox(width: 10),
               Expanded(

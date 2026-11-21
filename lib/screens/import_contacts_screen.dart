@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/live_card_offer.dart';
@@ -864,7 +865,7 @@ class _FilterSortButton extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final Color color = theme.brightness == Brightness.dark
         ? theme.colorScheme.primary
-        : AppColors.primaryDark;
+        : context.tokens.maleAccent;
 
     return InkWell(
       onTap: onPressed,
@@ -932,10 +933,10 @@ class _ContactRow extends StatelessWidget {
     final bool dark = theme.brightness == Brightness.dark;
     final Color accent = dark
         ? theme.colorScheme.primary
-        : AppColors.primaryDark;
+        : context.tokens.maleAccent;
     final Color selectedSurface = dark
         ? accent.withValues(alpha: 0.18)
-        : AppColors.softBlue;
+        : context.tokens.maleWash;
 
     return Container(
       decoration: softCardDecoration(
@@ -1016,7 +1017,7 @@ class _StatusTag extends StatelessWidget {
         label = 'במאגר';
         color = theme.brightness == Brightness.dark
             ? AppColors.femaleAccentDm
-            : AppColors.femaleAccent;
+            : context.tokens.femaleAccent;
       case ContactCandidateStatus.removedFromList:
         label = 'הוסר מהרשימה';
         color = theme.colorScheme.onSurfaceVariant;
@@ -1030,7 +1031,7 @@ class _StatusTag extends StatelessWidget {
         label = 'כרטיס אישי בשדכן';
         color = theme.brightness == Brightness.dark
             ? theme.colorScheme.primary
-            : AppColors.primaryDark;
+            : context.tokens.maleAccent;
     }
 
     return Container(
@@ -1073,7 +1074,7 @@ class _SelectionActionBar extends StatelessWidget {
     final bool dark = theme.brightness == Brightness.dark;
     final Color accent = dark
         ? theme.colorScheme.primary
-        : AppColors.primaryDark;
+        : context.tokens.maleAccent;
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 180),
@@ -1095,9 +1096,7 @@ class _SelectionActionBar extends StatelessWidget {
                         onPressed: onAdd,
                         style: FilledButton.styleFrom(
                           backgroundColor: accent,
-                          foregroundColor: dark
-                              ? AppColors.onSurface
-                              : AppColors.onPrimary,
+                          foregroundColor: context.tokens.onAccent,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           textStyle: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w800,

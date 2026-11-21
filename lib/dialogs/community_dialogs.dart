@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/support_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/community_milestones.dart';
 
@@ -149,7 +149,7 @@ abstract final class CommunityMilestoneDialog {
         final bool dark = theme.brightness == Brightness.dark;
         final Color lead = dark
             ? theme.colorScheme.primary
-            : AppColors.primaryDark;
+            : context.tokens.maleAccent;
 
         return Dialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 28),
@@ -181,7 +181,7 @@ abstract final class CommunityMilestoneDialog {
                     height: 128,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppColors.secondary.withValues(
+                      color: context.tokens.ctaAccent.withValues(
                         alpha: dark ? 0.12 : 0.10,
                       ),
                     ),
@@ -253,7 +253,9 @@ abstract final class WhatsNewDialog {
               Icon(
                 Icons.auto_awesome_rounded,
                 size: 20,
-                color: dark ? theme.colorScheme.primary : AppColors.primaryDark,
+                color: dark
+                    ? theme.colorScheme.primary
+                    : context.tokens.maleAccent,
               ),
               const SizedBox(width: 8),
               Expanded(child: Text(note.title)),

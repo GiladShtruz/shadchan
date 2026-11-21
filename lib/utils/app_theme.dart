@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 
 abstract final class AppTheme {
   static ThemeData lightTheme() {
@@ -52,30 +53,44 @@ abstract final class AppTheme {
       bottomNavigationUnselectedColor: AppColors.mutedInk,
       textColor: AppColors.headingInk,
       secondaryTextColor: AppColors.mutedInk,
+      tokens: AppTokens.light,
     );
   }
 
   static ThemeData darkTheme() {
+    // **The night palette (2026-11-21)** — see [AppColors.backgroundDm] and
+    // [AppTokens.dark]. Text on an accent fill is the deep page blue, which
+    // reads on the lifted blue and the terracotta alike; cream on them would
+    // not.
     const ColorScheme colorScheme = ColorScheme.dark(
       primary: AppColors.primaryDarkDm,
-      onPrimary: AppColors.onSurface,
+      onPrimary: AppColors.backgroundDm,
       primaryContainer: AppColors.primaryLightDarkDm,
       onPrimaryContainer: AppColors.onSurfaceDm,
       secondary: AppColors.secondaryDarkDm,
-      onSecondary: AppColors.darkBlue,
+      onSecondary: AppColors.backgroundDm,
+      tertiary: AppColors.femaleAccentDm,
+      onTertiary: AppColors.onSurfaceDm,
       secondaryContainer: AppColors.secondaryLightDarkDm,
       onSecondaryContainer: AppColors.onSurfaceDm,
       surface: AppColors.surfaceDm,
       onSurface: AppColors.onSurfaceDm,
-      error: AppColors.error,
-      onError: AppColors.surface,
+      error: AppColors.femaleAccentDm,
+      onError: AppColors.onSurfaceDm,
       outline: AppColors.outlineDm,
     );
 
     return _buildTheme(
       colorScheme: colorScheme.copyWith(
-        surfaceContainerHighest: AppColors.primaryLightDarkDm,
-        surfaceContainerLow: AppColors.secondaryLightDarkDm,
+        surfaceContainerHighest: AppColors.surfaceActiveDm,
+        surfaceContainerHigh: AppColors.surfaceActiveDm,
+        surfaceContainer: AppColors.surfaceDm,
+        surfaceContainerLow: AppColors.surfaceDm,
+        surfaceContainerLowest: AppColors.backgroundDm,
+        surfaceBright: AppColors.surfaceActiveDm,
+        surfaceDim: AppColors.backgroundDm,
+        inverseSurface: AppColors.onSurfaceDm,
+        onInverseSurface: AppColors.backgroundDm,
         onSurfaceVariant: AppColors.onSurfaceVariantDm,
         outlineVariant: AppColors.dividerDm,
       ),
@@ -83,15 +98,16 @@ abstract final class AppTheme {
       appBarBackgroundColor: AppColors.backgroundDm,
       appBarForegroundColor: AppColors.headingInkDm,
       cardColor: AppColors.surfaceDm,
-      chipBackgroundColor: AppColors.primaryLightDarkDm,
-      chipLabelColor: AppColors.primaryDarkDm,
+      chipBackgroundColor: AppColors.surfaceDm,
+      chipLabelColor: AppColors.onSurfaceDm,
       inputFillColor: AppColors.surfaceDm,
       dividerColor: AppColors.dividerDm,
       bottomNavigationBackgroundColor: AppColors.surfaceDm,
       bottomNavigationSelectedColor: AppColors.primaryDarkDm,
-      bottomNavigationUnselectedColor: AppColors.mutedInkDm,
+      bottomNavigationUnselectedColor: AppColors.onSurfaceVariantDm,
       textColor: AppColors.headingInkDm,
       secondaryTextColor: AppColors.mutedInkDm,
+      tokens: AppTokens.dark,
     );
   }
 
@@ -110,6 +126,7 @@ abstract final class AppTheme {
     required Color bottomNavigationUnselectedColor,
     required Color textColor,
     required Color secondaryTextColor,
+    required AppTokens tokens,
   }) {
     const String fontFamily = 'Google Sans';
     final TextTheme baseTextTheme = Typography.material2021().black.apply(
@@ -178,6 +195,7 @@ abstract final class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      extensions: <ThemeExtension<dynamic>>[tokens],
       // **No blank frame between two pages.** Android's default transition
       // fades the old page out and the new one in over the theme's surface —
       // white — and when the new page took a moment to build (the full card
@@ -236,6 +254,11 @@ abstract final class AppTheme {
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
         shape: const CircleBorder(),
+        // A shadow on the dark page is only a black ring: barely one there.
+        elevation: colorScheme.brightness == Brightness.dark ? 1 : null,
+        highlightElevation: colorScheme.brightness == Brightness.dark
+            ? 2
+            : null,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -268,6 +291,9 @@ abstract final class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: inputFillColor,
+        hintStyle: textTheme.bodyMedium?.copyWith(color: secondaryTextColor),
+        prefixIconColor: secondaryTextColor,
+        suffixIconColor: secondaryTextColor,
         border: inputBorder,
         enabledBorder: inputBorder,
         focusedBorder: inputBorder.copyWith(
@@ -329,12 +355,43 @@ abstract final class AppTheme {
         ),
       ),
       snackBarTheme: SnackBarThemeData(
+        backgroundColor: tokens.textPrimary,
+        actionTextColor: tokens.ctaAccent,
         behavior: SnackBarBehavior.floating,
         insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         contentTextStyle: textTheme.bodyMedium?.copyWith(
-          color: colorScheme.surface,
+          color: tokens.background,
         ),
+      ),
+      // The notification count: the bordeaux with light text, both themes.
+      badgeTheme: BadgeThemeData(
+        backgroundColor: tokens.badge,
+        textColor: tokens.onBadge,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: cardColor,
+        surfaceTintColor: Colors.transparent,
+        textStyle: textTheme.bodyLarge,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith<Color?>(
+          (Set<WidgetState> states) => states.contains(WidgetState.selected)
+              ? tokens.onAccent
+              : tokens.textSecondary,
+        ),
+        trackColor: WidgetStateProperty.resolveWith<Color?>(
+          (Set<WidgetState> states) => states.contains(WidgetState.selected)
+              ? tokens.maleAccent
+              : tokens.surfaceActive,
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith<Color?>(
+          (Set<WidgetState> states) =>
+              states.contains(WidgetState.selected) ? tokens.maleAccent : null,
+        ),
+        checkColor: WidgetStatePropertyAll<Color>(tokens.onAccent),
       ),
       expansionTileTheme: ExpansionTileThemeData(
         iconColor: colorScheme.primary,

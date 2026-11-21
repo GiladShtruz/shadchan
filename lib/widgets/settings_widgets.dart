@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/app_version.dart';
 import 'package:shadchan/widgets/home_section.dart';
@@ -40,13 +41,17 @@ class SettingsGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color? accent = this.accent == null
+        ? null
+        : context.tokens.adapt(this.accent!);
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     if (children.isEmpty) {
       return const SizedBox.shrink();
     }
     final Color tone =
-        accent ?? (dark ? AppColors.primaryDarkDm : AppColors.primaryDark);
+        accent ?? (dark ? AppColors.primaryDarkDm : context.tokens.maleAccent);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
@@ -142,7 +147,7 @@ class SettingsRow extends StatelessWidget {
     final Color accent = destructive
         ? theme.colorScheme.error
         : _SettingsAccent.of(context) ??
-              (dark ? AppColors.primaryDarkDm : AppColors.primaryDark);
+              (dark ? AppColors.primaryDarkDm : context.tokens.maleAccent);
 
     return ListTile(
       enabled: enabled,

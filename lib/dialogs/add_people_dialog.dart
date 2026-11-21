@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -44,7 +45,7 @@ class AddMethodCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return Material(
-      color: dark ? theme.colorScheme.surface : AppColors.cardCream,
+      color: dark ? theme.colorScheme.surface : context.tokens.surface,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
@@ -155,7 +156,7 @@ abstract final class AddChoiceDialog {
         final bool dark = theme.brightness == Brightness.dark;
         final Color slate = dark
             ? AppColors.primaryDarkDm
-            : AppColors.primaryDark;
+            : context.tokens.maleAccent;
         return Dialog(
           backgroundColor: theme.colorScheme.surface,
           insetPadding: const EdgeInsets.symmetric(horizontal: 40),
@@ -198,7 +199,9 @@ abstract final class AddChoiceDialog {
                 AddMethodCard(
                   icon: Icons.lightbulb_outline_rounded,
                   title: 'הוספת רעיון',
-                  slate: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+                  slate: dark
+                      ? AppColors.secondaryDarkDm
+                      : context.tokens.ctaAccent,
                   dark: dark,
                   onTap: () => Navigator.of(dialogContext).pop(true),
                 ),

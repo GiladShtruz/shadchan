@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -17,7 +18,9 @@ abstract final class ProfileCompletionDialog {
       builder: (BuildContext dialogContext) {
         final ThemeData theme = Theme.of(dialogContext);
         final bool dark = theme.brightness == Brightness.dark;
-        final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
+        final Color blue = dark
+            ? AppColors.primaryDarkDm
+            : context.tokens.maleAccent;
         return AlertDialog(
           icon: CircleAvatar(
             radius: 28,

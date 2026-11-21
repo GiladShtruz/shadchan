@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/personal_nav.dart';
 import 'dart:async';
 import 'package:shadchan/utils/avatar_image.dart';
@@ -100,7 +101,7 @@ class PersonalCardPrompt extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return HomePaperCard(
-      stripe: AppColors.secondary,
+      stripe: context.tokens.ctaAccent,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -156,7 +157,7 @@ class MatchmakerFace extends StatelessWidget {
     final bool hasPhoto = photo != null && photo.isNotEmpty;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.primaryLight,
+      backgroundColor: context.tokens.maleWash,
       foregroundImage: hasPhoto
           ? avatarImage(context, photo, diameter: radius * 2)
           : null,
@@ -332,7 +333,9 @@ class PersonalShortcuts extends StatelessWidget {
             child: _ShortcutTile(
               icon: Icons.badge_outlined,
               label: cardLabel,
-              accent: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+              accent: dark
+                  ? AppColors.secondaryDarkDm
+                  : context.tokens.ctaAccent,
               onTap: onCard,
             ),
           ),
@@ -341,7 +344,9 @@ class PersonalShortcuts extends StatelessWidget {
             child: _ShortcutTile(
               icon: Icons.handshake_outlined,
               label: matchmakersLabel,
-              accent: dark ? AppColors.primaryDarkDm : AppColors.primaryDark,
+              accent: dark
+                  ? AppColors.primaryDarkDm
+                  : context.tokens.maleAccent,
               onTap: onMatchmakers,
             ),
           ),
@@ -366,6 +371,8 @@ class _ShortcutTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     return Material(
@@ -628,7 +635,9 @@ class PersonalNextAction extends StatelessWidget {
 
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color accent = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
     final IconData icon = switch (step.kind) {
       PersonalNextStepKind.request => Icons.mark_email_unread_outlined,
       PersonalNextStepKind.grant => Icons.lock_open_rounded,
@@ -783,7 +792,7 @@ class PersonalCommunityFigure extends StatelessWidget {
                 Icon(
                   Icons.favorite_border_rounded,
                   size: 18,
-                  color: AppColors.femaleAccent,
+                  color: context.tokens.femaleAccent,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -822,7 +831,7 @@ class PersonalCreamArea extends StatelessWidget {
     return Material(
       color: dark
           ? theme.colorScheme.surfaceContainerHighest
-          : AppColors.cardCream,
+          : context.tokens.surface,
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -932,7 +941,9 @@ class PersonalWhatsNewSection extends StatelessWidget {
       PersonalWhatsNewKind.review => Icons.update_rounded,
     };
 
-    final Color accent = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color accent = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
     return Padding(
       padding: const EdgeInsets.only(top: 22),
       child: Column(
@@ -1039,7 +1050,7 @@ class PersonalWhoSees extends StatelessWidget {
                                       ? theme
                                             .colorScheme
                                             .surfaceContainerHighest
-                                      : AppColors.cardCream,
+                                      : context.tokens.surface,
                                   width: 2,
                                 ),
                               ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/avatar_image.dart';
 import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/widgets/home_section.dart';
@@ -76,7 +77,9 @@ class CommunityCard extends StatelessWidget {
     final bool dark = theme.brightness == Brightness.dark;
     final Color lead = communityLead(theme);
     final String? heading = title;
-    final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color warm = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
 
     // **The home page's card.** Paper, a soft neutral shadow, no border, and
     // one rule along the foot in a palette colour saying what kind of thing
@@ -87,7 +90,7 @@ class CommunityCard extends StatelessWidget {
       CommunitySurface.warm => warm,
       CommunitySurface.plain => null,
       CommunitySurface.rose =>
-        dark ? AppColors.femaleAccentDm : AppColors.femaleAccent,
+        dark ? AppColors.femaleAccentDm : context.tokens.femaleAccent,
     };
 
     return HomePaperCard(
@@ -150,8 +153,10 @@ class CommunityPeriodTabs extends StatelessWidget {
     // window in cream, and the other two are written in the page's own quiet
     // grey. Copper rather than blue — the pages these tabs sit on had turned
     // almost entirely blue.
-    final Color lead = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
-    final Color onLead = dark ? AppColors.onSecondary : AppColors.onPrimary;
+    final Color lead = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
+    final Color onLead = context.tokens.onAccent;
 
     return Container(
       padding: const EdgeInsets.all(3),
@@ -604,14 +609,18 @@ class CommunityRankRow extends StatelessWidget {
     // The board is the people on the page, so it wears the palette's rose.
     final Color lead = theme.brightness == Brightness.dark
         ? AppColors.femaleAccentDm
-        : AppColors.femaleAccent;
+        : context.tokens.femaleAccent;
     // Every number on the board — the place and the points — is plain black,
     // so the figures read as figures and the rose stays with the people.
     final Color figure = CommunityRankRow.figureColor(theme);
 
     Widget mark() {
       if (place == 1) {
-        return const Icon(Icons.emoji_events_rounded, size: 22, color: _gold);
+        return Icon(
+          Icons.emoji_events_rounded,
+          size: 22,
+          color: context.tokens.adapt(_gold),
+        );
       }
       final bool podium = place == 2 || place == 3;
       return Container(
@@ -720,11 +729,11 @@ class _RankAvatar extends StatelessWidget {
       radius: _radius,
       backgroundColor: theme.brightness == Brightness.dark
           ? theme.colorScheme.surfaceContainerHighest
-          : AppColors.primaryLight,
+          : context.tokens.maleWash,
       child: Icon(
         Icons.person_outline,
         size: _radius * 1.15,
-        color: AppColors.primary,
+        color: context.tokens.maleAccent,
       ),
     );
 

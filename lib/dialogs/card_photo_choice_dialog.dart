@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/personal_card_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 
@@ -162,7 +162,9 @@ class _PhotoTile extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: chosen ? AppColors.primaryDark : AppColors.divider,
+                color: chosen
+                    ? context.tokens.maleAccent
+                    : context.tokens.outline,
                 width: chosen ? 2.4 : 1,
               ),
             ),
@@ -174,15 +176,15 @@ class _PhotoTile extends StatelessWidget {
                   Image.file(
                     file,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const ColoredBox(
-                      color: AppColors.softBlue,
-                      child: Icon(Icons.image_not_supported_outlined),
+                    errorBuilder: (_, _, _) => ColoredBox(
+                      color: context.tokens.maleWash,
+                      child: const Icon(Icons.image_not_supported_outlined),
                     ),
                   )
                 else
-                  const ColoredBox(
-                    color: AppColors.softBlue,
-                    child: Icon(Icons.image_not_supported_outlined),
+                  ColoredBox(
+                    color: context.tokens.maleWash,
+                    child: const Icon(Icons.image_not_supported_outlined),
                   ),
                 PositionedDirectional(
                   top: 4,
@@ -192,7 +194,7 @@ class _PhotoTile extends StatelessWidget {
                         ? Icons.check_circle_rounded
                         : Icons.radio_button_unchecked_rounded,
                     size: 22,
-                    color: chosen ? AppColors.primaryDark : Colors.white,
+                    color: chosen ? context.tokens.maleAccent : Colors.white,
                     shadows: const <Shadow>[
                       Shadow(blurRadius: 4, color: Colors.black38),
                     ],

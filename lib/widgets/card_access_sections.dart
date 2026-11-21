@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
@@ -639,7 +640,9 @@ class _HelperRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w800,
-                color: dark ? AppColors.headingInkDm : AppColors.headingInk,
+                color: dark
+                    ? AppColors.headingInkDm
+                    : context.tokens.textPrimary,
               ),
             ),
           ),
@@ -687,7 +690,9 @@ class _AccessRow extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final String shown = name.trim().isEmpty ? 'ללא שם' : name.trim();
-    final Color ink = dark ? AppColors.headingInkDm : AppColors.headingInk;
+    final Color ink = dark
+        ? AppColors.headingInkDm
+        : context.tokens.textPrimary;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
       child: Column(

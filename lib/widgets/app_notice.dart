@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 
 /// What the app says back after an action — and the reason there are no black
 /// bars along the bottom of this app any more.
@@ -206,8 +207,12 @@ class _NoticeCardState extends State<_NoticeCard>
           // left-to-right inside it.
           child: Directionality(
             textDirection: TextDirection.rtl,
+            // At night a step above the cards it floats over, so it reads
+            // as on top of them.
             child: Material(
-              color: theme.colorScheme.surface,
+              color: theme.brightness == Brightness.dark
+                  ? context.tokens.surfaceActive
+                  : theme.colorScheme.surface,
               elevation: 6,
               shadowColor: Colors.black.withValues(alpha: 0.28),
               borderRadius: BorderRadius.circular(16),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:flutter/material.dart';
@@ -1441,7 +1442,7 @@ class _MembersBanner extends StatelessWidget {
     // two entry cards on בית — with the brand blue under it, because what this
     // row counts and opens is friends.
     return HomePaperCard(
-      stripe: dark ? AppColors.primaryDarkDm : AppColors.primary,
+      stripe: dark ? AppColors.primaryDarkDm : context.tokens.maleAccent,
       radius: 16,
       onTap: () => context.push('/people/import'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1573,7 +1574,9 @@ class _JustAddedBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color tone = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color tone = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return Container(
       width: double.infinity,

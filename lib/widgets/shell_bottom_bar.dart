@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/chat_service.dart';
 import 'package:shadchan/widgets/app_glyphs.dart';
@@ -59,9 +60,25 @@ class ShellBottomBar extends StatelessWidget {
         bar.unselectedItemColor ?? theme.colorScheme.onSurfaceVariant;
     final List<String> labels = labelsFor(matchmaker: matchmaker);
     final double bottom = MediaQuery.viewPaddingOf(context).bottom;
+    final bool dark = theme.brightness == Brightness.dark;
+    final AppTokens tokens = context.tokens;
+
+    /// At night the active tab takes the accent of what it holds — the
+    /// action colour for בית and רעיונות, the blue for the people and the
+    /// conversations, the bordeaux for a single's matchmakers — not only a
+    /// lighter grey. The light theme keeps its one blue.
+    Color onFor(int index) {
+      if (!dark) return on;
+      if (!matchmaker && index == 3) return tokens.femaleAccent;
+      return switch (index) {
+        0 || 4 => tokens.ctaAccent,
+        _ => tokens.maleAccent,
+      };
+    }
 
     Widget item(int index, Widget icon, Widget activeIcon) {
       final bool active = index == selected;
+      final Color on = onFor(index);
       return Expanded(
         child: Semantics(
           button: true,
@@ -106,7 +123,7 @@ class ShellBottomBar extends StatelessWidget {
       _ProfileItem(
         label: labels[2],
         active: selected == 2,
-        on: on,
+        on: dark ? tokens.textPrimary : on,
         off: off,
         ring: background,
         onTap: () => onSelected(2),
@@ -133,13 +150,20 @@ class ShellBottomBar extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: background,
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 10,
-                  offset: Offset(0, -2),
-                ),
-              ],
+              // At night a hairline marks the bar's edge; a shadow on a dark
+              // page is only more dark.
+              border: dark
+                  ? Border(top: BorderSide(color: tokens.outline, width: 0.6))
+                  : null,
+              boxShadow: dark
+                  ? null
+                  : const <BoxShadow>[
+                      BoxShadow(
+                        color: Color(0x14000000),
+                        blurRadius: 10,
+                        offset: Offset(0, -2),
+                      ),
+                    ],
             ),
           ),
         ),
@@ -214,12 +238,12 @@ class _ChatsIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     return ValueListenableBuilder<int>(
       valueListenable: ChatService.unread,
       builder: (BuildContext context, int unread, _) => Badge(
         isLabelVisible: unread > 0,
-        backgroundColor: theme.colorScheme.secondary,
+        backgroundColor: context.tokens.badge,
+        textColor: context.tokens.onBadge,
         label: Text(unread > 99 ? '99+' : '$unread'),
         child: Icon(
           filled
@@ -253,6 +277,8 @@ class _ProfileItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final AppTokens tokens = context.tokens;
     String? path;
     try {
       path = context.select<UserProfileProvider, String?>(
@@ -290,22 +316,27 @@ class _ProfileItem extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: ring,
+                      // A soft frame, never a glow: at night the blue when
+                      // active and a quiet cream when not.
                       border: Border.all(
-                        color: active ? on : off.withValues(alpha: 0.35),
+                        color: dark
+                            ? (active
+                                  ? tokens.maleAccent
+                                  : tokens.textPrimary.withValues(alpha: 0.45))
+                            : (active ? on : off.withValues(alpha: 0.35)),
                         width: active ? 2.4 : 1.4,
                       ),
-                      boxShadow: const <BoxShadow>[
+                      boxShadow: <BoxShadow>[
                         BoxShadow(
-                          color: Color(0x29000000),
-                          blurRadius: 8,
-                          offset: Offset(0, 3),
+                          color: Color(dark ? 0x40000000 : 0x29000000),
+                          blurRadius: dark ? 6 : 8,
+                          offset: const Offset(0, 3),
                         ),
                       ],
                     ),
                     child: CircleAvatar(
                       radius: r,
-                      backgroundColor:
-                          theme.colorScheme.surfaceContainerHighest,
+                      backgroundColor: tokens.surfaceActive,
                       foregroundImage: hasPhoto
                           ? ResizeImage(
                               FileImage(File(path)),

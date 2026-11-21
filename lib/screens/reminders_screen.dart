@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
@@ -218,8 +219,10 @@ class NotificationRow extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final String? second = group.subtitle;
-    final Color tint = (dark ? AppColors.primaryDarkDm : AppColors.primary)
-        .withValues(alpha: dark ? 0.16 : 0.10);
+    final Color tint =
+        (dark ? AppColors.primaryDarkDm : context.tokens.maleAccent).withValues(
+          alpha: dark ? 0.16 : 0.10,
+        );
 
     return Material(
       color: highlighted ? tint : Colors.transparent,

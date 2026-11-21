@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/religious_level_picker.dart';
 
@@ -219,12 +219,12 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
                   side: BorderSide(
                     color: theme.brightness == Brightness.dark
                         ? theme.colorScheme.primary
-                        : AppColors.primaryDark,
+                        : context.tokens.maleAccent,
                     width: 1.4,
                   ),
                   foregroundColor: theme.brightness == Brightness.dark
                       ? theme.colorScheme.primary
-                      : AppColors.primaryDark,
+                      : context.tokens.maleAccent,
                   textStyle: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -280,7 +280,7 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
               fontWeight: FontWeight.w700,
               color: theme.brightness == Brightness.dark
                   ? theme.colorScheme.onSurface
-                  : AppColors.primaryDark,
+                  : context.tokens.maleAccent,
             ),
           ),
         ),

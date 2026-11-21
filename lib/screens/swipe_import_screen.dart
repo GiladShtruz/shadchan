@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/live_card_offer.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
@@ -466,7 +467,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           value: _addedCount,
           color: theme.brightness == Brightness.dark
               ? AppColors.femaleAccentDm
-              : AppColors.femaleAccent,
+              : context.tokens.femaleAccent,
         ),
         AddContactsStat(
           icon: Icons.schedule,
@@ -560,8 +561,8 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           diameter: 62,
           iconSize: 28,
           filled: true,
-          color: dark ? theme.colorScheme.primary : AppColors.primaryDark,
-          foregroundColor: dark ? AppColors.onSurface : AppColors.onPrimary,
+          color: dark ? theme.colorScheme.primary : context.tokens.maleAccent,
+          foregroundColor: context.tokens.onAccent,
           onPressed: () => _controller.swipe(CardSwiperDirection.right),
         ),
         // Come back to this contact once the deck is done.
@@ -607,7 +608,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
               size: 72,
               color: theme.brightness == Brightness.dark
                   ? theme.colorScheme.primary
-                  : AppColors.primaryDark,
+                  : context.tokens.maleAccent,
             ),
             const SizedBox(height: 16),
             Text('סיימנו!', style: theme.textTheme.titleLarge),
@@ -768,6 +769,8 @@ class _SwipeActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     final ThemeData theme = Theme.of(context);
     final bool disabled = onPressed == null;
     final Color background = filled

@@ -1,8 +1,8 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/usage_data_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
@@ -137,7 +137,7 @@ class PrivacyOverviewScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(20),
                 color: dark
                     ? theme.colorScheme.primary.withValues(alpha: 0.14)
-                    : AppColors.primaryLight.withValues(alpha: 0.5),
+                    : context.tokens.maleWash.withValues(alpha: 0.5),
               ),
               child: Text(
                 'המאגר שלך הוא יומן אישי ופרטי. הוא מכיל מידע על חברים שסמכו '
@@ -196,7 +196,9 @@ class _PrivacyPoint extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color tone = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color tone = dark
+        ? theme.colorScheme.primary
+        : context.tokens.maleAccent;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),

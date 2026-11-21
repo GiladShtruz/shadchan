@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 
 /// **The one bar the app draws.**
 ///
@@ -61,6 +62,8 @@ class AccentStripe extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     return Container(
       width: AccentBar.thickness,
       height: height,
@@ -89,6 +92,8 @@ class AccentUnderline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color color = context.tokens.adapt(this.color);
     return Container(height: AccentBar.thickness, color: color);
   }
 }

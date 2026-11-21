@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/import_file_kind.dart';
 
@@ -42,7 +43,9 @@ class _ImportFileKindDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color slate = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color slate = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
 
     return AlertDialog(
       title: const Text('במה מדובר?'),

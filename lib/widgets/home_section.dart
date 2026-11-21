@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/home_config.dart';
@@ -76,6 +77,10 @@ class HomePaperCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color? stripe = this.stripe == null
+        ? null
+        : context.tokens.adapt(this.stripe!);
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color? rule = stripe;
@@ -235,15 +240,15 @@ class HomeAlertBadge extends StatelessWidget {
       width: 20,
       height: 20,
       decoration: BoxDecoration(
-        color: AppColors.secondary,
+        color: context.tokens.ctaAccent,
         shape: BoxShape.circle,
         border: Border.all(color: theme.colorScheme.surface, width: 1.5),
       ),
       alignment: Alignment.center,
-      child: const Icon(
+      child: Icon(
         Icons.notifications_active,
         size: 11,
-        color: AppColors.onPrimary,
+        color: context.tokens.onAccent,
       ),
     );
   }
@@ -550,6 +555,10 @@ class HomeCardFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color? color = this.color == null
+        ? null
+        : context.tokens.adapt(this.color!);
     final ThemeData theme = Theme.of(context);
     final Color tone =
         color ?? AppColors.muted(dark: theme.brightness == Brightness.dark);
@@ -656,6 +665,10 @@ class HomeBannerTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color? color = this.color == null
+        ? null
+        : context.tokens.adapt(this.color!);
     final ThemeData theme = Theme.of(context);
 
     final Widget label = Text(

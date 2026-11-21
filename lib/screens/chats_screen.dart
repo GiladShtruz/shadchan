@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
@@ -185,7 +186,7 @@ class ChatAvatar extends StatelessWidget {
     final String? url = photoUrl;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.softBlue,
+      backgroundColor: context.tokens.maleWash,
       foregroundImage: url == null
           ? null
           : avatarImage(context, url, diameter: radius * 2),
@@ -1133,7 +1134,7 @@ class _ChatScreenState extends State<ChatScreen> {
         return Scaffold(
           backgroundColor: dark
               ? theme.scaffoldBackgroundColor
-              : AppColors.page,
+              : context.tokens.background,
           appBar: AppBar(
             titleSpacing: 0,
             title: InkWell(
@@ -1334,7 +1335,7 @@ class _Bubble extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color fill = mine
-        ? (dark ? AppColors.primaryLightDarkDm : AppColors.primaryLight)
+        ? (dark ? AppColors.primaryLightDarkDm : context.tokens.maleWash)
         : theme.colorScheme.surface;
     final DateTime? at = message.at;
     final ChatRef? ref = message.ref;
@@ -1550,7 +1551,7 @@ class _OfferBlock extends StatelessWidget {
           Text(
             mine ? '✓ אישר/ה את הרעיון' : '✓ אישרת את הרעיון',
             style: theme.textTheme.labelLarge?.copyWith(
-              color: AppColors.primaryDark,
+              color: context.tokens.maleAccent,
             ),
           )
         else if (answer == 'declined') ...<Widget>[

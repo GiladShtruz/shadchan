@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'dart:async';
 import 'dart:io';
@@ -507,7 +508,9 @@ class _AiImportScreenState extends State<AiImportScreen> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color slate = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color slate = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
 
     if (_isWorking) {
       return Scaffold(

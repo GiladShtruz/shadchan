@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
@@ -123,7 +124,7 @@ class _OldCoupleNote extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: HomePaperCard(
-        stripe: AppColors.secondary,
+        stripe: context.tokens.ctaAccent,
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -425,7 +426,7 @@ class _ActiveSpace extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         HomePaperCard(
-          stripe: AppColors.femaleAccent,
+          stripe: context.tokens.femaleAccent,
           padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
           child: Column(
             children: <Widget>[
@@ -445,7 +446,10 @@ class _ActiveSpace extends StatelessWidget {
                     },
                   ),
                   const SizedBox(width: 10),
-                  Icon(Icons.favorite_rounded, color: AppColors.femaleAccent),
+                  Icon(
+                    Icons.favorite_rounded,
+                    color: context.tokens.femaleAccent,
+                  ),
                   const SizedBox(width: 10),
                   CircleAvatar(
                     radius: 30,
@@ -1085,7 +1089,7 @@ class PartnerSpaceProfileArea extends StatelessWidget {
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: HomePaperCard(
-            stripe: AppColors.femaleAccent,
+            stripe: context.tokens.femaleAccent,
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

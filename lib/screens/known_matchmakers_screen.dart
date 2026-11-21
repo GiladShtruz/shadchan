@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -271,7 +272,7 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
             if (groups.connected.isNotEmpty)
               ..._group(
                 'משתפים איתי / מחוברים',
-                AppColors.primary,
+                context.tokens.maleAccent,
                 groups.connected,
                 groups.connected.length,
               ),
@@ -280,7 +281,7 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
                 groups.requestCount > 0
                     ? 'עדיין לא משתפים · ${groups.requestCount} ביקשו ממך שיתוף'
                     : 'עדיין לא משתפים',
-                AppColors.rose,
+                context.tokens.femaleAccent,
                 others,
                 groups.others.length,
               ),
@@ -345,7 +346,7 @@ class _SharingSummary extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: HomePaperCard(
-        stripe: AppColors.teal,
+        stripe: context.tokens.lightAccent,
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
         onTap: theirs > 0 ? () => context.push(NetworkScreen.route) : null,
         child: Text(
@@ -378,7 +379,7 @@ class _Notice extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: HomePaperCard(
-        stripe: AppColors.secondary,
+        stripe: context.tokens.ctaAccent,
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -430,6 +431,8 @@ class _GroupRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     const Radius r = Radius.circular(20);
@@ -483,7 +486,7 @@ class KnownMatchmakerFace extends StatelessWidget {
     final bool hasPhoto = photo != null && photo.isNotEmpty;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.primaryLight,
+      backgroundColor: context.tokens.maleWash,
       foregroundImage: hasPhoto
           ? avatarImage(context, photo, diameter: radius * 2)
           : null,
@@ -575,7 +578,7 @@ class NewMark extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
-        color: AppColors.rose,
+        color: context.tokens.femaleAccent,
         borderRadius: BorderRadius.circular(8),
       ),
       child: const Text(
@@ -968,7 +971,7 @@ class _KnownMatchmakerProfileScreenState
           ),
           const SizedBox(height: 20),
           HomePaperCard(
-            stripe: AppColors.copper,
+            stripe: context.tokens.ctaAccent,
             onTap: () => KnownMatchmakerActions.openSharing(context, k),
             child: Row(
               children: <Widget>[
@@ -1022,7 +1025,7 @@ class _Facts extends StatelessWidget {
     if (facts.isEmpty) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
     return HomePaperCard(
-      stripe: AppColors.primary,
+      stripe: context.tokens.maleAccent,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1032,7 +1035,7 @@ class _Facts extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: <Widget>[
-                  Icon(icon, size: 18, color: AppColors.primary),
+                  Icon(icon, size: 18, color: context.tokens.maleAccent),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(text, style: theme.textTheme.bodyMedium),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 
@@ -27,7 +27,7 @@ abstract final class AddContactsIntroDialog {
         final bool dark = theme.brightness == Brightness.dark;
         final Color lead = dark
             ? theme.colorScheme.primary
-            : AppColors.primaryDark;
+            : context.tokens.maleAccent;
 
         return AlertDialog(
           icon: Container(

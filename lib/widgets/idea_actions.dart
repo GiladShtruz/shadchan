@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/app_icons.dart';
@@ -341,7 +342,7 @@ class SuggestionRow extends StatelessWidget {
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.brightness == Brightness.dark
                               ? AppColors.primaryDarkDm
-                              : AppColors.primaryInk,
+                              : context.tokens.textPrimary,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -423,7 +424,7 @@ class SuggestionFrame extends StatelessWidget {
     // The ground live idea cards share (`MatchIdeaCard`'s `_CardTone`).
     final Color ground = dark
         ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.03), paper)
-        : AppColors.cardCream;
+        : context.tokens.surface;
     return Material(
       color: ground,
       elevation: 2,

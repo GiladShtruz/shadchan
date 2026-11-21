@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/card_access_sections.dart';
 import 'package:shadchan/widgets/onward_share_switch.dart';
 import 'package:shadchan/widgets/photo_share_switch.dart';
@@ -59,7 +59,7 @@ class _PersonalPrivacyScreenState extends State<PersonalPrivacyScreen> {
                   : TextButton(
                       onPressed: _delete,
                       style: TextButton.styleFrom(
-                        foregroundColor: AppColors.mutedInk,
+                        foregroundColor: context.tokens.textSecondary,
                       ),
                       child: const Text('מחיקת הכרטיס שלי'),
                     ),

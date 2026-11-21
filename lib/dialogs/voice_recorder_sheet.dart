@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/voice_note_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/voice_note_player.dart';
@@ -262,7 +263,9 @@ class _RecorderBodyState extends State<_RecorderBody>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color accent = dark
+        ? AppColors.secondaryDarkDm
+        : context.tokens.ctaAccent;
 
     return PopScope(
       canPop: false,
@@ -355,8 +358,8 @@ class _RecorderBodyState extends State<_RecorderBody>
               Container(
                 width: 9,
                 height: 9,
-                decoration: const BoxDecoration(
-                  color: AppColors.rose,
+                decoration: BoxDecoration(
+                  color: context.tokens.femaleAccent,
                   shape: BoxShape.circle,
                 ),
               ),

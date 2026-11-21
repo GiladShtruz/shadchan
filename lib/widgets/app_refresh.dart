@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/services/chat_service.dart';
@@ -124,7 +125,7 @@ class AppRefreshIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     return RefreshIndicator(
-      color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+      color: dark ? AppColors.secondaryDarkDm : context.tokens.ctaAccent,
       edgeOffset: edgeOffset,
       onRefresh: () => Future.wait<void>(<Future<void>>[
         AppRefresh.pull(context, scope),

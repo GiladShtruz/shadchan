@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/idea_proposal.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/shared_card.dart';
@@ -310,7 +311,7 @@ class _ProposalObject extends StatelessWidget {
                   Icon(
                     Icons.favorite_rounded,
                     size: 20,
-                    color: AppColors.femaleAccent,
+                    color: context.tokens.femaleAccent,
                   ),
                   const SizedBox(width: 8),
                   Expanded(

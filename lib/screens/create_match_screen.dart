@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/suggested_matches_sheet.dart';
@@ -482,6 +483,8 @@ class _EmptyRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The palette colour as this theme draws it (its night twin at night).
+    final Color accent = context.tokens.adapt(this.accent);
     final ThemeData theme = Theme.of(context);
 
     return Row(

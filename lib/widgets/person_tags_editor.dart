@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -372,7 +373,9 @@ class TagChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color ink = dark
+        ? AppColors.primaryDarkDm
+        : context.tokens.maleAccent;
 
     return Material(
       color: selected ? ink.withValues(alpha: 0.14) : Colors.transparent,

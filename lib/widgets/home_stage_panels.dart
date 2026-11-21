@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -28,7 +29,7 @@ class HomeWelcomeCard extends StatelessWidget {
     // the foot. It was a blue-washed panel — the first thing a new matchmaker
     // saw, and the one block on the page drawn unlike the rest of it.
     return HomePaperCard(
-      stripe: dark ? AppColors.primaryDarkDm : AppColors.primary,
+      stripe: dark ? AppColors.primaryDarkDm : context.tokens.maleAccent,
       radius: 24,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       child: Column(
@@ -146,7 +147,7 @@ class HomeFirstIdeaCard extends StatelessWidget {
     final Color lead = _lead(theme);
 
     return HomePaperCard(
-      stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+      stripe: dark ? AppColors.secondaryDarkDm : context.tokens.ctaAccent,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

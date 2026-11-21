@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/card_updates_seen.dart';
 import 'package:shadchan/utils/date_utils.dart';
 
@@ -59,7 +59,7 @@ class _CardHistoryScreenState extends State<CardHistoryScreen> {
                 child: Text(
                   'עוד לא היו שינויים בכרטיס',
                   style: theme.textTheme.bodyLarge?.copyWith(
-                    color: AppColors.mutedInk,
+                    color: context.tokens.textSecondary,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -85,7 +85,7 @@ class _CardHistoryScreenState extends State<CardHistoryScreen> {
                             fontWeight: minor
                                 ? FontWeight.w400
                                 : FontWeight.w700,
-                            color: minor ? AppColors.mutedInk : null,
+                            color: minor ? context.tokens.textSecondary : null,
                           ),
                         ),
                       ),
@@ -93,7 +93,7 @@ class _CardHistoryScreenState extends State<CardHistoryScreen> {
                       Text(
                         AppDateUtils.formatDateShort(event.createdAt),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppColors.mutedInk,
+                          color: context.tokens.textSecondary,
                         ),
                       ),
                     ],
