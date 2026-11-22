@@ -72,7 +72,9 @@ import {
   memberListFieldsChanged,
   patchHelperRows,
   sameFigures,
+  stableJson,
 } from './read_budget';
+import { createHash } from 'node:crypto';
 
 initializeApp();
 const db = getFirestore();
@@ -357,16 +359,13 @@ async function announceCard(ownerUid: string): Promise<void> {
   }
 
   const contacts = await db.collection('contactHashes').doc(ownerUid).get();
-  const hashes: string[] =
-    (contacts.get('hashes') as string[] | undefined) ?? [];
-  const refs = hashes.map((h) => db.collection('phoneDirectory').doc(h));
-  for (let i = 0; i < refs.length; i += 100) {
-    const entries = await db.getAll(...refs.slice(i, i + 100));
-    for (const entry of entries) {
-      const uid = entry.get('uid') as string | undefined;
-      if (entry.exists && entry.get('matchmaker') === true && uid) {
-        recipients.add(uid);
-      }
+  // Only the contacts that are in the directory at all ([matchedHashesOf]),
+  // not one read per entry of the address book.
+  const matched = await matchedHashesOf(ownerUid, contacts);
+  for (const entry of await getAllDocs(matched.map((h) => `phoneDirectory/${h}`))) {
+    const uid = entry.get('uid') as string | undefined;
+    if (entry.exists && entry.get('matchmaker') === true && uid) {
+      recipients.add(uid);
     }
   }
 
@@ -538,9 +537,9 @@ export async function mutualContacts(a: string, b: string): Promise<boolean> {
  * ~8,000), and it used to be done on *every* rebuild — several times a
  * session, for the user and for everybody who has their number. It is now
  * kept in `contactMatches/{uid}` (server-only) and worked out again only when
- * the address book itself was re-uploaded (`contactsUpdatedAt` no longer
- * matches) — at most once a day. A number that joins or leaves the directory
- * in between is added or removed by `onPhoneDirectoryWritten`.
+ * the address book's contents changed (`contactsPrint`, a hash of the list).
+ * A number that joins or leaves the directory in between is added or removed
+ * by `onPhoneDirectoryWritten`.
  */
 async function matchedHashesOf(
   ownerUid: string,
@@ -548,10 +547,12 @@ async function matchedHashesOf(
 ): Promise<string[]> {
   const hashes: string[] = (contacts.get('hashes') as string[] | undefined) ?? [];
   if (hashes.length === 0) return [];
-  const uploadedAt = contacts.updateTime?.toMillis() ?? 0;
+  // The address book's *contents*, not its write time: the app re-sends an
+  // unchanged book once a day, and that must not cost a full rescan.
+  const contactsPrint = createHash('sha256').update(hashes.join(',')).digest('hex');
   const ref = db.doc(`contactMatches/${ownerUid}`);
   const cached = await ref.get();
-  if (cached.exists && cached.get('contactsUpdatedAt') === uploadedAt) {
+  if (cached.exists && cached.get('contactsPrint') === contactsPrint) {
     const kept = (cached.get('hashes') as string[] | undefined) ?? [];
     // Kept in the address book's order, which is the order the lists use.
     const inBook = new Set(hashes);
@@ -566,7 +567,7 @@ async function matchedHashesOf(
   }
   await ref.set({
     hashes: matched,
-    contactsUpdatedAt: uploadedAt,
+    contactsPrint,
     updatedAt: FieldValue.serverTimestamp(),
   });
   return matched;
@@ -843,8 +844,21 @@ export const onPhoneDirectoryWritten = onDocumentWritten(
 export const onContactHashesWritten = onDocumentWritten(
   'contactHashes/{ownerUid}',
   async (event) => {
-    await refreshContactNeighbours(event.params.ownerUid);
-    await announceCard(event.params.ownerUid);
+    const ownerUid = event.params.ownerUid;
+    // The daily re-send of an unchanged address book: nobody else's list
+    // depends on it having been sent again, and its card was announced the
+    // first time. Only the owner's own list is refreshed (cheap — its
+    // contacts in the directory are cached).
+    if (
+      event.data?.before?.exists &&
+      event.data?.after?.exists &&
+      stableJson(event.data.before.get('hashes')) === stableJson(event.data.after.get('hashes'))
+    ) {
+      await findHelpers(ownerUid);
+      return;
+    }
+    await refreshContactNeighbours(ownerUid);
+    await announceCard(ownerUid);
   },
 );
 

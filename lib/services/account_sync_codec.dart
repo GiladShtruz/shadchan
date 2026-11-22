@@ -226,8 +226,10 @@ abstract final class AccountSyncCodec {
     'network.legacyCleaned',
     // When this phone last read the share rows.
     'network.sharesSyncedAt',
-    // What this phone holds of its own published `networkCards`.
+    // What this phone holds of its own published `networkCards` and
+    // `partnerCards` (`PublishedCards`).
     'network.held',
+    'partner.held',
     // When this phone last asked the server for things it need not ask about
     // every few minutes (`ReadThrottle`).
     'serverReads.',
