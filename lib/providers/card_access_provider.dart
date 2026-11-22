@@ -27,6 +27,7 @@ import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/phone_identity.dart';
+import 'package:shadchan/utils/user_scrolling.dart';
 import 'package:uuid/uuid.dart';
 
 /// How a matchmaker's request for a card ended.
@@ -802,14 +803,19 @@ class CardAccessProvider extends ChangeNotifier {
   /// `_people.setVerifiedCardOwners` that remove).
   void _publishVerifiedSoon() {
     _verifiedTimer?.cancel();
-    _verifiedTimer = Timer(const Duration(milliseconds: 300), () {
-      if (_disposed) return;
-      _people.setVerifiedCardOwners(_verifiedCards);
-      OfflineCache.saveVerifiedCardOwners(<String>{
-        ...OfflineCache.verifiedCardOwners,
-        ..._verifiedCards,
-      });
-    });
+    // And not under a moving finger: the redraw this causes waits for the
+    // scroll to settle, like the account sync's ([UserScrolling.whenIdle]).
+    _verifiedTimer = Timer(
+      const Duration(milliseconds: 300),
+      () => UserScrolling.whenIdle(() {
+        if (_disposed) return;
+        _people.setVerifiedCardOwners(_verifiedCards);
+        OfflineCache.saveVerifiedCardOwners(<String>{
+          ...OfflineCache.verifiedCardOwners,
+          ..._verifiedCards,
+        });
+      }),
+    );
   }
 
   Future<List<String>> _downloadPhotos(

@@ -268,6 +268,22 @@ void main() {
       m.add(sw.elapsedMilliseconds);
     }
     print('home rebuild after an ideas change: $m ms');
+    // Scrolling the home page with nothing changing underneath: every frame.
+    final Finder scroll = find.byType(Scrollable).first;
+    final List<int> frames = <int>[];
+    for (int dir = 0; dir < 2; dir++) {
+      for (int i = 0; i < 30; i++) {
+        final Stopwatch sw = Stopwatch()..start();
+        await tester.drag(scroll, Offset(0, dir == 0 ? -60 : 60));
+        await tester.pump(const Duration(milliseconds: 16));
+        frames.add(sw.elapsedMilliseconds);
+      }
+    }
+    frames.sort();
+    print(
+      'scroll frames: median ${frames[frames.length ~/ 2]}ms, '
+      'p90 ${frames[(frames.length * 9) ~/ 10]}ms, max ${frames.last}ms',
+    );
     await tester.runAsync(() async {
       final developer.ServiceProtocolInfo info =
           await developer.Service.getInfo();
