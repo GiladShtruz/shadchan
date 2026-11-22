@@ -39,8 +39,43 @@ export interface DueReminder {
   key: string;
   kind: 'idea' | 'friend';
   targetId: string;
+  /** The reminder's own moment — also what its [key] is made of. */
   dueAt: number;
+  /**
+   * When it is pushed: [dueAt], except that a bare date (midnight in Israel)
+   * is pushed at 09:00, exactly as the app schedules its own
+   * (`NotificationService._notificationTime`). Absent = [dueAt].
+   */
+  pushAt?: number;
 }
+
+/** The hour a reminder set for a bare date is sent at — the app's own rule. */
+export const BARE_DATE_HOUR = 9;
+
+/**
+ * [dueAt], or 09:00 Israel time the same day when [dueAt] is exactly
+ * midnight there — a reminder for "the 8th" is not a push at 00:00.
+ */
+export function pushMomentOf(dueAt: number): number {
+  const shown = new Date(dueAt).toLocaleString('en-US', {
+    timeZone: 'Asia/Jerusalem',
+    hour12: false,
+  });
+  const m = /, (\d+):(\d+):(\d+)/.exec(shown);
+  if (!m) return dueAt;
+  const hour = +m[1] === 24 ? 0 : +m[1];
+  return hour === 0 && +m[2] === 0 && +m[3] === 0 ? dueAt + BARE_DATE_HOUR * HOUR : dueAt;
+}
+
+/** The friend reminders' setting keys: `personReminder.{personId}`. */
+export const FRIEND_KEY_PREFIX = 'personReminder.';
+
+/**
+ * The end of the key range of [FRIEND_KEY_PREFIX]. It used to be the prefix
+ * itself, which matches no key at all — so no friend reminder was ever
+ * pushed, while the phones had stopped scheduling their own.
+ */
+export const FRIEND_KEY_END = `${FRIEND_KEY_PREFIX}\uf8ff`;
 
 /**
  * An idea's `reminderDate` is the phone's local time written without an
@@ -71,10 +106,11 @@ export function pickDue(
   alreadySent: Record<string, number>,
   now: number,
 ): DueReminder[] {
+  const at = (r: DueReminder) => r.pushAt ?? r.dueAt;
   return candidates
-    .filter((r) => r.dueAt <= now && r.dueAt > now - WINDOW_HOURS * HOUR)
+    .filter((r) => at(r) <= now && at(r) > now - WINDOW_HOURS * HOUR)
     .filter((r) => alreadySent[r.key] === undefined)
-    .sort((a, b) => a.dueAt - b.dueAt);
+    .sort((a, b) => at(a) - at(b));
 }
 
 /** What the push says — never who it is about. */
@@ -92,44 +128,93 @@ export function pushText(due: DueReminder[]): { title: string; body: string; rou
     : { title: 'תזכורת על חבר מהמאגר', body: 'לחיצה פותחת את הפרופיל', route: `/people/${first.targetId}` };
 }
 
+/** The window of stored idea times worth asking for (a day of slack each side). */
+function ideaRange(now: number): [string, string] {
+  const fmt = (t: number) => new Date(t).toISOString().slice(0, 19);
+  return [fmt(now - WINDOW_HOURS * HOUR - 26 * HOUR), fmt(now + 26 * HOUR + BARE_DATE_HOUR * HOUR)];
+}
+
+/** One idea document as a reminder, or null. */
+export function ideaReminderOf(id: string, data: Record<string, unknown>): DueReminder | null {
+  if (data._deleted === true) return null;
+  const raw = data.reminderDate;
+  const dueAt = typeof raw === 'string' ? israelLocalToUtc(raw) : null;
+  if (dueAt === null) return null;
+  return { key: `idea:${id}:${dueAt}`, kind: 'idea', targetId: id, dueAt, pushAt: pushMomentOf(dueAt) };
+}
+
+/** One `personReminder.{id}` setting document as a reminder, or null. */
+export function friendReminderOf(data: Record<string, unknown>): DueReminder | null {
+  if (data._deleted === true) return null;
+  const key = data.k;
+  if (typeof key !== 'string' || !key.startsWith(FRIEND_KEY_PREFIX)) return null;
+  let dueAt: unknown;
+  try {
+    dueAt = JSON.parse(String(data.v));
+  } catch {
+    return null;
+  }
+  if (typeof dueAt !== 'number') return null;
+  const personId = key.substring(FRIEND_KEY_PREFIX.length);
+  if (!personId) return null;
+  return { key: `friend:${personId}:${dueAt}`, kind: 'friend', targetId: personId, dueAt, pushAt: pushMomentOf(dueAt) };
+}
+
+/** One account's reminders, read under its own tree (the fallback path). */
 async function remindersOf(db: Firestore, uid: string, now: number): Promise<DueReminder[]> {
   const user = db.collection('users').doc(uid);
   const out: DueReminder[] = [];
-  // Ideas: a string range on the stored local time, with a day of slack on
-  // each side for the offset; the exact cut is made after parsing.
-  const fmt = (t: number) => new Date(t).toISOString().slice(0, 19);
+  const [from, to] = ideaRange(now);
   const ideas = await user
     .collection('matches')
-    .where('reminderDate', '>=', fmt(now - WINDOW_HOURS * HOUR - 26 * HOUR))
-    .where('reminderDate', '<=', fmt(now + 26 * HOUR))
+    .where('reminderDate', '>=', from)
+    .where('reminderDate', '<=', to)
     .get();
   for (const doc of ideas.docs) {
-    if (doc.get('_deleted') === true) continue;
-    const raw = doc.get('reminderDate');
-    const dueAt = typeof raw === 'string' ? israelLocalToUtc(raw) : null;
-    if (dueAt === null) continue;
-    out.push({ key: `idea:${doc.id}:${dueAt}`, kind: 'idea', targetId: doc.id, dueAt });
+    const r = ideaReminderOf(doc.id, doc.data());
+    if (r) out.push(r);
   }
-  // Friends: `personReminder.{id}` settings, the value the due time in ms.
   const friends = await user
     .collection('settings')
-    .where('k', '>=', 'personReminder.')
-    .where('k', '<=', 'personReminder.')
+    .where('k', '>=', FRIEND_KEY_PREFIX)
+    .where('k', '<', FRIEND_KEY_END)
     .get();
   for (const doc of friends.docs) {
-    if (doc.get('_deleted') === true) continue;
-    const key = doc.get('k');
-    let dueAt: unknown;
-    try {
-      dueAt = JSON.parse(doc.get('v'));
-    } catch {
-      continue;
-    }
-    if (typeof key !== 'string' || typeof dueAt !== 'number') continue;
-    const personId = key.substring('personReminder.'.length);
-    out.push({ key: `friend:${personId}:${dueAt}`, kind: 'friend', targetId: personId, dueAt });
+    const r = friendReminderOf(doc.data());
+    if (r) out.push(r);
   }
   return out;
+}
+
+/** `users/{uid}/{collection}/{id}` → uid, or null for any other path. */
+export function accountOfPath(path: string, collection: string): string | null {
+  const parts = path.split('/');
+  return parts.length === 4 && parts[0] === 'users' && parts[2] === collection ? parts[1] : null;
+}
+
+/**
+ * Every account's reminders that could be due now, in two queries across all
+ * accounts — instead of four reads per account with a push token, every hour
+ * (most of whom have nothing due). Needs the collection-group indexes in
+ * `firestore.indexes.json` (`matches.reminderDate`, `settings.k`); until they
+ * are built this throws and [sendDueReminders] falls back to the old way.
+ */
+async function dueAcrossAccounts(db: Firestore, now: number): Promise<Map<string, DueReminder[]>> {
+  const byUid = new Map<string, DueReminder[]>();
+  const add = (uid: string | null, r: DueReminder | null) => {
+    if (!uid || !r) return;
+    const list = byUid.get(uid) ?? [];
+    list.push(r);
+    byUid.set(uid, list);
+  };
+  const [from, to] = ideaRange(now);
+  const [ideas, friends] = await Promise.all([
+    db.collectionGroup('matches').where('reminderDate', '>=', from).where('reminderDate', '<=', to).get(),
+    db.collectionGroup('settings').where('k', '>=', FRIEND_KEY_PREFIX).where('k', '<', FRIEND_KEY_END).get(),
+  ]);
+  for (const doc of ideas.docs) add(accountOfPath(doc.ref.path, 'matches'), ideaReminderOf(doc.id, doc.data()));
+  for (const doc of friends.docs) add(accountOfPath(doc.ref.path, 'settings'), friendReminderOf(doc.data()));
+  return byUid;
 }
 
 export async function sendDueReminders(db: Firestore, now = Date.now()): Promise<number> {
@@ -137,8 +222,29 @@ export async function sendDueReminders(db: Firestore, now = Date.now()): Promise
   // has run at least once).
   await db.doc('publicStats/serverReminders').set({ active: true, lastRunAt: now }, { merge: true });
 
-  const tokenDocs = await db.collection('fcmTokens').get();
+  let due: Map<string, DueReminder[]> | null = null;
+  try {
+    due = await dueAcrossAccounts(db, now);
+  } catch (error) {
+    console.warn('sendDueReminders: collection-group query failed, reading per account', error);
+  }
   let pushed = 0;
+  if (due) {
+    // Only accounts with something in the window are looked at further.
+    const uids = [...due.keys()].filter((uid) => pickDue(due!.get(uid)!, {}, now).length > 0);
+    for (const uid of uids) {
+      try {
+        const tokenDoc = await db.doc(`fcmTokens/${uid}`).get();
+        if (!tokenDoc.exists) continue;
+        pushed += await remindAccount(db, tokenDoc, now, due.get(uid)!);
+      } catch (error) {
+        console.warn('sendDueReminders: account failed', uid, error);
+      }
+    }
+    return pushed;
+  }
+
+  const tokenDocs = await db.collection('fcmTokens').get();
   for (const tokenDoc of tokenDocs.docs) {
     try {
       pushed += await remindAccount(db, tokenDoc, now);
@@ -152,8 +258,9 @@ export async function sendDueReminders(db: Firestore, now = Date.now()): Promise
 
 async function remindAccount(
   db: Firestore,
-  tokenDoc: FirebaseFirestore.QueryDocumentSnapshot,
+  tokenDoc: FirebaseFirestore.DocumentSnapshot,
   now: number,
+  known?: DueReminder[],
 ): Promise<number> {
   let pushed = 0;
   {
@@ -169,7 +276,7 @@ async function remindAccount(
     const ledgerRef = db.doc(`users/${uid}/private/reminderPushes`);
     const ledger = await ledgerRef.get();
     const sent: Record<string, number> = ledger.get('sent') ?? {};
-    const due = pickDue(await remindersOf(db, uid, now), sent, now);
+    const due = pickDue(known ?? (await remindersOf(db, uid, now)), sent, now);
     if (due.length === 0) return 0;
 
     // More than three at once are one summary; otherwise one push each.

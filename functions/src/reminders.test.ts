@@ -37,3 +37,47 @@ test('the push never names anybody, and many become one summary', () => {
   assert.equal(many.route, '/reminders');
   assert.match(many.title, /5 תזכורות/);
 });
+
+test('friend reminders are found: the key range ends after the prefix', async () => {
+  const { FRIEND_KEY_PREFIX, FRIEND_KEY_END } = await import('./reminders');
+  const inRange = (k: string) => k >= FRIEND_KEY_PREFIX && k < FRIEND_KEY_END;
+  assert.equal(inRange('personReminder.abc-123'), true);
+  // The note beside it, and anything else, are not reminders.
+  assert.equal(inRange('personReminderNote.abc-123'), false);
+  assert.equal(inRange('personalCard.person'), false);
+});
+
+test('a friend reminder setting becomes a reminder; its note and junk do not', async () => {
+  const { friendReminderOf } = await import('./reminders');
+  const due = Date.UTC(2026, 11, 8, 8);
+  assert.deepEqual(friendReminderOf({ k: 'personReminder.p1', v: JSON.stringify(due) })?.targetId, 'p1');
+  assert.equal(friendReminderOf({ k: 'personReminderNote.p1', v: '"x"' }), null);
+  assert.equal(friendReminderOf({ k: 'personReminder.p1', v: 'not json' }), null);
+  assert.equal(friendReminderOf({ _deleted: true }), null);
+});
+
+test('a bare date is pushed at 09:00 Israel time, never at midnight', async () => {
+  const { pushMomentOf } = await import('./reminders');
+  // Midnight in Israel in winter (UTC+2) is 22:00 UTC the day before.
+  const midnight = Date.UTC(2026, 11, 7, 22, 0, 0);
+  assert.equal(pushMomentOf(midnight), Date.UTC(2026, 11, 8, 7, 0, 0));
+  // A reminder with a time of its own keeps it.
+  const tenAm = Date.UTC(2026, 11, 8, 8, 0, 0);
+  assert.equal(pushMomentOf(tenAm), tenAm);
+});
+
+test('a reminder is pushed by its push moment, and keyed by its own', () => {
+  const now = Date.UTC(2026, 11, 8, 8);
+  const r: DueReminder = {
+    key: 'friend:p:1', kind: 'friend', targetId: 'p', dueAt: now - 9 * HOUR, pushAt: now - HOUR,
+  };
+  assert.equal(pickDue([r], {}, now).length, 1);
+  assert.equal(pickDue([{ ...r, pushAt: now + HOUR }], {}, now).length, 0);
+});
+
+test('only users/{uid}/{collection}/{id} paths name an account', async () => {
+  const { accountOfPath } = await import('./reminders');
+  assert.equal(accountOfPath('users/u1/matches/m1', 'matches'), 'u1');
+  assert.equal(accountOfPath('coupleArchives/x/matches/m1', 'matches'), null);
+  assert.equal(accountOfPath('users/u1/settings/s', 'matches'), null);
+});

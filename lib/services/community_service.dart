@@ -839,26 +839,6 @@ abstract final class CommunityService {
   static final Map<String, _Cached<CommunityLeaderboard>> _boardCache =
       <String, _Cached<CommunityLeaderboard>>{};
 
-  /// The windows whose aggregate query has been shown to work in this process.
-  ///
-  /// **What stops the fallback scan from becoming the normal path.** A missing
-  /// composite index and a genuinely quiet window are indistinguishable from
-  /// the client — both come back as zero — so [totals] checks a zero against a
-  /// direct read before believing it. The trouble is that "quiet" is the
-  /// ordinary state of `day` every morning: without this, every matchmaker who
-  /// opened the app before anybody had done anything paid a 400-document scan,
-  /// again every three minutes, for the true answer zero.
-  ///
-  /// So the check is asked once per window per launch rather than every time.
-  /// A window is trusted the moment its aggregate returns something, or the
-  /// moment a scan agrees that it returns nothing; after that a zero is taken
-  /// at face value and costs the two aggregate reads it should.
-  ///
-  /// Deliberately *not* cleared by [invalidate]: whether the index exists is a
-  /// property of the project, not of the figures, and it cannot change while
-  /// the app is running.
-  static final Set<String> _aggregatesTrusted = <String>{};
-
   /// Drops every cached figure, so the next read goes to the network. Called
   /// after publishing this device's own counts, which is the one moment the
   /// numbers are known to have moved.
@@ -866,10 +846,6 @@ abstract final class CommunityService {
     _totalsCache.clear();
     _boardCache.clear();
   }
-
-  /// Test seam: forgets that the aggregate queries were ever shown to work.
-  @visibleForTesting
-  static void resetAggregateTrust() => _aggregatesTrusted.clear();
 
   /// Whether this matchmaker chose to stay out of the community's view
   /// ("להופיע בקהילה בשם שלי" off, or "שמור על הפרטיות שלי"). Such a
@@ -1114,47 +1090,29 @@ abstract final class CommunityService {
         couples: snapshots[1].getSum(period.couplesField)?.round() ?? 0,
         engagements: snapshots[1].getSum(period.engagementsField)?.round() ?? 0,
       );
-      if (!result.isEmpty) {
-        // The query works in this project, whatever it answers next time.
-        _aggregatesTrusted.add(cacheKey);
-        return result;
-      }
-      // Aggregates said nothing. That is *usually* the truth — but it is also
-      // exactly what a missing composite index looks like from here, so the
-      // zero is checked against a direct read before it is believed. Once.
-      if (_aggregatesTrusted.contains(cacheKey)) {
-        return result;
-      }
+      // A zero is the truth: a missing composite index does not answer zero,
+      // it refuses the query (FAILED_PRECONDITION) — which is the case below.
+      // Checking every zero with a direct read cost up to 400 documents per
+      // window per launch, every morning and every new week, for nothing
+      // (2026-11-22).
+      return result;
     } catch (_) {
-      // And so is a failure. Both roads lead to the scan below.
+      // Refused (an index missing, a rule) — added up by hand below.
     }
-
-    final CommunityTotals scanned = await _totalsByScan(period, key);
-    if (scanned.resolved && scanned.isEmpty) {
-      // The scan agreed there is nothing here, so the aggregate was telling
-      // the truth and need not be second-guessed again this launch. A scan
-      // that found figures the aggregate missed says the opposite — the index
-      // is missing — so the window stays untrusted and keeps scanning.
-      _aggregatesTrusted.add(cacheKey);
-    }
-    return scanned;
+    return _totalsByScan(period, key);
   }
 
   /// The community's figures added up on this device, one member at a time.
   ///
-  /// **The fallback, and the reason "פעילות הקהילה" can no longer sit on 0 when
-  /// it should not.** The aggregate query above is the right way to do this —
-  /// a handful of reads however large the community grows — but it depends on a
-  /// composite index existing in the project, and when one does not the query
-  /// fails in a way that is indistinguishable from a quiet week: an empty
-  /// answer. Every matchmaker in the app then sees a live community reported as
-  /// zero, and nothing on the device can tell them otherwise.
-  ///
-  /// So a zero is not taken at face value. This reads the member documents for
-  /// the window directly — one equality filter, which needs no composite index
-  /// at all — and adds them up in Dart. It costs one read per member and is
-  /// capped at [_scanLimit], which is why it is the second choice and not the
-  /// first; the three-minute cache means it runs at most a few times an hour.
+  /// **The fallback, for when the aggregate query is refused** — a composite
+  /// index missing from the project, which Firestore reports as an error
+  /// (FAILED_PRECONDITION), not as an empty answer. This reads the member
+  /// documents for the window directly — one equality filter, which needs no
+  /// composite index at all — and adds them up in Dart. It costs one read per
+  /// member and is capped at [_scanLimit], which is why it is the second
+  /// choice and not the first; the three-minute cache means it runs at most a
+  /// few times an hour. (Until 2026-11-22 it also re-checked every zero the
+  /// aggregate gave, which made it the ordinary path every morning.)
   ///
   /// The `> 0` test the aggregate does in the query is done here in the loop,
   /// so "שדכנים פעילים" keeps meaning "did at least one thing" rather than

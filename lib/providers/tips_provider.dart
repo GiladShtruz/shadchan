@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/read_throttle.dart';
 import 'package:shadchan/services/tips_service.dart';
 
 /// The community tips as the app sees them.
@@ -41,6 +42,11 @@ class TipsProvider extends ChangeNotifier {
   }
 
   static const String _cacheKey = 'tips.approvedCache';
+
+  static const String _tipsClock = 'tips';
+
+  /// How often the approved tips are read again.
+  static const Duration refreshEvery = Duration(hours: 12);
 
   final Box<dynamic> _settings;
   final bool _enabled;
@@ -103,8 +109,19 @@ class TipsProvider extends ChangeNotifier {
   /// Pulls the approved rotation and stores it. Safe to call at any time and
   /// from anywhere: it never throws, and a failure simply leaves the cache as
   /// it was.
-  Future<void> refreshApproved() async {
+  ///
+  /// **At most every [refreshEvery]** unless [force]: it is called on every
+  /// app open, resume and exit, and each call read every approved tip (one
+  /// read per tip). A tip approved this morning reaching everybody by this
+  /// evening is soon enough for a tip. With nothing cached yet it asks every
+  /// time (that costs nothing without an account, and one read with one).
+  Future<void> refreshApproved({bool force = false}) async {
     if (!_enabled || _isBusy) {
+      return;
+    }
+    if (!force &&
+        _approved.isNotEmpty &&
+        !ReadThrottle.due(_tipsClock, refreshEvery)) {
       return;
     }
     _setBusy(true);
@@ -115,6 +132,7 @@ class TipsProvider extends ChangeNotifier {
       if (tips.isNotEmpty) {
         _approved = tips;
         await _writeCache(tips);
+        ReadThrottle.mark(_tipsClock);
       }
     } catch (_) {
       // Deliberately silent: tips are the least important thing on the page.

@@ -16,6 +16,7 @@ import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/services/read_throttle.dart';
 import 'package:shadchan/services/sync_state_store.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/screen_perf.dart';
@@ -168,6 +169,15 @@ abstract final class NetworkSharing {
   static const String searchNetworkKey = 'people.searchNetwork';
   static const String _printKey = 'network.publishedPrint';
   static const String _legacyKey = 'network.legacyCleaned';
+
+  /// This phone's record of the cards it holds on the server, per account
+  /// (device-only: `network.held` in `AccountSyncCodec`).
+  static const String _heldPrefix = 'network.held.';
+
+  /// How often the record is checked against the server itself — which also
+  /// catches a card the server removed on its own (a single withdrawing
+  /// consent, a reader taken off).
+  static const Duration heldVerifyEvery = Duration(hours: 24);
 
   /// Bumped whenever a choice changes, for screens that show it.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
@@ -515,16 +525,38 @@ abstract final class NetworkSharing {
     final CollectionReference<Map<String, dynamic>> col = FirebaseFirestore
         .instance
         .collection(SharedCardCodec.collection);
-    ScreenPerf.noteQuery();
-    final QuerySnapshot<Map<String, dynamic>> remote = await col
-        .where('ownerUid', isEqualTo: uid)
-        .get(const GetOptions(source: Source.server));
-    final Map<String, Map<String, dynamic>> held =
-        <String, Map<String, dynamic>>{
-          for (final QueryDocumentSnapshot<Map<String, dynamic>> d
-              in remote.docs)
-            (d.data()['personId'] as String?) ?? d.id: d.data(),
-        };
+    // What the server holds: this phone's own record of what it published
+    // ([_HeldCard]), or — once a day, on a forced run, or with no record —
+    // the server's answer itself. Reading every shared card on every edit
+    // of any of them (hundreds, for somebody sharing "everything") was the
+    // cost this replaces (2026-11-22).
+    final String heldKey = '$_heldPrefix$uid';
+    final String heldClock = 'networkHeld.$uid';
+    final Map<String, _HeldCard>? recorded =
+        force || ReadThrottle.due(heldClock, heldVerifyEvery)
+        ? null
+        : _HeldCard.decode(_read(heldKey));
+    final Map<String, _HeldCard> held;
+    if (recorded != null) {
+      held = recorded;
+    } else {
+      ScreenPerf.noteQuery();
+      final QuerySnapshot<Map<String, dynamic>> remote = await col
+          .where('ownerUid', isEqualTo: uid)
+          .get(const GetOptions(source: Source.server));
+      held = <String, _HeldCard>{
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> d in remote.docs)
+          (d.data()['personId'] as String?) ?? d.id: _HeldCard.fromServer(
+            d.data(),
+          ),
+      };
+      ReadThrottle.mark(heldClock);
+    }
+    final Map<String, _HeldCard> nowHeld = <String, _HeldCard>{};
+    // A failure part-way leaves the record unknown: the next run asks the
+    // server.
+    _pending[heldKey] = '';
+    persistHomeSetting(heldKey, '');
 
     // Whatever nobody reads any more leaves first. A card also sent to
     // somebody one by one keeps its photos for them.
@@ -554,6 +586,8 @@ abstract final class NetworkSharing {
       if (files.isEmpty) {
         // The photos are not on this phone (yet); another phone, or the next
         // run, will publish it. Never a card without its face.
+        final _HeldCard? there = held[person.id];
+        if (there != null) nowHeld[person.id] = there.unknownValues();
         continue;
       }
       final List<String> paths = <String>[
@@ -569,14 +603,17 @@ abstract final class NetworkSharing {
         ownerUid: uid,
         ownerName: ownerName,
       );
-      final Map<String, dynamic>? before = held[person.id];
-      final List<Object?> heldPaths =
-          (before?['photoPaths'] as List?) ?? const <Object?>[];
-      final List<Object?> heldReaders =
-          ((before?['readers'] as List?) ?? const <Object?>[]).toList()
-            ..sort((Object? a, Object? b) => '$a'.compareTo('$b'));
+      final _HeldCard? before = held[person.id];
+      final List<Object?> heldPaths = before?.paths ?? const <Object?>[];
+      final List<Object?> heldReaders = before?.readers ?? const <Object?>[];
+      final String valuesPrint = SyncStateStore.fingerprint(values);
+      nowHeld[person.id] = _HeldCard(
+        paths: paths,
+        readers: readers,
+        valuesPrint: valuesPrint,
+      );
       if (before != null &&
-          _sameValues(values, before) &&
+          before.sameValues(values, valuesPrint) &&
           listEquals(heldPaths, paths) &&
           listEquals(heldReaders, readers)) {
         count++;
@@ -607,6 +644,9 @@ abstract final class NetworkSharing {
     publishedCount.value = count;
     _pending[_printKey] = print;
     persistHomeSetting(_printKey, print);
+    final String heldJson = _HeldCard.encode(nowHeld);
+    _pending[heldKey] = heldJson;
+    persistHomeSetting(heldKey, heldJson);
     await _syncCounts(perReader);
   }
 
@@ -640,16 +680,6 @@ abstract final class NetworkSharing {
     }
   }
 
-  static bool _sameValues(
-    Map<String, Object?> values,
-    Map<String, dynamic> held,
-  ) {
-    for (final MapEntry<String, Object?> e in values.entries) {
-      if (jsonEncode(e.value) != jsonEncode(held[e.key])) return false;
-    }
-    return true;
-  }
-
   static Future<void> _deletePhotos(
     String uid,
     String personId, {
@@ -666,4 +696,90 @@ abstract final class NetworkSharing {
       debugPrint('NetworkSharing photos: $error');
     }
   }
+}
+
+/// One shared card as the server holds it, as far as [NetworkSharing] needs
+/// to know: its photo paths, its readers, and a print of its values.
+@immutable
+class _HeldCard {
+  const _HeldCard({
+    required this.paths,
+    required this.readers,
+    this.valuesPrint,
+    this.data,
+  });
+
+  /// From the server's own document (values compared field by field).
+  factory _HeldCard.fromServer(Map<String, dynamic> data) => _HeldCard(
+    paths: <String>[
+      for (final Object? p
+          in (data['photoPaths'] as List?) ?? const <Object?>[])
+        '$p',
+    ],
+    readers: <String>[
+      for (final Object? r in (data['readers'] as List?) ?? const <Object?>[])
+        '$r',
+    ]..sort(),
+    data: data,
+  );
+
+  final List<String> paths;
+  final List<String> readers;
+
+  /// The print of the values this phone wrote; null when unknown.
+  final String? valuesPrint;
+
+  /// The server's document, when this came from the server.
+  final Map<String, dynamic>? data;
+
+  bool sameValues(Map<String, Object?> values, String print) {
+    final Map<String, dynamic>? server = data;
+    if (server != null) {
+      for (final MapEntry<String, Object?> e in values.entries) {
+        if (jsonEncode(e.value) != jsonEncode(server[e.key])) return false;
+      }
+      return true;
+    }
+    return valuesPrint != null && valuesPrint == print;
+  }
+
+  /// The same card, its values no longer known (so it is written next time).
+  _HeldCard unknownValues() => _HeldCard(paths: paths, readers: readers);
+
+  static Map<String, _HeldCard>? decode(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return <String, _HeldCard>{
+        for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+          if (e.value is Map)
+            '${e.key}': _HeldCard(
+              paths: <String>[
+                for (final Object? p
+                    in (e.value['p'] as List?) ?? const <Object?>[])
+                  '$p',
+              ],
+              readers: <String>[
+                for (final Object? r
+                    in (e.value['r'] as List?) ?? const <Object?>[])
+                  '$r',
+              ],
+              valuesPrint: e.value['f'] as String?,
+            ),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String encode(Map<String, _HeldCard> cards) =>
+      jsonEncode(<String, Object?>{
+        for (final MapEntry<String, _HeldCard> e in cards.entries)
+          e.key: <String, Object?>{
+            'p': e.value.paths,
+            'r': e.value.readers,
+            if (e.value.valuesPrint != null) 'f': e.value.valuesPrint,
+          },
+      });
 }

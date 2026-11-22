@@ -135,6 +135,11 @@ abstract final class MatchmakerNetwork {
           .collection('ideaProposals')
           .where('uids', arrayContains: me);
 
+  /// An unforced [refreshProposals] (app resume) reads every idea ever
+  /// offered between this account and another — at most this often. The
+  /// chat and network screens hold them live ([watchProposals]).
+  static const Duration unforcedEvery = Duration(minutes: 5);
+
   /// One read of the ideas, unless a screen holds them live already.
   static Future<void> refreshProposals({bool force = false}) async {
     final String? me = _uid;
@@ -142,7 +147,7 @@ abstract final class MatchmakerNetwork {
     final DateTime now = DateTime.now();
     if (!force &&
         _proposalsReadAt != null &&
-        now.difference(_proposalsReadAt!) < const Duration(seconds: 20)) {
+        now.difference(_proposalsReadAt!) < unforcedEvery) {
       return;
     }
     _proposalsReadAt = now;

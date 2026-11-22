@@ -1,5 +1,6 @@
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_cache.dart';
+import 'package:shadchan/services/read_throttle.dart';
 import 'package:shadchan/utils/home_next_step.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
@@ -279,6 +280,9 @@ abstract final class AccountSwitch {
     // What the server last told this account — its community figures and
     // which friends' cards it may show offline — is the account's too.
     await OfflineCache.clear();
+    // This phone's request clocks (`ReadThrottle`) belong to the account
+    // that set them: the next one publishes and reads as a fresh start.
+    ReadThrottle.reset();
     if (Hive.isBoxOpen('settings')) {
       final Box<dynamic> settings = Hive.box<dynamic>('settings');
       final List<String> synced = settings.keys

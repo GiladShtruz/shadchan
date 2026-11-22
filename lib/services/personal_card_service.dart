@@ -11,6 +11,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/services/read_throttle.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_tags.dart';
 
@@ -663,18 +664,68 @@ abstract final class PersonalCardService {
 
   /// Current database size and an actual foreground/activity timestamp.
   /// Readable only by this account and its explicitly approved card owners.
-  static Future<void> publishActivity(int databaseCount) async {
+  ///
+  /// **At most once an hour** ([activityEvery]), or ten minutes after the
+  /// last one when the database size changed ([activityCountEvery]). It used
+  /// to be written on every open, resume, exit and burst of edits — ~25 times
+  /// a day per matchmaker — and every write woke a server trigger that read
+  /// thousands of documents (2026-11-22). "Last active" is shown to the hour
+  /// at best, so an hour is all the precision it needs.
+  static Future<void> publishActivity(
+    int databaseCount, {
+    DateTime? now,
+  }) async {
     if (!FirebaseBootstrap.isReady) return;
+    final DateTime at = now ?? DateTime.now();
+    if (!activityWorthWriting(
+      last: ReadThrottle.lastAt(_activityClock),
+      lastCount: ReadThrottle.value(_activityClock),
+      count: databaseCount,
+      now: at,
+    )) {
+      return;
+    }
     final uid = await durableUid();
     if (uid == null) return;
+    // Marked before the write, so the two callers of an app open cannot both
+    // send one; taken back if the write fails.
+    ReadThrottle.mark(_activityClock, at: at, value: '$databaseCount');
     try {
       await _db.doc('matchmakerActivity/$uid').set({
         'databaseCount': databaseCount,
         'lastActiveAt': FieldValue.serverTimestamp(),
       });
     } catch (error) {
+      ReadThrottle.mark(
+        _activityClock,
+        at: DateTime.fromMillisecondsSinceEpoch(0),
+        value: '',
+      );
       debugPrint('Matchmaker activity was not refreshed: $error');
     }
+  }
+
+  static const String _activityClock = 'activity';
+
+  /// "Last active" is refreshed at most this often.
+  static const Duration activityEvery = Duration(hours: 1);
+
+  /// ...or this soon, when the database size moved.
+  static const Duration activityCountEvery = Duration(minutes: 10);
+
+  /// Whether [publishActivity] should write now.
+  @visibleForTesting
+  static bool activityWorthWriting({
+    required DateTime? last,
+    required String? lastCount,
+    required int count,
+    required DateTime now,
+  }) {
+    if (ReadThrottle.isDue(last: last, every: activityEvery, now: now)) {
+      return true;
+    }
+    return lastCount != '$count' &&
+        ReadThrottle.isDue(last: last, every: activityCountEvery, now: now);
   }
 
   /// Registers this device for push notifications under the account.
