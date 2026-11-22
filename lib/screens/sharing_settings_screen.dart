@@ -716,7 +716,9 @@ abstract final class PersonShareSheet {
       );
       return;
     }
-    await MatchmakerShares.refresh();
+    // A choice is about to be made from these rows: read them now (a rare
+    // action — the unforced read waits [MatchmakerShares.unforcedEvery]).
+    await MatchmakerShares.refresh(force: true);
     if (!context.mounted) return;
     final List<KnownMatchmaker> known = knownMatchmakerGroups(
       access,

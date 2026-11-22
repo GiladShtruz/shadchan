@@ -174,9 +174,24 @@ class AccountSyncEngine {
     }
     if (!_listening) {
       _startListening();
+    } else if (_listeningSince != null &&
+        DateTime.now().difference(_listeningSince!) >= relistenAfter) {
+      // **Back after a long time away: listen again from where we are.** A
+      // listener's filter (`_w` after the cursor) is fixed when it opens.
+      // Firestore resumes a dropped listener cheaply only within 30 minutes;
+      // after that it runs the query again and bills every document in it —
+      // everything written since this listener opened, this device's own
+      // writes included. Opened afresh, the filter starts at the newest
+      // document already seen, and costs about one read per collection.
+      await _stopListening();
+      _startListening();
     }
     await flush();
   }
+
+  /// How long a listener may have been open before a resume re-opens it.
+  static const Duration relistenAfter = Duration(minutes: 30);
+  DateTime? _listeningSince;
 
   /// Stops everything, and waits for whatever was in flight. After this the
   /// local boxes can be cleared without a single deletion reaching the
@@ -627,6 +642,7 @@ class AccountSyncEngine {
       return;
     }
     _listening = true;
+    _listeningSince = DateTime.now();
     for (final SyncCollection collection in SyncCollection.values) {
       if (_boxes[collection] == null) {
         continue;

@@ -1,14 +1,39 @@
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, DocumentSnapshot } from 'firebase-admin/firestore';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { createHash } from 'node:crypto';
 import { mergeRecord, normalizedPhone, recordCollections } from './couple_data';
 
-/** Serializes same-phone additions from two offline devices; aliases keep late notes/ideas attached. */
-export const reconcileCoupleRecord = onDocumentWritten(
-  { document: 'users/{uid}/{collection}/{id}', region: 'europe-west1' },
-  async (event) => {
-    const { uid, collection, id } = event.params;
-    if (!(recordCollections as readonly string[]).includes(collection)) return;
+/**
+ * Serializes same-phone additions from two offline devices; aliases keep late
+ * notes/ideas attached.
+ *
+ * **One trigger per record collection (2026-11-22).** It used to listen on
+ * `users/{uid}/{collection}/{id}` — every write under an account: every
+ * synced setting, every notification, every "read" mark, the server's own
+ * helper lists — ~7,900 runs a day, each returning at once for anything that
+ * is not a record. Now only the six record collections wake it.
+ */
+const onRecord = (collection: (typeof recordCollections)[number]) =>
+  onDocumentWritten(
+    { document: `users/{uid}/${collection}/{id}`, region: 'europe-west1' },
+    (event) =>
+      reconcile(event.params.uid, collection, event.params.id, event.data?.after),
+  );
+
+export const reconcileCouplePeople = onRecord('people');
+export const reconcileCouplePersonNotes = onRecord('personNotes');
+export const reconcileCouplePersonEvents = onRecord('personEvents');
+export const reconcileCoupleMatches = onRecord('matches');
+export const reconcileCoupleMatchNotes = onRecord('matchNotes');
+export const reconcileCoupleMatchStatusEvents = onRecord('matchStatusEvents');
+
+async function reconcile(
+  uid: string,
+  collection: string,
+  id: string,
+  after: DocumentSnapshot | undefined,
+): Promise<void> {
+  {
     const db = getFirestore();
     const membership = await db.doc(`memberships/${uid}`).get();
     if (
@@ -16,7 +41,6 @@ export const reconcileCoupleRecord = onDocumentWritten(
       membership.get('state') !== 'active'
     )
       return;
-    const after = event.data?.after;
     if (!after?.exists || after.get('_deleted')) return;
     const root = db.doc(`users/${uid}`);
     const workspace = membership.get('operation');
@@ -90,5 +114,5 @@ export const reconcileCoupleRecord = onDocumentWritten(
         );
         await Promise.all([...updates, writer.close()]);
       }
-  },
-);
+  }
+}

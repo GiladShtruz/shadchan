@@ -320,7 +320,9 @@ abstract final class NetworkActions {
       person,
       accessTo: access.accessTo,
     );
-    await MatchmakerShares.refresh();
+    // A choice is about to be made from these rows: read them now (a rare
+    // action — the unforced read waits [MatchmakerShares.unforcedEvery]).
+    await MatchmakerShares.refresh(force: true);
     if (!context.mounted) return;
     final Map<String, String> connected = MatchmakerNetwork.connectedNames;
     final String? choice = await showModalBottomSheet<String>(

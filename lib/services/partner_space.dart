@@ -1,16 +1,19 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/shared_card.dart';
 import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/personal_card_service.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/services/published_cards.dart';
+import 'package:shadchan/services/read_throttle.dart';
 import 'package:shadchan/services/sync_state_store.dart';
 import 'package:shadchan/services/shared_ideas.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -219,6 +222,13 @@ abstract final class PartnerSpace {
   /// the moment it is not.
   static void _followPartner() {
     final String? partner = partnerUid;
+    // No active tie (ended here, by the partner, or never): what this phone
+    // remembers having published is gone from the server, or about to be.
+    final String? me = _uid;
+    if (partner == null && me != null) {
+      final String key = '$_heldPrefix$me';
+      if ((_readHeld(key) ?? '').isNotEmpty) _writeHeld(key, '');
+    }
     if (partner == _cardsOf) return;
     unawaited(_cardsSub?.cancel());
     _cardsSub = null;
@@ -312,6 +322,8 @@ abstract final class PartnerSpace {
     });
     if (ok) {
       _lastPrint = null;
+      final String? me = _uid;
+      if (me != null) _writeHeld('$_heldPrefix$me', '');
       unawaited(_takeDownMine());
     }
     return ok;
@@ -413,15 +425,33 @@ abstract final class PartnerSpace {
         .collection('partnerCards')
         .doc(me)
         .collection('cards');
-    final QuerySnapshot<Map<String, dynamic>> remote = await col.get(
-      const GetOptions(source: Source.server),
-    );
-    final Map<String, Map<String, dynamic>> held =
-        <String, Map<String, dynamic>>{
-          for (final QueryDocumentSnapshot<Map<String, dynamic>> d
-              in remote.docs)
-            d.id: d.data(),
-        };
+    // What the partner can already read: this phone's own record of it
+    // ([PublishedCards]), or — once a day, or with no record — the server's
+    // answer. It used to read every card back (the whole database) on every
+    // app launch and after every edit (2026-11-22).
+    final String heldKey = '$_heldPrefix$me';
+    final String heldClock = 'partnerHeld.$me';
+    final Map<String, PublishedCard>? recorded =
+        ReadThrottle.due(heldClock, PublishedCards.verifyEvery)
+        ? null
+        : PublishedCards.decode(_readHeld(heldKey));
+    final Map<String, PublishedCard> held;
+    if (recorded != null) {
+      held = recorded;
+    } else {
+      final QuerySnapshot<Map<String, dynamic>> remote = await col.get(
+        const GetOptions(source: Source.server),
+      );
+      held = <String, PublishedCard>{
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> d in remote.docs)
+          d.id: PublishedCard.fromServer(d.data()),
+      };
+      ReadThrottle.mark(heldClock);
+    }
+    // A run stopped part-way leaves the record unknown: the next one asks the
+    // server.
+    _writeHeld(heldKey, '');
+    final Map<String, PublishedCard> nowHeld = <String, PublishedCard>{};
     final Map<String, Person> desired = <String, Person>{
       for (final Person p in shown) p.id: p,
     };
@@ -450,11 +480,15 @@ abstract final class PartnerSpace {
         ownerUid: me,
         ownerName: ownerName,
       );
-      final Map<String, dynamic>? before = held[person.id];
-      final List<Object?> heldPaths =
-          (before?['photoPaths'] as List?) ?? const <Object?>[];
+      final PublishedCard? before = held[person.id];
+      final List<Object?> heldPaths = before?.paths ?? const <Object?>[];
+      final String valuesPrint = SyncStateStore.fingerprint(values);
+      nowHeld[person.id] = PublishedCard(
+        paths: paths,
+        valuesPrint: valuesPrint,
+      );
       if (before != null &&
-          _sameValues(values, before) &&
+          before.sameValues(values, valuesPrint) &&
           listEquals(heldPaths, paths)) {
         continue;
       }
@@ -474,16 +508,25 @@ abstract final class PartnerSpace {
       }
     }
     _lastPrint = print;
+    _writeHeld(heldKey, PublishedCards.encode(nowHeld));
   }
 
-  static bool _sameValues(
-    Map<String, Object?> values,
-    Map<String, dynamic> held,
-  ) {
-    for (final MapEntry<String, Object?> e in values.entries) {
-      if (jsonEncode(e.value) != jsonEncode(held[e.key])) return false;
-    }
-    return true;
+  /// This phone's record of its own `partnerCards`, per account
+  /// (device-only: `partner.held` in `AccountSyncCodec`).
+  static const String _heldPrefix = 'partner.held.';
+  static final Map<String, String> _heldPending = <String, String>{};
+
+  static String? _readHeld(String key) {
+    final String? pending = _heldPending[key];
+    if (pending != null) return pending;
+    if (!Hive.isBoxOpen('settings')) return null;
+    final Object? raw = Hive.box<dynamic>('settings').get(key);
+    return raw is String ? raw : null;
+  }
+
+  static void _writeHeld(String key, String value) {
+    _heldPending[key] = value;
+    persistHomeSetting(key, value);
   }
 
   static Future<void> _deletePhotos(

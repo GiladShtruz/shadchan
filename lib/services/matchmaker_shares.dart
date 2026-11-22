@@ -34,6 +34,13 @@ abstract final class MatchmakerShares {
   /// Device-only: when this phone last read the rows.
   static const String _syncedKey = 'network.sharesSyncedAt';
 
+  /// An unforced [refresh] (app resume, the home carousel) reads every row
+  /// this account is in — at most this often. A screen that shows the rows
+  /// holds the live listener ([watch]); pull-to-refresh forces a read; a new
+  /// request arrives as a push. It was 20 seconds, which on a busy day was a
+  /// full read on nearly every return to the app (2026-11-22).
+  static const Duration unforcedEvery = Duration(minutes: 5);
+
   /// Every row this account is part of, whatever its mode.
   static final ValueNotifier<List<MatchmakerShare>> rows =
       ValueNotifier<List<MatchmakerShare>>(const <MatchmakerShare>[]);
@@ -96,7 +103,7 @@ abstract final class MatchmakerShares {
     final DateTime now = DateTime.now();
     if (!force &&
         _lastRead != null &&
-        now.difference(_lastRead!) < const Duration(seconds: 20)) {
+        now.difference(_lastRead!) < unforcedEvery) {
       return;
     }
     _lastRead = now;

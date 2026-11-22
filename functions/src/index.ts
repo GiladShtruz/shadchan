@@ -1,4 +1,11 @@
-export { reconcileCoupleRecord } from './couple_dedup';
+export {
+  reconcileCouplePeople,
+  reconcileCouplePersonNotes,
+  reconcileCouplePersonEvents,
+  reconcileCoupleMatches,
+  reconcileCoupleMatchNotes,
+  reconcileCoupleMatchStatusEvents,
+} from './couple_dedup';
 export {
   resumeCoupleMigration,
   rollbackCoupleMigration,
@@ -40,6 +47,7 @@ import { isActiveCard } from './card_activity';
 import { initializeApp } from 'firebase-admin/app';
 import {
   getFirestore,
+  AggregateField,
   FieldValue,
   DocumentSnapshot,
   Timestamp,
@@ -58,6 +66,15 @@ import { sendDueReminders } from './reminders';
 import * as functionsV1 from 'firebase-functions/v1';
 import { logger } from 'firebase-functions';
 import { isHebrewBirthday, israelToday, hebrewMonthKey } from './hebrew_birthday';
+import {
+  activityChange,
+  helperListChanged,
+  memberListFieldsChanged,
+  patchHelperRows,
+  sameFigures,
+  stableJson,
+} from './read_budget';
+import { createHash } from 'node:crypto';
 
 initializeApp();
 const db = getFirestore();
@@ -342,16 +359,13 @@ async function announceCard(ownerUid: string): Promise<void> {
   }
 
   const contacts = await db.collection('contactHashes').doc(ownerUid).get();
-  const hashes: string[] =
-    (contacts.get('hashes') as string[] | undefined) ?? [];
-  const refs = hashes.map((h) => db.collection('phoneDirectory').doc(h));
-  for (let i = 0; i < refs.length; i += 100) {
-    const entries = await db.getAll(...refs.slice(i, i + 100));
-    for (const entry of entries) {
-      const uid = entry.get('uid') as string | undefined;
-      if (entry.exists && entry.get('matchmaker') === true && uid) {
-        recipients.add(uid);
-      }
+  // Only the contacts that are in the directory at all ([matchedHashesOf]),
+  // not one read per entry of the address book.
+  const matched = await matchedHashesOf(ownerUid, contacts);
+  for (const entry of await getAllDocs(matched.map((h) => `phoneDirectory/${h}`))) {
+    const uid = entry.get('uid') as string | undefined;
+    if (entry.exists && entry.get('matchmaker') === true && uid) {
+      recipients.add(uid);
     }
   }
 
@@ -436,6 +450,13 @@ export const onPersonalCardWritten = onDocumentWritten(
     const before = event.data?.before;
     const after = event.data?.after;
     const ownerUid = event.params.ownerUid;
+    // "X רווקים מנהלים כרטיס" moves only when a card goes live or stops
+    // being live — so only then is it counted again (otherwise hourly). It
+    // used to be recounted, reading three whole collections, on every write
+    // of any card.
+    if (isActiveCard(before?.data()) !== isActiveCard(after?.exists ? after.data() : undefined)) {
+      await refreshPersonalCardCount();
+    }
     if (!after?.exists) {
       await refreshContactNeighbours(ownerUid);
       return;
@@ -508,52 +529,134 @@ export async function mutualContacts(a: string, b: string): Promise<boolean> {
  * Whether a *single* keeps a card is the more private fact, and stays
  * reciprocal ([mutualContacts]).
  */
+/**
+ * The hashes in [ownerUid]'s address book that have a directory entry — the
+ * only ones [findHelpers] has to look at.
+ *
+ * Working this out reads one document per contact (a median of ~1,100, up to
+ * ~8,000), and it used to be done on *every* rebuild — several times a
+ * session, for the user and for everybody who has their number. It is now
+ * kept in `contactMatches/{uid}` (server-only) and worked out again only when
+ * the address book's contents changed (`contactsPrint`, a hash of the list).
+ * A number that joins or leaves the directory in between is added or removed
+ * by `onPhoneDirectoryWritten`.
+ */
+async function matchedHashesOf(
+  ownerUid: string,
+  contacts: DocumentSnapshot,
+): Promise<string[]> {
+  const hashes: string[] = (contacts.get('hashes') as string[] | undefined) ?? [];
+  if (hashes.length === 0) return [];
+  // The address book's *contents*, not its write time: the app re-sends an
+  // unchanged book once a day, and that must not cost a full rescan.
+  const contactsPrint = createHash('sha256').update(hashes.join(',')).digest('hex');
+  const ref = db.doc(`contactMatches/${ownerUid}`);
+  const cached = await ref.get();
+  if (cached.exists && cached.get('contactsPrint') === contactsPrint) {
+    const kept = (cached.get('hashes') as string[] | undefined) ?? [];
+    // Kept in the address book's order, which is the order the lists use.
+    const inBook = new Set(hashes);
+    return kept.filter((h) => inBook.has(h));
+  }
+  const matched: string[] = [];
+  for (let i = 0; i < hashes.length; i += 100) {
+    const entries = await db.getAll(
+      ...hashes.slice(i, i + 100).map((h) => db.doc(`phoneDirectory/${h}`)),
+    );
+    for (const entry of entries) if (entry.exists) matched.push(entry.id);
+  }
+  await ref.set({
+    hashes: matched,
+    contactsPrint,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return matched;
+}
+
 async function findHelpers(ownerUid: string): Promise<void> {
   const contacts = await db.doc(`contactHashes/${ownerUid}`).get();
-  const hashes: string[] = contacts.get('hashes') ?? [];
+  const matched = await matchedHashesOf(ownerUid, contacts);
+  const ownBook = new Set<string>((contacts.get('hashes') as string[] | undefined) ?? []);
   const helpers: Record<string, unknown>[] = [], friends: Record<string, unknown>[] = [];
-  const seen = new Set<string>();
-  for (let i = 0; i < hashes.length; i += 100) {
-    const entries = await db.getAll(...hashes.slice(i, i + 100).map(h => db.doc(`phoneDirectory/${h}`)));
-    for (const entry of entries) {
-      const uid = entry.get('uid');
-      if (!entry.exists || typeof uid !== 'string' || uid === ownerUid || seen.has(uid)) continue;
-      // The entry must still be the one its account published as its own
-      // number, or a number could be claimed for somebody else's list.
-      if ((await db.doc(`userPhones/${uid}`).get()).get('phoneHash') !== entry.id) continue;
-      seen.add(uid);
-      const matchmaker = entry.get('matchmaker') === true;
-      const single = entry.get('hasCard') === true && entry.get('announces') !== false;
-      if (!matchmaker && !single) continue;
-      const mutual = single ? await mutualContacts(ownerUid, uid) : false;
-      if (!matchmaker && !mutual) continue;
-      const member = await db.doc(`communityMembers/${uid}`).get();
-      const activity = await db.doc(`matchmakerActivity/${uid}`).get();
-      const row = {uid, name: entry.get('name') ?? '', phoneHash: entry.id,
-        photoUrl: member.get('hidden') === false && typeof member.get('photoUrl') === 'string' && member.get('photoUrl').trim() ? member.get('photoUrl') : null,
-        databaseCount: activity.get('databaseCount') ?? null,
-        lastActiveAt: activity.get('lastActiveAt') ?? null,
-        // When they joined as a matchmaker, so the newest friends lead.
-        joinedAt: member.get('joinedAt') ?? null};
-      if (matchmaker) {
-        const membership = await db.doc(`memberships/${uid}`).get();
-        helpers.push({...row, name: membership.get('state') === 'active' ? membership.get('name') : row.name,
-          recipientUid: membership.get('state') === 'active' ? membership.get('databaseUid') : uid,
-          granteeUids: membership.get('state') === 'active' ? membership.get('members') : [uid],
-          // Saved in each other's phones — "שדכנים שאני מכיר" puts them first.
-          // A flag only: neither side learns anything about the other's
-          // address book beyond the one number they already have.
-          mutual: await mutualContacts(ownerUid, uid),
-          // Whether they still make the community figures public — their
-          // couples are shown on the basic profile only then.
-          publicFigures: member.exists && member.get('hidden') === false});
-      }
-      if (mutual && isActiveCard((await db.doc(`personalCards/${uid}`).get()).data())) {
-        // Presence only. No candidate details or personal-card photograph.
-        friends.push({uid, name: row.name, phoneHash: entry.id});
-      }
-    }
+
+  // Everything about the directory entries is read in batches, not one
+  // awaited read at a time (which is what made a run take most of a minute).
+  const entries = matched.length === 0 ? [] : await getAllDocs(matched.map((h) => `phoneDirectory/${h}`));
+  const candidates: DocumentSnapshot[] = [];
+  for (const entry of entries) {
+    const uid = entry.get('uid');
+    if (!entry.exists || typeof uid !== 'string' || uid === ownerUid) continue;
+    if (entry.get('matchmaker') !== true && entry.get('hasCard') !== true) continue;
+    candidates.push(entry);
   }
+  const uidOf = (entry: DocumentSnapshot) => entry.get('uid') as string;
+  const phones = await getAllDocs(candidates.map((e) => `userPhones/${uidOf(e)}`));
+  // The entry must still be the one its account published as its own
+  // number, or a number could be claimed for somebody else's list.
+  const owned = candidates.filter((e, i) => phones[i].get('phoneHash') === e.id);
+  const seen = new Set<string>();
+  const genuine = owned.filter((e) => !seen.has(uidOf(e)) && seen.add(uidOf(e)));
+
+  // "Saved in each other's phones" — [mutualContacts], with the owner's half
+  // read once instead of once per friend (twice, for a matchmaker).
+  const ownerHash = await ownerPhoneHashOf(ownerUid);
+  const ownerListed = ownerHash
+    ? (await db.doc(`phoneDirectory/${ownerHash}`).get()).get('uid') === ownerUid
+    : false;
+  const theirBooks = ownerListed
+    ? await getAllDocs(genuine.map((e) => `contactHashes/${uidOf(e)}`))
+    : [];
+  const mutualOf = (i: number) =>
+    ownerListed && ownBook.has(genuine[i].id) &&
+    (((theirBooks[i].get('hashes') as string[] | undefined) ?? []).includes(ownerHash as string));
+
+  const [members, activities] = await Promise.all([
+    getAllDocs(genuine.map((e) => `communityMembers/${uidOf(e)}`)),
+    getAllDocs(genuine.map((e) => `matchmakerActivity/${uidOf(e)}`)),
+  ]);
+  const matchmakerIdx = genuine.map((e, i) => (e.get('matchmaker') === true ? i : -1)).filter((i) => i >= 0);
+  const memberships = new Map<number, DocumentSnapshot>();
+  const membershipDocs = await getAllDocs(matchmakerIdx.map((i) => `memberships/${uidOf(genuine[i])}`));
+  matchmakerIdx.forEach((i, k) => memberships.set(i, membershipDocs[k]));
+  const singleIdx = genuine
+    .map((e, i) => (e.get('hasCard') === true && e.get('announces') !== false && mutualOf(i) ? i : -1))
+    .filter((i) => i >= 0);
+  const cards = new Map<number, DocumentSnapshot>();
+  const cardDocs = await getAllDocs(singleIdx.map((i) => `personalCards/${uidOf(genuine[i])}`));
+  singleIdx.forEach((i, k) => cards.set(i, cardDocs[k]));
+
+  genuine.forEach((entry, i) => {
+    const uid = uidOf(entry);
+    const matchmaker = entry.get('matchmaker') === true;
+    const single = entry.get('hasCard') === true && entry.get('announces') !== false;
+    const mutual = single ? mutualOf(i) : false;
+    if (!matchmaker && !mutual) return;
+    const member = members[i];
+    const activity = activities[i];
+    const row = {uid, name: entry.get('name') ?? '', phoneHash: entry.id,
+      photoUrl: member.get('hidden') === false && typeof member.get('photoUrl') === 'string' && member.get('photoUrl').trim() ? member.get('photoUrl') : null,
+      databaseCount: activity.get('databaseCount') ?? null,
+      lastActiveAt: activity.get('lastActiveAt') ?? null,
+      // When they joined as a matchmaker, so the newest friends lead.
+      joinedAt: member.get('joinedAt') ?? null};
+    if (matchmaker) {
+      const membership = memberships.get(i) as DocumentSnapshot;
+      helpers.push({...row, name: membership.get('state') === 'active' ? membership.get('name') : row.name,
+        recipientUid: membership.get('state') === 'active' ? membership.get('databaseUid') : uid,
+        granteeUids: membership.get('state') === 'active' ? membership.get('members') : [uid],
+        // Saved in each other's phones — "שדכנים שאני מכיר" puts them first.
+        // A flag only: neither side learns anything about the other's
+        // address book beyond the one number they already have.
+        mutual: mutualOf(i),
+        // Whether they still make the community figures public — their
+        // couples are shown on the basic profile only then.
+        publicFigures: member.exists && member.get('hidden') === false});
+    }
+    if (mutual && isActiveCard(cards.get(i)?.data())) {
+      // Presence only. No candidate details or personal-card photograph.
+      friends.push({uid, name: row.name, phoneHash: entry.id});
+    }
+  });
   const ref = db.doc(`users/${ownerUid}/private/helpers`);
   // `uids` — every account on either list, flat, so the chat rule can ask
   // "do these two know each other?" in one document read instead of the
@@ -562,17 +665,25 @@ async function findHelpers(ownerUid: string): Promise<void> {
     ...helpers.map((h) => h.uid as string),
     ...friends.map((f) => f.uid as string),
   ])].filter((u) => typeof u === 'string' && u.length > 0).slice(0, 2000);
-  await ref.set({helpers, friends, uids, updatedAt: FieldValue.serverTimestamp()});
-  await announceJoinedMatchmakers(ownerUid, helpers);
+  // Written only when the list actually moved: every write is a read on each
+  // of the owner's phones (they listen to it) and wakes a trigger.
+  const stored = await ref.get();
+  if (helperListChanged(stored.data(), {helpers, friends, uids})) {
+    await ref.set({helpers, friends, uids, updatedAt: FieldValue.serverTimestamp()});
+  }
+  const now = Date.now();
+  const recent = helpers.filter((h) =>
+    joinedRecently(h.joinedAt instanceof Timestamp ? h.joinedAt.toMillis() : null, now));
+  // Nobody on the list joined in the last week — nothing to announce, and
+  // nothing more to read.
+  if (recent.length === 0) return;
+  await announceJoinedMatchmakers(ownerUid, recent);
   const card = await db.doc(`personalCards/${ownerUid}`).get();
   if (isActiveCard(card.data())) {
-    for (const helper of helpers) {
+    for (const helper of recent) {
       const uid = helper.uid as string;
       // Only a friend who has just joined: everybody who was already here
       // when this shipped is not news, and is on "השדכנים שלי" anyway.
-      const joinedAt =
-        helper.joinedAt instanceof Timestamp ? helper.joinedAt.toMillis() : null;
-      if (!joinedRecently(joinedAt, Date.now())) continue;
       const grant = await db.doc(`cardAccess/${ownerUid}_${uid}`).get();
       if (grant.get('status') === 'approved' || grant.get('status') === 'blocked') continue;
       // Asked as the question it is, in the owner's own grammatical gender.
@@ -583,6 +694,17 @@ async function findHelpers(ownerUid: string): Promise<void> {
         route: `/me?section=helpers&friend=${uid}`}, true, `friendJoined_${uid}`);
     }
   }
+}
+
+/** Every document at [paths], in order, read 100 at a time. */
+async function getAllDocs(paths: string[]): Promise<DocumentSnapshot[]> {
+  const out: DocumentSnapshot[] = [];
+  for (let i = 0; i < paths.length; i += 100) {
+    const chunk = paths.slice(i, i + 100);
+    if (chunk.length === 0) break;
+    out.push(...(await db.getAll(...chunk.map((p) => db.doc(p)))));
+  }
+  return out;
 }
 
 /**
@@ -629,15 +751,35 @@ async function announceJoinedMatchmakers(
 
 async function refreshContactNeighbours(uid: string): Promise<void> {
   await findHelpers(uid);
-  const hash = await ownerPhoneHashOf(uid);
-  if (!hash) return;
-  const owners = await db.collection('contactHashes').where('hashes', 'array-contains', hash).get();
-  for (const owner of owners.docs) if (owner.id !== uid) await findHelpers(owner.id);
+  for (const owner of await ownersWhoSaved(uid)) await findHelpers(owner);
 }
 
+/**
+ * Everybody who has [uid]'s number in their address book. Ids only:
+ * `select()` leaves the (large) hash lists behind — one read each all the
+ * same, but none of the bandwidth or the time.
+ */
+async function ownersWhoSaved(uid: string): Promise<string[]> {
+  const hash = await ownerPhoneHashOf(uid);
+  if (!hash) return [];
+  const owners = await db
+    .collection('contactHashes')
+    .where('hashes', 'array-contains', hash)
+    .select()
+    .get();
+  return owners.docs.map((d) => d.id).filter((id) => id !== uid);
+}
+
+/**
+ * Only what other people's lists show from this row — the name's photo,
+ * whether the figures are public, and when they joined (which drives the
+ * "X הצטרף/ה" notices). The counters change on every publish and nobody's
+ * list reads them: that alone used to rebuild everybody's list, and re-read
+ * three whole collections, several times per session.
+ */
 export const onPersonalMemberActivity = onDocumentWritten('communityMembers/{uid}', async event => {
+  if (!memberListFieldsChanged(event.data?.before?.data(), event.data?.after?.data())) return;
   await refreshContactNeighbours(event.params.uid);
-  await refreshPersonalCardCount();
 });
 
 /**
@@ -663,11 +805,31 @@ export const onPhoneDirectoryWritten = onDocumentWritten(
         ? (after.get('uid') as string | undefined)
         : undefined;
     if (!before?.exists && !after?.exists) return;
+    // Republished with nothing a list shows changed (only `updatedAt`).
+    const shown = (d: DocumentSnapshot | undefined) =>
+      d?.exists
+        ? JSON.stringify(['uid', 'name', 'matchmaker', 'hasCard', 'acceptsRequests', 'announces']
+          .map((f) => d.get(f) ?? null))
+        : null;
+    if (shown(before) === shown(after)) return;
     const owners = await db
       .collection('contactHashes')
       .where('hashes', 'array-contains', event.params.phoneHash)
+      .select()
       .get();
     for (const doc of owners.docs) {
+      // The number joined or left the directory: the owner's cached list of
+      // contacts worth looking at ([matchedHashesOf]) follows it.
+      if (!before?.exists || !after?.exists) {
+        await db.doc(`contactMatches/${doc.id}`).set(
+          {
+            hashes: after?.exists
+              ? FieldValue.arrayUnion(event.params.phoneHash)
+              : FieldValue.arrayRemove(event.params.phoneHash),
+          },
+          { merge: true },
+        );
+      }
       if (doc.id !== nowUid && doc.id !== wasUid) {
         await findHelpers(doc.id);
       }
@@ -682,8 +844,21 @@ export const onPhoneDirectoryWritten = onDocumentWritten(
 export const onContactHashesWritten = onDocumentWritten(
   'contactHashes/{ownerUid}',
   async (event) => {
-    await refreshContactNeighbours(event.params.ownerUid);
-    await announceCard(event.params.ownerUid);
+    const ownerUid = event.params.ownerUid;
+    // The daily re-send of an unchanged address book: nobody else's list
+    // depends on it having been sent again, and its card was announced the
+    // first time. Only the owner's own list is refreshed (cheap — its
+    // contacts in the directory are cached).
+    if (
+      event.data?.before?.exists &&
+      event.data?.after?.exists &&
+      stableJson(event.data.before.get('hashes')) === stableJson(event.data.after.get('hashes'))
+    ) {
+      await findHelpers(ownerUid);
+      return;
+    }
+    await refreshContactNeighbours(ownerUid);
+    await announceCard(ownerUid);
   },
 );
 
@@ -941,6 +1116,8 @@ export const onAccountDeleted = functionsV1
     await deleteQuery('phoneDirectory', 'uid', uid);
     await db.collection('userPhones').doc(uid).delete();
     await db.collection('contactHashes').doc(uid).delete();
+    // What the server worked out from that address book (`matchedHashesOf`).
+    await db.collection('contactMatches').doc(uid).delete();
     await db.collection('databaseHashes').doc(uid).delete();
     await db.collection('fcmTokens').doc(uid).delete();
     await db.doc(`matchmakerActivity/${uid}`).delete();
@@ -1038,52 +1215,125 @@ async function purgeAccount(uid: string): Promise<void> {
 /** Aggregate includes legacy cards as well. Never exposes a person's identity. */
 async function refreshPersonalCardCount(): Promise<void> {
   const startedAt = Date.now();
+  // A card is live by its text and photos, which no query can test: the
+  // cards themselves are read (171 today), once an hour.
   const cards = await db
     .collection('personalCards')
     .select('description', 'photoPaths', 'deleted', 'joinedAt')
     .get();
   const count = cards.docs.filter((d) => isActiveCard(d.data())).length;
-  const now = new Date(new Date().toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'}));
+  const real = new Date();
+  const now = new Date(real.toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'}));
+  // Israel's offset now, so a wall-clock moment can be turned into the
+  // instant a query compares against.
+  const offset = Math.round((now.getTime() - real.getTime()) / 60000) * 60000;
   const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
   const two = (n: number) => String(n).padStart(2, '0');
   const weekKey = `W${sunday.getFullYear()}-${two(sunday.getMonth()+1)}-${two(sunday.getDate())}`;
-  const members = await db.collection('communityMembers').get();
-  const current = members.docs.filter(d => d.get('weekKey') === weekKey);
-  const sum = (field: string) => current.reduce((n, d) => n + (typeof d.get(field) === 'number' ? d.get(field) : 0), 0);
   const joinedThisWeek = (value: unknown) => value instanceof Timestamp &&
     new Date(value.toDate().toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'})) >= sunday;
-  const activity = await db.collection('matchmakerActivity').get();
   // The calendar month in Israel — "X הצטרפו החודש" on the personal home.
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthKey = `M${monthStart.getFullYear()}-${two(monthStart.getMonth()+1)}`;
   const joinedThisMonth = (value: unknown) => value instanceof Timestamp &&
     new Date(value.toDate().toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'})) >= monthStart;
   const hebrewKey = hebrewMonthKey(now);
+  const community = await communityFigures({
+    weekKey,
+    hebrewKey,
+    weekStart: Timestamp.fromMillis(sunday.getTime() - offset),
+    joinedThisWeek,
+  });
   const totals = {singles: count, weekKey, monthKey,
     newSinglesWeek: cards.docs.filter(d => isActiveCard(d.data()) && joinedThisWeek(d.get('joinedAt'))).length,
     newSinglesMonth: cards.docs.filter(d => isActiveCard(d.data()) && joinedThisMonth(d.get('joinedAt'))).length,
-    newMatchmakersWeek: members.docs.filter(d => joinedThisWeek(d.get('joinedAt'))).length,
-    activeMatchmakers: activity.docs.filter(d => joinedThisWeek(d.get('lastActiveAt'))).length,
-    couplesWeek: sum('weekCouples'), engagementsWeek: sum('weekEngagements'),
-    // "186 שדכנים בקהילה" and "3 חתונות נוספו החודש" on the personal home.
-    // The month is the Hebrew one, as the members' own counters are keyed.
-    matchmakers: members.size,
-    hebrewMonthKey: hebrewKey,
-    engagementsMonth: members.docs
-      .filter(d => d.get('monthKey') === hebrewKey)
-      .reduce((n, d) => n + (typeof d.get('monthEngagements') === 'number' ? d.get('monthEngagements') : 0), 0)};
+    ...community,
+    hebrewMonthKey: hebrewKey};
   const ref = db.doc('publicStats/personalCards');
+  const area = db.doc('publicStats/personalArea');
   await db.runTransaction(async (tx) => {
-    const previous = await tx.get(ref);
+    const [previous, previousArea] = await Promise.all([tx.get(ref), tx.get(area)]);
     if ((previous.get('startedAt') ?? 0) > startedAt) return;
+    // The same figures as last hour: nothing is written — each write is a
+    // read on every phone that shows the personal home.
+    if (previous.get('count') === count && sameFigures(previousArea.data(), totals)) return;
     tx.set(ref, { count, startedAt, updatedAt: FieldValue.serverTimestamp() });
-    tx.set(db.doc('publicStats/personalArea'), {...totals, startedAt, updatedAt: FieldValue.serverTimestamp()});
+    tx.set(area, {...totals, startedAt, updatedAt: FieldValue.serverTimestamp()});
   });
 }
-export const updatePersonalCardCount = onDocumentWritten(
-  'personalCards/{uid}',
-  async () => refreshPersonalCardCount(),
-);
+
+/**
+ * The community's figures for the personal home, by aggregate queries — a
+ * handful of reads whatever the size of the community, where the old code
+ * read every member and every activity row. The sums run on the same
+ * composite indexes the app's own community figures use. Should a query be
+ * refused (an index missing), the old full read answers instead.
+ */
+async function communityFigures(args: {
+  weekKey: string;
+  hebrewKey: string;
+  weekStart: Timestamp;
+  joinedThisWeek: (value: unknown) => boolean;
+}): Promise<{
+  newMatchmakersWeek: number;
+  activeMatchmakers: number;
+  couplesWeek: number;
+  engagementsWeek: number;
+  matchmakers: number;
+  engagementsMonth: number;
+}> {
+  const members = db.collection('communityMembers');
+  const num = (v: unknown) => (typeof v === 'number' ? v : 0);
+  try {
+    const [all, joined, active, week, month] = await Promise.all([
+      members.count().get(),
+      members.where('joinedAt', '>=', args.weekStart).count().get(),
+      db.collection('matchmakerActivity').where('lastActiveAt', '>=', args.weekStart).count().get(),
+      members
+        .where('weekKey', '==', args.weekKey)
+        .where('weekActions', '>', 0)
+        .aggregate({
+          couples: AggregateField.sum('weekCouples'),
+          engagements: AggregateField.sum('weekEngagements'),
+        })
+        .get(),
+      members
+        .where('monthKey', '==', args.hebrewKey)
+        .where('monthActions', '>', 0)
+        .aggregate({ engagements: AggregateField.sum('monthEngagements') })
+        .get(),
+    ]);
+    return {
+      newMatchmakersWeek: joined.data().count,
+      activeMatchmakers: active.data().count,
+      couplesWeek: num(week.data().couples),
+      engagementsWeek: num(week.data().engagements),
+      // "186 שדכנים בקהילה" and "3 חתונות נוספו החודש" on the personal home.
+      // The month is the Hebrew one, as the members' own counters are keyed.
+      matchmakers: all.data().count,
+      engagementsMonth: num(month.data().engagements),
+    };
+  } catch (error) {
+    logger.warn('communityFigures: aggregates failed, reading everything', { error: String(error) });
+  }
+  const docs = (await members.get()).docs;
+  const current = docs.filter((d) => d.get('weekKey') === args.weekKey);
+  const sum = (field: string) => current.reduce((n, d) => n + num(d.get(field)), 0);
+  const activity = await db.collection('matchmakerActivity').get();
+  return {
+    newMatchmakersWeek: docs.filter((d) => args.joinedThisWeek(d.get('joinedAt'))).length,
+    activeMatchmakers: activity.docs.filter((d) => args.joinedThisWeek(d.get('lastActiveAt'))).length,
+    couplesWeek: sum('weekCouples'),
+    engagementsWeek: sum('weekEngagements'),
+    matchmakers: docs.length,
+    engagementsMonth: docs
+      .filter((d) => d.get('monthKey') === args.hebrewKey)
+      .reduce((n, d) => n + num(d.get('monthEngagements')), 0),
+  };
+}
+// `updatePersonalCardCount` (a recount on every write of any card) is gone:
+// the hourly run below is the only one. Each recount used to read three whole
+// collections. Remove it from the project when deploying (the CLI asks).
 export const refreshPersonalCardCommunity = onSchedule(
   { schedule: 'every 60 minutes' },
   refreshPersonalCardCount,
@@ -1119,17 +1369,59 @@ export const purgeExpiredPersonalInvites = onSchedule({schedule: '20 4 * * *', t
   await writer.close();
 });
 
+/**
+ * "Last active" and the database size of a matchmaker, as other people's
+ * lists show them.
+ *
+ * **Not a rebuild.** This used to work out, from scratch, the list of the
+ * matchmaker *and* of everybody who has their number — one read per contact
+ * — and re-read three whole collections, on every write; the app writes here
+ * on every open, resume, exit and burst of edits. That was ~90% of the
+ * project's reads. Now the matchmaker's own row on each of those lists is
+ * updated in place, and only when the size changed or an hour has passed
+ * ([activityChange]). The first write ever still builds the lists once.
+ */
 export const onMatchmakerActivityWritten = onDocumentWritten('matchmakerActivity/{uid}', async event => {
-  await refreshContactNeighbours(event.params.uid);
-  await refreshPersonalCardCount();
+  const uid = event.params.uid;
+  const after = event.data?.after;
+  switch (activityChange(event.data?.before?.data(), after?.data())) {
+    case 'rebuild':
+      await refreshContactNeighbours(uid);
+      return;
+    case 'patch':
+      await patchHelperActivity(uid, {
+        databaseCount: after?.get('databaseCount') ?? null,
+        lastActiveAt: after?.get('lastActiveAt') ?? null,
+      });
+      return;
+    case 'none':
+      return;
+  }
 });
+
+/** [uid]'s row, wherever it is listed, given its new figures. */
+async function patchHelperActivity(
+  uid: string,
+  figures: { databaseCount: unknown; lastActiveAt: unknown },
+): Promise<void> {
+  for (const owner of await ownersWhoSaved(uid)) {
+    const ref = db.doc(`users/${owner}/private/helpers`);
+    await db.runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      const next = patchHelperRows(doc.get('helpers'), uid, figures);
+      if (next) tx.update(ref, { helpers: next });
+    });
+  }
+}
 
 /**
  * The administrators' dashboard ("נתונים" in the support console): counts
- * only, every three hours and on demand. See `admin_stats.ts`.
+ * only, twice a day and on demand ("רענון עכשיו"). See `admin_stats.ts`.
+ * Each run reads five whole collections, so it was moved from every three
+ * hours to every twelve (2026-11-22).
  */
 export const refreshAdminStats = onSchedule(
-  { schedule: 'every 3 hours', timeoutSeconds: 300, memory: '512MiB' },
+  { schedule: 'every 12 hours', timeoutSeconds: 300, memory: '512MiB' },
   async () => {
     await writeAdminStats(db);
   },

@@ -59,6 +59,12 @@ class InboxItem {
 /// This is the record; a push is only the courtesy that points at it. So the
 /// list is shown on the notifications page whether or not any push arrived.
 class InboxProvider extends ChangeNotifier {
+  /// The newest notices the list listens to. Every app start reads up to
+  /// this many documents (and again after a long time offline); it was 300
+  /// (2026-11-22). Older ones are still on the server, and "מחק הכל" clears
+  /// them too ([removeAll]).
+  static const int listLimit = 100;
+
   InboxProvider({bool enabled = true}) : _enabled = enabled {
     if (_enabled) CoupleWorkspaceService.membership.addListener(_watchShared);
   }
@@ -93,7 +99,7 @@ class InboxProvider extends ChangeNotifier {
     _sharedSubscription = FirebaseFirestore.instance
         .collection('coupleData/$root/inbox')
         .orderBy('createdAt', descending: true)
-        .limit(300)
+        .limit(listLimit)
         .snapshots()
         .listen((snap) {
           _sharedItems = [
@@ -161,7 +167,7 @@ class InboxProvider extends ChangeNotifier {
       }
       _subscription = _collection(uid)
           .orderBy('createdAt', descending: true)
-          .limit(300)
+          .limit(listLimit)
           .snapshots()
           .listen((QuerySnapshot<Map<String, dynamic>> snap) {
             _items = <InboxItem>[
@@ -291,6 +297,36 @@ class InboxProvider extends ChangeNotifier {
           batch.delete(_document(uid, item.id));
         }
         await batch.commit();
+      }
+      // Notices older than the list's window ([listLimit]) would otherwise
+      // slide into it once these are gone. Only what is not newer than the
+      // newest one on screen — something that arrives meanwhile stays.
+      final DateTime? newest = all
+          .map((InboxItem i) => i.createdAt)
+          .whereType<DateTime>()
+          .fold<DateTime?>(
+            null,
+            (DateTime? a, DateTime b) => a == null || b.isAfter(a) ? b : a,
+          );
+      if (newest != null) {
+        for (int round = 0; round < 20; round++) {
+          final QuerySnapshot<Map<String, dynamic>> older =
+              await _collection(uid)
+                  .where(
+                    'createdAt',
+                    isLessThanOrEqualTo: Timestamp.fromDate(newest),
+                  )
+                  .limit(300)
+                  .get();
+          if (older.docs.isEmpty) break;
+          _removedLocally.addAll(older.docs.map((d) => d.id));
+          final WriteBatch batch = FirebaseFirestore.instance.batch();
+          for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+              in older.docs) {
+            batch.delete(doc.reference);
+          }
+          await batch.commit();
+        }
       }
     } catch (error) {
       debugPrint('InboxProvider.removeAll: $error');

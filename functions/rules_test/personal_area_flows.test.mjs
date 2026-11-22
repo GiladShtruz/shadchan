@@ -100,6 +100,9 @@ test('reciprocal discovery and join notifications never reveal a one-way contact
     .set(card(target.uid, { description: 'פרטים שאסור לחשוף '.repeat(7) }));
   await db.doc(`userPhones/${owner.uid}`).set({ phoneHash: oh });
   await db.doc(`userPhones/${target.uid}`).set({ phoneHash: th });
+  // The friend joined this week — only a recent join is news
+  // (`joinedRecently`, since 2026-11-18).
+  await db.doc(`communityMembers/${target.uid}`).set({ joinedAt: Timestamp.now() });
   await db.doc(`contactHashes/${owner.uid}`).set({ hashes: [th] });
   // A matchmaker the owner saved is listed without saving the owner back;
   // whether a single keeps a card is still told only both ways.
