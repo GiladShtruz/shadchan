@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
@@ -33,13 +34,18 @@ class PersonRepository extends ChangeNotifier {
     SelfIdentity.revision.addListener(notifyListeners);
     // A write that reaches the box without passing through this repository
     // (the account sync, a migration) drops the sorted copy too.
-    _boxWatch = _box.watch().listen((_) => _allCache = null);
+    _boxWatch = _box.watch().listen((_) => _dropCaches());
+    _eventWatch = _eventBox?.watch().listen((_) {
+      _eventsByPerson = null;
+      _allEvents = null;
+    });
     // Pending notifications do not survive a reinstall or a device restart on
     // every Android build, so the whole set is re-scheduled on startup.
     _refreshPersonRemindersInBackground();
   }
 
   StreamSubscription<BoxEvent>? _boxWatch;
+  StreamSubscription<BoxEvent>? _eventWatch;
 
   /// The readable people, sorted by first name — kept between calls.
   ///
@@ -64,8 +70,61 @@ class PersonRepository extends ChangeNotifier {
   /// ([SelfIdentity]) — the old mirror of their own card, or a record with
   /// their own number. Such a record is still found by [getById], so an idea
   /// or a note naming it opens; it is only kept out of the database's lists.
-  Iterable<Person> get _readableValues =>
-      _box.values.where((Person p) => _mayRead(p) && !SelfIdentity.isSelf(p));
+  ///
+  /// **Kept between calls, like [getAll].** Every list, count and search goes
+  /// through here, and [SelfIdentity.isSelf] normalises each friend's phone
+  /// number: walking the whole box again for each of the dozens of reads one
+  /// home rebuild makes was thousands of string operations per frame on a large
+  /// database. Dropped with the sorted copy — on every change this repository
+  /// announces, every event of the box, and a change in the box's length.
+  Iterable<Person> get _readableValues {
+    final List<Person>? cached = _readableCache;
+    if (cached != null && _readableCacheLength == _box.length) {
+      return cached;
+    }
+    final List<Person> readable = _box.values
+        .where((Person p) => _mayRead(p) && !SelfIdentity.isSelf(p))
+        .toList(growable: false);
+    _readableCache = readable;
+    _readableCacheLength = _box.length;
+    return readable;
+  }
+
+  List<Person>? _readableCache;
+  int _readableCacheLength = -1;
+
+  void _dropCaches() {
+    _allCache = null;
+    _readableCache = null;
+    _eventsByPerson = null;
+    _allEvents = null;
+  }
+
+  /// Every history line, grouped by the friend it belongs to — built once per
+  /// change. The home board and the card carousel ask "what happened to this
+  /// friend?" for every linked card; filtering the whole event box once per
+  /// friend was cards × events work on every rebuild (2026-11-22).
+  Map<String, List<PersonEvent>>? _eventsByPerson;
+  int _eventsByPersonLength = -1;
+
+  Map<String, List<PersonEvent>> get _eventIndex {
+    final Box<PersonEvent>? box = _eventBox;
+    if (box == null) return const <String, List<PersonEvent>>{};
+    final Map<String, List<PersonEvent>>? cached = _eventsByPerson;
+    if (cached != null && _eventsByPersonLength == box.length) return cached;
+    final Map<String, List<PersonEvent>> index = <String, List<PersonEvent>>{};
+    for (final PersonEvent e in getAllEvents()) {
+      (index[e.personId] ??= <PersonEvent>[]).add(e);
+    }
+    _eventsByPerson = index;
+    _eventsByPersonLength = box.length;
+    return index;
+  }
+
+  /// [personId]'s history lines, in no particular order. Do not modify.
+  List<PersonEvent> eventsOf(String personId) =>
+      _eventIndex[personId] ?? const <PersonEvent>[];
+
   bool _mayRead(Person person) =>
       person.cardOwnerUid == null ||
       _verifiedCardOwners == null ||
@@ -93,13 +152,14 @@ class PersonRepository extends ChangeNotifier {
   @override
   void notifyListeners() {
     _revision++;
-    _allCache = null;
+    _dropCaches();
     super.notifyListeners();
   }
 
   @override
   void dispose() {
     unawaited(_boxWatch?.cancel());
+    unawaited(_eventWatch?.cancel());
     ConnectivityStatus.offline.removeListener(_onConnectivityChanged);
     SelfIdentity.revision.removeListener(notifyListeners);
     super.dispose();
@@ -809,9 +869,7 @@ class PersonRepository extends ChangeNotifier {
     if (eventBox == null) {
       return const <PersonEvent>[];
     }
-    final List<PersonEvent> events = eventBox.values
-        .where((PersonEvent event) => event.personId == personId)
-        .toList();
+    final List<PersonEvent> events = List<PersonEvent>.of(eventsOf(personId));
     events.sort(
       (PersonEvent a, PersonEvent b) => b.createdAt.compareTo(a.createdAt),
     );
@@ -821,9 +879,21 @@ class PersonRepository extends ChangeNotifier {
   /// Every history event in the database, in no particular order. The home
   /// screen reads these to explain *why* someone is worth a thought — e.g. a
   /// logged status change back to "פנוי".
+  /// Every history line. Kept between calls (see [eventsOf]); the list
+  /// handed out cannot be changed.
   List<PersonEvent> getAllEvents() {
-    return _eventBox?.values.toList() ?? const <PersonEvent>[];
+    final Box<PersonEvent>? box = _eventBox;
+    if (box == null) return const <PersonEvent>[];
+    final List<PersonEvent>? cached = _allEvents;
+    if (cached != null && _allEventsLength == box.length) return cached;
+    _allEventsLength = box.length;
+    return _allEvents = UnmodifiableListView<PersonEvent>(
+      box.values.toList(growable: false),
+    );
   }
+
+  List<PersonEvent>? _allEvents;
+  int _allEventsLength = -1;
 
   /// Records a meaningful history event for a person. Wired to
   /// [MatchRepository.logPersonEvent] in `main.dart` so proposal-driven events

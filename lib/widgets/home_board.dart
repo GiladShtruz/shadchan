@@ -356,7 +356,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
         continue;
       }
       final bool updated = CardUpdatesSeen.fresh(
-        events.where((PersonEvent e) => e.personId == person.id),
+        people.eventsOf(person.id),
         person.id,
         now: now,
       ).isNotEmpty;
@@ -811,12 +811,12 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
       toAsk = friends
           .where((FriendWithCard f) => f.state == FriendCardState.requestable)
           .length;
-      withoutCard = InviteCardFriendsSheet.candidates(
+      withoutCard = InviteCardFriendsSheet.countCandidates(
         people.getAll(),
         withCard: <String>{
           for (final FriendWithCard f in friends) ?f.phoneHash,
         },
-      ).length;
+      );
     }
     final int connected = MatchmakerShares.connectedNames.length;
     final DateTime weekStart =

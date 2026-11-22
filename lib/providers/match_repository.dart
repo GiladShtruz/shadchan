@@ -41,6 +41,10 @@ class MatchRepository extends ChangeNotifier {
   /// third box and register a third adapter to get one. Without it the ledger
   /// simply is not written, and everything else behaves identically.
   MatchRepository(this._matchBox, this._noteBox, [this._statusEventBox]) {
+    // A write that reaches a box without passing through here (the account
+    // sync, a migration, `match.save()`) drops the kept copies too.
+    _matchWatch = _matchBox.watch().listen((_) => _dropCaches());
+    _statusWatch = _statusEventBox?.watch().listen((_) => _statusCache = null);
     // Pending notifications do not survive a reinstall or a device restart on
     // every Android build, so the whole set is re-scheduled on startup.
     _refreshNotifications();
@@ -59,7 +63,56 @@ class MatchRepository extends ChangeNotifier {
   @override
   void notifyListeners() {
     _revision++;
+    _dropCaches();
     super.notifyListeners();
+  }
+
+  StreamSubscription<BoxEvent>? _matchWatch;
+  StreamSubscription<BoxEvent>? _statusWatch;
+
+  /// Every idea, newest first, and the status ledger — kept between calls
+  /// the way `PersonRepository.getAll` keeps the people. One home rebuild asks
+  /// for both several times over; on a large database re-sorting them each
+  /// time was a real share of the frame. The lengths guard a write whose box
+  /// event has not arrived yet.
+  List<MatchIdea>? _allCache;
+  int _allCacheLength = -1;
+  List<MatchStatusEvent>? _statusCache;
+  int _statusCacheLength = -1;
+
+  /// Every idea a friend is in, by friend — so "how many ideas does she
+  /// have?", asked for each row of a list, is a lookup and not a walk over
+  /// every idea.
+  Map<String, List<MatchIdea>>? _byPerson;
+
+  void _dropCaches() {
+    _allCache = null;
+    _statusCache = null;
+    _byPerson = null;
+  }
+
+  Map<String, List<MatchIdea>> get _personIndex {
+    final Map<String, List<MatchIdea>>? cached = _byPerson;
+    if (cached != null && _byPersonLength == _matchBox.length) return cached;
+    final Map<String, List<MatchIdea>> index = <String, List<MatchIdea>>{};
+    // Built from the sorted list, so each friend's ideas are newest first.
+    for (final MatchIdea m in getAll()) {
+      (index[m.personAId] ??= <MatchIdea>[]).add(m);
+      if (m.personBId != m.personAId) {
+        (index[m.personBId] ??= <MatchIdea>[]).add(m);
+      }
+    }
+    _byPersonLength = _matchBox.length;
+    return _byPerson = index;
+  }
+
+  int _byPersonLength = -1;
+
+  @override
+  void dispose() {
+    unawaited(_matchWatch?.cancel());
+    unawaited(_statusWatch?.cancel());
+    super.dispose();
   }
 
   /// Records changed underneath this repository because the account did — a
@@ -76,8 +129,16 @@ class MatchRepository extends ChangeNotifier {
   /// change had to be inferred from the automatic journal notes, which only
   /// some transitions write, and person events had to be de-duplicated against
   /// them by a time window. Both guesses are gone.
-  List<MatchStatusEvent> getAllStatusEvents() =>
-      _statusEventBox?.values.toList() ?? const <MatchStatusEvent>[];
+  List<MatchStatusEvent> getAllStatusEvents() {
+    final Box<MatchStatusEvent>? box = _statusEventBox;
+    if (box == null) return const <MatchStatusEvent>[];
+    final List<MatchStatusEvent>? cached = _statusCache;
+    if (cached == null || _statusCacheLength != box.length) {
+      _statusCache = box.values.toList(growable: false);
+      _statusCacheLength = box.length;
+    }
+    return List<MatchStatusEvent>.of(_statusCache!);
+  }
 
   /// One proposal's own moves, oldest first.
   List<MatchStatusEvent> getStatusEventsForMatch(String matchId) {
@@ -153,9 +214,15 @@ class MatchRepository extends ChangeNotifier {
   int get count => _matchBox.length;
 
   List<MatchIdea> getAll() {
+    final List<MatchIdea>? cached = _allCache;
+    if (cached != null && _allCacheLength == _matchBox.length) {
+      return List<MatchIdea>.of(cached);
+    }
     final List<MatchIdea> matches = _matchBox.values.toList();
     matches.sort(_sortByUpdatedAtDesc);
-    return matches;
+    _allCache = matches;
+    _allCacheLength = _matchBox.length;
+    return List<MatchIdea>.of(matches);
   }
 
   List<MatchIdea> getActive() {
@@ -187,12 +254,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   List<MatchIdea> getByPersonId(String personId) {
-    final List<MatchIdea> matches = _matchBox.values.where((MatchIdea match) {
-      return match.personAId == personId || match.personBId == personId;
-    }).toList();
-
-    matches.sort(_sortByUpdatedAtDesc);
-    return matches;
+    return List<MatchIdea>.of(_personIndex[personId] ?? const <MatchIdea>[]);
   }
 
   List<MatchIdea> search(String query, PersonRepository personRepo) {

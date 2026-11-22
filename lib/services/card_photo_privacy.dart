@@ -45,8 +45,10 @@ abstract final class CardPhotoPrivacy {
 
   /// A photo that came with the owner's card (`card_{ownerUid}_…`), as
   /// opposed to one the matchmaker added.
+  static final RegExp _separators = RegExp(r'[\\/]');
+
   static bool isCardPhoto(String path) {
-    final String name = path.split(RegExp(r'[\\/]')).last;
+    final String name = path.split(_separators).last;
     return name.startsWith('card_');
   }
 

@@ -11,6 +11,7 @@ import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/services/sync_state_store.dart';
 import 'package:shadchan/services/shared_ideas.dart';
 import 'package:shadchan/utils/enums.dart';
 
@@ -389,10 +390,23 @@ abstract final class PartnerSpace {
     final String? me = _uid;
     if (me == null) return;
     final List<Person> shown = publishable(people);
-    final String print =
-        '${partnerUid ?? ''}|${jsonEncode(<Object?>[
-          for (final Person p in shown) <Object?>[p.id, SharedCardCodec.values(p, ownerUid: me, ownerName: ownerName), CardPhotoPrivacy.shareable(p).take(maxPhotos).map(PhotoPickerService.basenameOf).toList()],
-        ])}';
+    // Hashed on a background isolate: the whole database, encoded on the UI
+    // thread, was a visible freeze (and the full text was kept in memory).
+    final String print = await SyncStateStore.fingerprintInBackground(
+      <String, Object?>{
+        'partner': partnerUid ?? '',
+        'cards': <Object?>[
+          for (final Person p in shown)
+            <Object?>[
+              p.id,
+              SharedCardCodec.values(p, ownerUid: me, ownerName: ownerName),
+              CardPhotoPrivacy.shareable(
+                p,
+              ).take(maxPhotos).map(PhotoPickerService.basenameOf).toList(),
+            ],
+        ],
+      },
+    );
     if (print == _lastPrint) return;
     final CollectionReference<Map<String, dynamic>> col = FirebaseFirestore
         .instance

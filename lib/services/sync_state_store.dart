@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
@@ -81,6 +82,22 @@ class SyncStateStore {
   /// The map's keys are sorted first: `jsonEncode` preserves insertion order,
   /// and a serializer that grows a field in the middle would otherwise change
   /// every fingerprint in the database and trigger one pointless full upload.
+  /// [fingerprint], worked out on a background isolate. For the prints taken
+  /// over a whole database (the cards shared with other matchmakers, the
+  /// couple space): with a few thousand friends, encoding and hashing them on
+  /// the UI thread was a visible freeze every time they were republished.
+  /// [record] must hold plain JSON values only. Falls back to the UI thread
+  /// if an isolate cannot be started.
+  static Future<String> fingerprintInBackground(
+    Map<String, Object?> record,
+  ) async {
+    try {
+      return await Isolate.run(() => fingerprint(record));
+    } on Object {
+      return fingerprint(record);
+    }
+  }
+
   static String fingerprint(Map<String, Object?> record) {
     final List<String> keys = record.keys.toList()..sort();
     final Map<String, Object?> ordered = <String, Object?>{

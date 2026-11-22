@@ -34,11 +34,24 @@ abstract final class PhoneIdentity {
   /// bits is far past any collision a phone book can produce, and a card
   /// owner's whole address book has to fit in one document.
   static String? hash(String? raw) {
+    if (raw == null) return null;
+    // **Remembered.** A pure function asked, on a large database, for every
+    // friend on every rebuild of the home page (who can be invited, who keeps
+    // a card): a SHA-256 per friend per frame. A number hashes the same
+    // forever, so each one is hashed once per run.
+    if (_memo.containsKey(raw)) return _memo[raw];
     final String? number = canonical(raw);
-    if (number == null) {
-      return null;
-    }
-    final Digest digest = sha256.convert(utf8.encode('$_salt$number'));
-    return digest.toString().substring(0, 24);
+    final String? result = number == null
+        ? null
+        : sha256
+              .convert(utf8.encode('$_salt$number'))
+              .toString()
+              .substring(0, 24);
+    if (_memo.length >= _memoLimit) _memo.clear();
+    _memo[raw] = result;
+    return result;
   }
+
+  static final Map<String, String?> _memo = <String, String?>{};
+  static const int _memoLimit = 50000;
 }
