@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -26,6 +27,7 @@ import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/phone_identity.dart';
+import 'package:shadchan/utils/user_scrolling.dart';
 import 'package:uuid/uuid.dart';
 
 /// How a matchmaker's request for a card ended.
@@ -654,6 +656,8 @@ class CardAccessProvider extends ChangeNotifier {
   Future<void> stop() async {
     matchmakerAccessVerified = false;
     _verifiedCards.clear();
+    _verifiedTimer?.cancel();
+    _appliedPrint.clear();
     if (_enabled) _people.setVerifiedCardOwners(<String>{});
     for (final StreamSubscription<Object?> s in _subscriptions) {
       await s.cancel();
@@ -743,7 +747,19 @@ class CardAccessProvider extends ChangeNotifier {
               unawaited(_unlink(ownerUid));
               return;
             }
-            unawaited(_applySerially(access, data));
+            // **The same card again is not work.** Every reconnect, resume
+            // and metadata change re-delivers every approved card; with a few
+            // hundred of them, applying each again (photo checks on disk,
+            // settings writes, a redraw) is what froze the app on a large
+            // network. Only a version this session has not applied yet, or a
+            // card still missing photos, goes through.
+            final String print = _printOf(data);
+            if (_appliedPrint[ownerUid] == print &&
+                !_photosIncomplete.contains(ownerUid) &&
+                !_awaitingLink.containsKey(ownerUid)) {
+              return;
+            }
+            unawaited(_applySerially(access, data, print: print));
           },
           onError: (Object error) {
             // A card that was deleted, or access that ended, reads as
@@ -760,6 +776,46 @@ class CardAccessProvider extends ChangeNotifier {
             }
           },
         );
+  }
+
+  /// The version of each card this session last applied in full.
+  final Map<String, String> _appliedPrint = <String, String>{};
+
+  static String _printOf(Map<String, dynamic> data) => md5
+      .convert(
+        utf8.encode(
+          jsonEncode(
+            data,
+            toEncodable: (Object? o) =>
+                o is Timestamp ? o.microsecondsSinceEpoch : o.toString(),
+          ),
+        ),
+      )
+      .toString();
+
+  Timer? _verifiedTimer;
+
+  /// Cards confirmed by the server, told to the repository **once per
+  /// burst**. At launch (or the first time after a cleared cache) the
+  /// approved cards arrive one after another; telling the repository about
+  /// each redrew every screen that shows a friend once per card. A card that
+  /// stops being readable is still taken off at once (see the callers of
+  /// `_people.setVerifiedCardOwners` that remove).
+  void _publishVerifiedSoon() {
+    _verifiedTimer?.cancel();
+    // And not under a moving finger: the redraw this causes waits for the
+    // scroll to settle, like the account sync's ([UserScrolling.whenIdle]).
+    _verifiedTimer = Timer(
+      const Duration(milliseconds: 300),
+      () => UserScrolling.whenIdle(() {
+        if (_disposed) return;
+        _people.setVerifiedCardOwners(_verifiedCards);
+        OfflineCache.saveVerifiedCardOwners(<String>{
+          ...OfflineCache.verifiedCardOwners,
+          ..._verifiedCards,
+        });
+      }),
+    );
   }
 
   Future<List<String>> _downloadPhotos(
@@ -849,16 +905,27 @@ class CardAccessProvider extends ChangeNotifier {
       return;
     }
     if (baseline == null) {
-      unawaited(settings.delete('$_baselinePrefix$personId'));
+      if (settings.containsKey('$_baselinePrefix$personId')) {
+        unawaited(settings.delete('$_baselinePrefix$personId'));
+      }
     } else {
-      unawaited(
-        settings.put('$_baselinePrefix$personId', jsonEncode(baseline)),
-      );
+      // Unchanged: no write. Each write is a settings event the account sync
+      // has to look at, and this ran for every card on every read.
+      final String encoded = jsonEncode(baseline);
+      if (settings.get('$_baselinePrefix$personId') == encoded) return;
+      unawaited(settings.put('$_baselinePrefix$personId', encoded));
     }
   }
 
-  Future<void> _applySerially(CardAccess access, Map<String, dynamic> data) {
-    return _serially(access.ownerUid, () => _applyCard(access, data));
+  Future<void> _applySerially(
+    CardAccess access,
+    Map<String, dynamic> data, {
+    String? print,
+  }) {
+    return _serially(
+      access.ownerUid,
+      () => _applyCard(access, data, print: print),
+    );
   }
 
   /// Runs [work] after whatever is already queued for [ownerUid] — applying a
@@ -877,7 +944,11 @@ class CardAccessProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<void> _applyCard(CardAccess access, Map<String, dynamic> data) async {
+  Future<void> _applyCard(
+    CardAccess access,
+    Map<String, dynamic> data, {
+    String? print,
+  }) async {
     final String ownerUid = access.ownerUid;
     // Queued before access ended: the card is no longer ours to apply.
     if (_disposed || _asMatchmaker[ownerUid]?.canReadCard != true) {
@@ -1012,12 +1083,7 @@ class CardAccessProvider extends ChangeNotifier {
       );
     }
     if (_asMatchmaker[ownerUid]?.canReadCard != true) return;
-    _verifiedCards.add(ownerUid);
-    _people.setVerifiedCardOwners(_verifiedCards);
-    OfflineCache.saveVerifiedCardOwners(<String>{
-      ...OfflineCache.verifiedCardOwners,
-      ownerUid,
-    });
+    if (_verifiedCards.add(ownerUid)) _publishVerifiedSoon();
     if (result.changed || created) {
       // A first link is not news; a later change of the owner's own status is.
       await _people.saveSynced(
@@ -1041,6 +1107,10 @@ class CardAccessProvider extends ChangeNotifier {
     for (final String line in result.minorUpdates) {
       await _people.logEvent(person.id, PersonEventType.cardSyncedMinor, line);
     }
+    // Applied in full: the same version again can be skipped.
+    if (print != null && _asMatchmaker[ownerUid]?.canReadCard == true) {
+      _appliedPrint[ownerUid] = print;
+    }
   }
 
   Future<void> _unlink(String ownerUid) {
@@ -1048,6 +1118,7 @@ class CardAccessProvider extends ChangeNotifier {
   }
 
   Future<void> _unlinkNow(String ownerUid) async {
+    _appliedPrint.remove(ownerUid);
     if (_awaitingLink.remove(ownerUid) != null) notifyListeners();
     final Person? person = _people.findByCardOwner(ownerUid, forCardSync: true);
     if (person == null) {

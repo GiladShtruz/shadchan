@@ -28,19 +28,35 @@ abstract final class InviteCardFriendsSheet {
     Iterable<Person> people, {
     Set<String> withCard = const <String>{},
   }) {
-    final List<Person> list =
-        people
-            .where(
-              (Person p) =>
-                  !p.hidden &&
-                  p.cardOwnerUid == null &&
-                  PhoneUtils.toWhatsAppNumber(p.phone) != null &&
-                  !withCard.contains(PhoneIdentity.hash(p.phone)),
-            )
-            .toList()
-          ..sort((Person a, Person b) => a.fullName.compareTo(b.fullName));
+    final List<Person> list = people
+        .where((Person p) => _invitable(p, withCard))
+        .toList();
+    // Each name built once, not twice per comparison.
+    final Map<Person, String> names = <Person, String>{
+      for (final Person p in list) p: p.fullName,
+    };
+    list.sort((Person a, Person b) => names[a]!.compareTo(names[b]!));
     return list;
   }
+
+  /// How many [candidates] there are — for the home's prompt, which only
+  /// needs the figure and is asked on every rebuild of the page.
+  static int countCandidates(
+    Iterable<Person> people, {
+    Set<String> withCard = const <String>{},
+  }) {
+    int n = 0;
+    for (final Person p in people) {
+      if (_invitable(p, withCard)) n++;
+    }
+    return n;
+  }
+
+  static bool _invitable(Person p, Set<String> withCard) =>
+      !p.hidden &&
+      p.cardOwnerUid == null &&
+      PhoneUtils.toWhatsAppNumber(p.phone) != null &&
+      !withCard.contains(PhoneIdentity.hash(p.phone));
 
   static Future<void> show(BuildContext context) async {
     final PersonRepository people = context.read<PersonRepository>();

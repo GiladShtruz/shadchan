@@ -1,10 +1,14 @@
 abstract final class PhoneUtils {
+  /// Compiled once: [normalizeForComparison] runs for every friend on every
+  /// read of the database (see `SelfIdentity.isSelf`).
+  static final RegExp _nonDigits = RegExp(r'\D');
+
   static String? normalizeForComparison(String? value) {
     if (value == null) {
       return null;
     }
 
-    String digitsOnly = value.replaceAll(RegExp(r'\D'), '');
+    String digitsOnly = value.replaceAll(_nonDigits, '');
     if (digitsOnly.isEmpty) {
       return null;
     }
@@ -28,7 +32,7 @@ abstract final class PhoneUtils {
   }
 
   static String digitsOnly(String value) {
-    return value.replaceAll(RegExp(r'\D'), '');
+    return value.replaceAll(_nonDigits, '');
   }
 
   static String? toWhatsAppNumber(String? value) {

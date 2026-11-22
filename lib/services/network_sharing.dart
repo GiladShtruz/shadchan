@@ -490,19 +490,22 @@ abstract final class NetworkSharing {
         perReader[r] = (perReader[r] ?? 0) + 1;
       }
     }
-    final String print = SyncStateStore.fingerprint(<String, Object?>{
-      'owner': ownerName,
-      for (final MapEntry<String, (Person, List<String>)> e in desired.entries)
-        e.key: <Object?>[
-          SharedCardCodec.values(
-            e.value.$1,
-            ownerUid: uid,
-            ownerName: ownerName,
-          ),
-          e.value.$2,
-          CardPhotoPrivacy.shareable(e.value.$1),
-        ],
-    });
+    final String print = await SyncStateStore.fingerprintInBackground(
+      <String, Object?>{
+        'owner': ownerName,
+        for (final MapEntry<String, (Person, List<String>)> e
+            in desired.entries)
+          e.key: <Object?>[
+            SharedCardCodec.values(
+              e.value.$1,
+              ownerUid: uid,
+              ownerName: ownerName,
+            ),
+            e.value.$2,
+            CardPhotoPrivacy.shareable(e.value.$1),
+          ],
+      },
+    );
     if (!force && _read(_printKey) == print) {
       publishedCount.value = desired.length;
       await _syncCounts(perReader);
