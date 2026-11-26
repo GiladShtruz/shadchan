@@ -957,43 +957,80 @@ service cloud.firestore {
       allow delete: if durable() && request.auth.uid == uid;
     }
 
-    // What the AI cost this account: token counts only, kept by the app with
-    // increments after every answer (`AiUsage`). Never a prompt or a reply.
-    // Counters only grow; the support console reads them all.
-    match /aiUsage/{uid} {
-      allow read: if request.auth != null
-          && (request.auth.uid == uid || isSupportAdmin());
-      allow create, update: if request.auth != null && request.auth.uid == uid
-          && request.resource.data.keys().hasOnly(
-               ['calls', 'inputTokens', 'outputTokens', 'months', 'features',
-                'lastAt'])
-          && request.resource.data.calls is int
-          && request.resource.data.inputTokens is int
-          && request.resource.data.outputTokens is int
-          && request.resource.data.get('months', {}) is map
-          && request.resource.data.get('features', {}) is map
-          && request.resource.data.get('months', {}).size() <= 120
-          && request.resource.data.get('features', {}).size() <= 20
-          && (resource == null
-              || (request.resource.data.calls >= resource.data.calls
-                  && request.resource.data.inputTokens >= resource.data.inputTokens
-                  && request.resource.data.outputTokens >= resource.data.outputTokens));
-      allow delete: if request.auth != null && request.auth.uid == uid;
+    // Usage events from the app, written in batches (`Telemetry`) and folded
+    // by `onTelemetryBatch` into the monitoring documents below, then deleted.
+    // Metadata only — feature ids, action codes, numbers, times. A phone can
+    // only add a batch in its own name; nobody can read one.
+    match /telemetryBatches/{batchId} {
+      allow create: if request.auth != null
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'did', 'v', 'p', 'ut', 'events', 'createdAt'])
+          && request.resource.data.events is list
+          && request.resource.data.events.size() > 0
+          && request.resource.data.events.size() <= 500
+          && (!('v' in request.resource.data) || (request.resource.data.v is string && request.resource.data.v.size() <= 20))
+          && (!('p' in request.resource.data) || request.resource.data.p in ['android', 'ios', 'other'])
+          && (!('ut' in request.resource.data) || request.resource.data.ut in ['single', 'matchmaker', 'both', 'unknown']);
+      allow read, update, delete: if false;
     }
 
-    // The prices the console turns usage into money with — typed in by an
-    // administrator from the Google Cloud price list, read by administrators.
+    // The monitoring itself — per account per day, per account, per version,
+    // raised alerts and cached answers. Written by the server only; read by
+    // support administrators only (user-level data never reaches anyone
+    // else).
+    match /analyticsUserDays/{id} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+    match /analyticsUsers/{uid} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+    match /analyticsVersions/{v} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+    match /analyticsAlerts/{id} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+    match /analyticsCache/{id} {
+      allow read, write: if false;
+    }
+
+    // The prices costs are computed with, as versions: an administrator adds a
+    // new version in force from now; earlier ones are never changed, so a
+    // past month is never repriced.
     match /adminConfig/pricing {
       allow read: if isSupportAdmin();
       allow create, update: if isSupportAdmin()
-          && request.resource.data.keys().hasOnly(
-               ['aiInputPerMillion', 'aiOutputPerMillion', 'storagePerGbMonth',
-                'usdToIls', 'updatedAt'])
-          && request.resource.data.aiInputPerMillion is number
-          && request.resource.data.aiOutputPerMillion is number
-          && request.resource.data.storagePerGbMonth is number
-          && request.resource.data.usdToIls is number
+          && request.resource.data.keys().hasOnly(['versions', 'updatedAt'])
+          && request.resource.data.versions is list
+          && request.resource.data.versions.size() <= 200
+          && (resource == null
+              || request.resource.data.versions.size() >= resource.data.versions.size())
           && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    // Alert thresholds, and the actual monthly bills typed in from Google
+    // Cloud (shown beside the estimate).
+    match /adminConfig/thresholds {
+      allow read: if isSupportAdmin();
+      allow create, update: if isSupportAdmin()
+          && request.resource.data.keys().hasOnly(
+               ['aiDailyIls', 'userDailyIls', 'featureSpikeFactor', 'errorRatePercent', 'updatedAt'])
+          && request.resource.data.aiDailyIls is number
+          && request.resource.data.userDailyIls is number
+          && request.resource.data.featureSpikeFactor is number
+          && request.resource.data.errorRatePercent is number;
+      allow delete: if false;
+    }
+    match /adminConfig/billing {
+      allow read: if isSupportAdmin();
+      allow create, update: if isSupportAdmin()
+          && request.resource.data.keys().hasOnly(['months', 'updatedAt'])
+          && request.resource.data.months is map
+          && request.resource.data.months.size() <= 240;
       allow delete: if false;
     }
 

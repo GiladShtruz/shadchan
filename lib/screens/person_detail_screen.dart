@@ -1,3 +1,4 @@
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/services/score_ledger.dart';
 import 'package:shadchan/utils/app_tokens.dart';
@@ -141,6 +142,7 @@ Future<bool> openExtendedPersonEditor(
 /// a back press comes back to it.
 Future<void> openSuggestionsSheet(BuildContext context, String personId) {
   Analytics.log(AnalyticsEvent.match_suggestions_opened);
+  Telemetry.opened(AppFeature.matches);
   final ThemeData theme = Theme.of(context);
   final Gender gender =
       context.read<PersonRepository>().getById(personId)?.gender ??
@@ -4351,21 +4353,30 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
     // to it.
     final VoidCallback onTap = existingMatch != null
         ? () => AppNavigation.open(context, '/matches/${existingMatch.id}')
-        : () => _view(candidate, () => widget.onOpenPreview(candidate));
+        : () => _view(candidate, () {
+            Telemetry.started(AppFeature.matches, 'preview');
+            widget.onOpenPreview(candidate);
+          });
     void onAvatarTap() => openPersonProfile(context, candidate.id);
-    void onOpenIdea() => _view(
-      candidate,
-      () => existingMatch == null
-          ? widget.onAccept(candidate)
-          : AppNavigation.open(context, '/matches/${existingMatch.id}'),
-    );
+    void onOpenIdea() => _view(candidate, () {
+      if (existingMatch == null) {
+        // "פתח התאמה → נפתח רעיון": completes when the idea is created.
+        Telemetry.started(AppFeature.matches, 'preview');
+        Telemetry.expect('idea', AppFeature.matches, 'idea');
+        widget.onAccept(candidate);
+      } else {
+        AppNavigation.open(context, '/matches/${existingMatch.id}');
+      }
+    });
     final VoidCallback onNotSuitable = dismissed
         ? () => widget.onRestore(candidate)
         : () => widget.onReject(candidate);
     // Always the full card — an empty one, with a way to ask for the details,
     // when nothing has been written yet.
-    void onOpenCard() =>
-        _view(candidate, () => PersonCardViewer.open(context, candidate.id));
+    void onOpenCard() => _view(candidate, () {
+      Telemetry.started(AppFeature.matches, 'preview');
+      PersonCardViewer.open(context, candidate.id);
+    });
 
     final Widget cell = square
         ? SuggestionTile(

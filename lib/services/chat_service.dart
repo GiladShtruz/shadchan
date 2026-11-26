@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/personal_card_service.dart';
+import 'package:shadchan/services/telemetry.dart';
 
 /// What a message is about — a card, an idea, an offer — so a thread of
 /// months can mention many of them without a chat per card or per idea.
@@ -707,14 +708,19 @@ abstract final class ChatService {
         // yet) is awaited: if the server says no, the screen says so instead
         // of showing a line that never arrives.
         await batch.commit().timeout(const Duration(seconds: 20));
+        Telemetry.completed(AppFeature.chats, 'send_${type.name}');
+        Telemetry.meter(writes: 2);
         return true;
       }
       // Not awaited past the local write: Firestore keeps the message queued
       // through a bad connection, like WhatsApp's clock.
       unawaited(batch.commit().catchError(_log));
+      Telemetry.completed(AppFeature.chats, 'send_${type.name}');
+      Telemetry.meter(writes: 2);
       return true;
     } catch (error, stackTrace) {
       _log(error, stackTrace);
+      Telemetry.failed(AppFeature.chats, 'send_${type.name}', error);
       return false;
     }
   }
@@ -759,6 +765,7 @@ abstract final class ChatService {
           .ref(path)
           .putFile(file, SettableMetadata(contentType: mime))
           .timeout(const Duration(minutes: 2));
+      Telemetry.meter(uploads: 1, uploadBytes: size);
       // Kept beside the cache, so this phone never downloads its own file.
       unawaited(_cacheCopy(file, path));
       return await send(
@@ -778,6 +785,7 @@ abstract final class ChatService {
       );
     } catch (error, stackTrace) {
       _log(error, stackTrace);
+      Telemetry.failed(AppFeature.chats, 'upload_${type.name}', error);
       return false;
     }
   }

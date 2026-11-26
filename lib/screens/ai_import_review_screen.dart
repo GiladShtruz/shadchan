@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/services/image_shrink.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -137,6 +138,12 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
     // because the limit is a property of the batch and is read later.
     final String batchId = const Uuid().v4();
     int added = 0;
+    // "אישר ושמר" — the end of the AI funnel.
+    Telemetry.completed(
+      AppFeature.ai,
+      'save',
+      extra: <String, num>{'people': _kept.length},
+    );
     for (final _Draft draft in _kept) {
       // The photo a WhatsApp export carried is the camera original; made
       // phone-sized before it becomes the friend's photo ([ImageShrink]).

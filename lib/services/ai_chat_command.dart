@@ -34,6 +34,7 @@ abstract final class AiChatCommand {
   /// The two names, or null when the sentence is not such a request or the
   /// model could not be reached.
   static Future<NamePair?> extract(String sentence) async {
+    final Stopwatch watch = Stopwatch()..start();
     try {
       await FirebaseBootstrap.ensureReady();
       if (!FirebaseBootstrap.isReady) return null;
@@ -51,9 +52,18 @@ abstract final class AiChatCommand {
               )
               .generateContent(<Content>[Content.text(sentence)])
               .timeout(const Duration(seconds: 30));
-      AiUsage.record(response, AiFeature.chat);
+      AiUsage.record(
+        response,
+        AiFeature.chat,
+        latencyMs: watch.elapsedMilliseconds,
+      );
       return decode(response.text);
     } catch (error) {
+      AiUsage.failure(
+        AiFeature.chat,
+        error,
+        latencyMs: watch.elapsedMilliseconds,
+      );
       debugPrint('AiChatCommand: $error');
       return null;
     }

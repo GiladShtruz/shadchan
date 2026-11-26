@@ -1,3 +1,4 @@
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
@@ -414,6 +415,7 @@ class _EmptyNotifications extends StatelessWidget {
 /// links that arrive from outside (a push, a home recommendation).
 abstract final class NotificationsSheet {
   static Future<void> show(BuildContext context) {
+    Telemetry.opened(AppFeature.notifications);
     Analytics.feature(AnalyticsFeature.reminders);
     final MediaQueryData media = MediaQuery.of(context);
     return showModalBottomSheet<void>(

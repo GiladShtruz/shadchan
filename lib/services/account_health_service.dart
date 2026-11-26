@@ -9,7 +9,6 @@ import 'package:shadchan/services/account_sync_engine.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:shadchan/services/contacts_health.dart';
 import 'package:shadchan/services/device_facts.dart';
-import 'package:shadchan/services/feature_usage.dart';
 
 /// What support needs to answer "I don't see my database", and nothing more.
 ///
@@ -46,7 +45,6 @@ abstract final class AccountHealthService {
     required bool running,
     Object? lastError,
     DeviceFacts? facts,
-    Map<String, Object?>? storage,
   }) {
     final List<String> log = ledger.log;
     final Map<String, Object?> migration = ledger.migration;
@@ -68,10 +66,6 @@ abstract final class AccountHealthService {
           : AccountSyncEngine.errorCode(lastError),
       'log': log.length > logLines ? log.sublist(log.length - logLines) : log,
       'contacts': ContactsHealth.snapshot(),
-      // What this phone holds that also sits in cloud storage, and which pages
-      // and features it used — the admin dashboard's cost and usage lists.
-      'storage': ?storage,
-      'features': FeatureUsage.snapshot(),
       'reportedAt': DateTime.now().toUtc().toIso8601String(),
     };
   }
@@ -98,8 +92,6 @@ abstract final class AccountHealthService {
     _lastReport = now;
     try {
       final DeviceFacts facts = await DeviceFacts.read();
-      final Map<String, Object?> storage =
-          await FeatureUsage.storageFootprint();
       await FirebaseFirestore.instance
           .collection(collection)
           .doc(user.uid)
@@ -119,7 +111,6 @@ abstract final class AccountHealthService {
                 running: running,
                 lastError: lastError,
                 facts: facts,
-                storage: storage,
               ),
             },
           }, SetOptions(merge: true))

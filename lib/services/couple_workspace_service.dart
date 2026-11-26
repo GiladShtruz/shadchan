@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/services/score_ledger.dart';
+import 'package:shadchan/services/telemetry.dart';
 
 /// Account identity stays individual; this is only the matchmaker database.
 abstract final class CoupleWorkspaceService {
@@ -94,6 +95,7 @@ abstract final class CoupleWorkspaceService {
     String name, [
     Map<String, Object?> data = const {},
   ]) async {
+    Telemetry.meter(functions: 1);
     final response = await FirebaseFunctions.instanceFor(region: 'europe-west1')
         .httpsCallable(
           name,

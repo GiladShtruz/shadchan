@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
+import 'package:shadchan/services/telemetry.dart';
 
 /// A small performance log for one visit to one screen: how long until its
 /// content was there, how many times it was built, how many Firestore
@@ -41,7 +42,11 @@ class ScreenPerf {
   /// Network cards held in memory right now (pages + single reads).
   static int Function() cardsInMemory = () => 0;
 
-  static void noteQuery([int n = 1]) => queries += n;
+  static void noteQuery([int n = 1]) {
+    queries += n;
+    // And into the account's cost counters (`Telemetry.meter`).
+    Telemetry.meter(queries: n);
+  }
   static void notePhoto() => photosLoaded++;
 
   void build() => builds++;

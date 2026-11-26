@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/account_sync_codec.dart';
+import 'package:shadchan/services/telemetry.dart';
 
 /// The account's side of the sync, as [AccountSyncEngine] sees it.
 ///
@@ -164,6 +165,7 @@ class FirestoreAccountSyncRemote implements AccountSyncRemote {
         .collection(collection.remote)
         .get(const GetOptions(source: Source.server))
         .timeout(readTimeout);
+    Telemetry.meter(reads: snapshot.docs.length, queries: 1);
     return <String, RemoteDocument>{
       for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
           in snapshot.docs)
@@ -186,6 +188,7 @@ class FirestoreAccountSyncRemote implements AccountSyncRemote {
     return query.snapshots(includeMetadataChanges: false).map((
       QuerySnapshot<Map<String, dynamic>> snapshot,
     ) {
+      Telemetry.meter(reads: snapshot.docChanges.length);
       return <RemoteChange>[
         for (final DocumentChange<Map<String, dynamic>> change
             in snapshot.docChanges)
@@ -225,6 +228,7 @@ class FirestoreAccountSyncRemote implements AccountSyncRemote {
             ? writes.length
             : start + _batchLimit,
       );
+      Telemetry.meter(writes: chunk.length);
       final WriteBatch batch = FirebaseFirestore.instance.batch();
       for (final RemoteWrite write in chunk) {
         final Map<String, Object?> meta = <String, Object?>{
@@ -277,12 +281,14 @@ class FirestoreAccountSyncRemote implements AccountSyncRemote {
   @override
   Future<void> upload(String key, File file, String contentType) async {
     await _ref(key).putFile(file, SettableMetadata(contentType: contentType));
+    Telemetry.meter(uploads: 1, uploadBytes: await file.length());
   }
 
   @override
   Future<bool> download(String key, File target) async {
     try {
       await _ref(key).writeToFile(target);
+      Telemetry.meter(downloads: 1, downloadBytes: await target.length());
       return true;
     } on FirebaseException catch (error) {
       if (error.code == 'object-not-found') {
@@ -296,6 +302,7 @@ class FirestoreAccountSyncRemote implements AccountSyncRemote {
   Future<void> deleteFile(String key) async {
     try {
       await _ref(key).delete();
+      Telemetry.meter(deletes: 1);
     } on FirebaseException catch (error) {
       if (error.code != 'object-not-found') {
         rethrow;

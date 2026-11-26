@@ -74,6 +74,7 @@ abstract final class AiPeopleParser {
     }
 
     final GenerateContentResponse response;
+    final Stopwatch watch = Stopwatch()..start();
     try {
       final model = AiClient.model(
         systemInstruction: Content.system(
@@ -105,9 +106,18 @@ abstract final class AiPeopleParser {
     } on AiParseException {
       rethrow;
     } catch (error) {
+      AiUsage.failure(
+        AiFeature.import,
+        error,
+        latencyMs: watch.elapsedMilliseconds,
+      );
       throw classifyAiFailure(error);
     }
-    AiUsage.record(response, AiFeature.import);
+    AiUsage.record(
+      response,
+      AiFeature.import,
+      latencyMs: watch.elapsedMilliseconds,
+    );
 
     if (isChat) {
       final finishReason = response.candidates.isEmpty

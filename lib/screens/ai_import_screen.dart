@@ -1,3 +1,4 @@
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'dart:async';
@@ -192,6 +193,9 @@ class _AiImportScreenState extends State<AiImportScreen> {
       _isWorking = true;
       _status = 'קורא את הקובץ…';
     });
+    // "העלה קובץ/כרטיס" — the second step of the AI funnel.
+    Telemetry.started(AppFeature.ai, 'upload');
+    final Stopwatch processing = Stopwatch()..start();
 
     final ImportDiagnostics log = ImportDiagnostics(
       source == AiImportSource.excel ? 'אקסל' : 'וואטסאפ',
@@ -310,6 +314,12 @@ class _AiImportScreenState extends State<AiImportScreen> {
         return;
       }
       if (outcome.isEmpty) {
+        Telemetry.failed(
+          AppFeature.ai,
+          'parse',
+          outcome.firstFailure?.reason.name ?? 'empty',
+          ms: processing.elapsedMilliseconds,
+        );
         _failWithReport(
           log,
           message: _emptyOutcomeMessage(outcome),
@@ -317,6 +327,16 @@ class _AiImportScreenState extends State<AiImportScreen> {
         );
         return;
       }
+      // "AI עיבד" — with how long it took and how many people came out.
+      Telemetry.completed(
+        AppFeature.ai,
+        'parse',
+        ms: processing.elapsedMilliseconds,
+        extra: <String, num>{
+          'people': outcome.people.length,
+          'failedBatches': outcome.failedBatches,
+        },
+      );
 
       setState(() {
         _isWorking = false;
@@ -334,6 +354,7 @@ class _AiImportScreenState extends State<AiImportScreen> {
         ),
       );
     } on WhatsAppReadException catch (error, stackTrace) {
+      Telemetry.failed(AppFeature.ai, 'read', error.reason.name);
       debugPrint('AI_IMPORT read failed: $error\n$stackTrace');
       log
         ..note('סיבה', error.reason.name)

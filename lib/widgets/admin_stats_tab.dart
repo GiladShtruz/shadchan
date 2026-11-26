@@ -7,7 +7,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/widgets/admin_usage_section.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -365,11 +364,6 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
               _Tile('סירבו להרשאה', _n('contacts', 'denied')),
               ..._versionLines(theme),
             ],
-          ),
-          AdminUsageSection(
-            usage: _current?['usage'] is Map
-                ? Map<String, dynamic>.from(_current!['usage'] as Map)
-                : null,
           ),
           if (_history.length >= 2)
             _Section(

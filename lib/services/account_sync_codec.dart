@@ -233,9 +233,6 @@ abstract final class AccountSyncCodec {
     // When this phone last asked the server for things it need not ask about
     // every few minutes (`ReadThrottle`).
     'serverReads.',
-    // How often this phone opened each page (`FeatureUsage`) — reported per
-    // device and added up on the server.
-    'featureUsage.',
   ];
 
   static bool isSyncedSetting(String key) {

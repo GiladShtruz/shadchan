@@ -11,6 +11,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -37,6 +38,7 @@ abstract final class PersonalAreaService {
     if (await PersonalCardService.durableUid() == null) {
       throw StateError('נדרשת התחברות');
     }
+    Telemetry.meter(functions: 1);
     final result = await FirebaseFunctions.instanceFor(
       region: 'europe-west1',
     ).httpsCallable(name).call(data);

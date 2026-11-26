@@ -24,7 +24,13 @@ import {
   newAlerts,
 } from './admin_alerts';
 import { notify } from './notices';
-import { AiDoc, HealthDoc, UsageBlock, usageBlock } from './usage_stats';
+
+/** One account's `accountHealth` report, as the stats read it. */
+interface HealthDoc {
+  uid: string;
+  email?: string;
+  devices?: Record<string, unknown>;
+}
 
 const ROOT_ADMIN = 'yitz292@gmail.com';
 const DAY = 24 * 60 * 60 * 1000;
@@ -38,7 +44,6 @@ export interface AdminStats {
   ideas: Record<string, number>;
   databases: Record<string, number>;
   contacts: ContactsBlock;
-  usage: UsageBlock;
   alerts: AdminAlert[];
 }
 
@@ -93,7 +98,7 @@ function round1(value: number): number {
 }
 
 /** Every durable (non-anonymous) account, with administrators set apart. */
-async function listAccounts(adminEmails: Set<string>): Promise<{
+export async function listAccounts(adminEmails: Set<string>): Promise<{
   users: UserRecord[];
   internal: Set<string>;
 }> {
@@ -242,17 +247,12 @@ export async function computeAdminStats(db: Firestore, now = Date.now()): Promis
   };
 
   // ---- address-book reads, and the early warnings
-  // One read of every account's health report: the address-book reads, and
-  // the storage footprint and page/feature tally (`usage_stats.ts`).
+  // One read of every account's health report (the address-book reads).
   const healthDocs: HealthDoc[] = (
     await db.collection('accountHealth').select('devices', 'email').get()
   ).docs.map((d) => ({ uid: d.id, email: d.get('email'), devices: d.get('devices') }));
   const devices = contactDevices(healthDocs, internal);
-  const aiDocs: AiDoc[] = (await db.collection('aiUsage').get()).docs.map((d) => ({
-    uid: d.id,
-    ...(d.data() as Omit<AiDoc, 'uid'>),
-  }));
-  const usage = usageBlock(healthDocs, aiDocs, now, internal);
+
   const contacts = contactsBlock(devices, now);
   const history = (
     await db
@@ -291,13 +291,12 @@ export async function computeAdminStats(db: Firestore, now = Date.now()): Promis
     ideas: ideasBlock,
     databases: databasesBlock,
     contacts,
-    usage,
     alerts,
   };
 }
 
 /** Tells every administrator about alerts that were not raised last time. */
-async function announceAlerts(db: Firestore, fresh: AdminAlert[]): Promise<void> {
+export async function announceAlerts(db: Firestore, fresh: AdminAlert[]): Promise<void> {
   if (fresh.length === 0) return;
   const admins = await db.collection('supportAdmins').get();
   const emails = [ROOT_ADMIN, ...admins.docs.map((d) => d.id.toLowerCase())];

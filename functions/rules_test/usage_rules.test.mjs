@@ -1,5 +1,5 @@
-// The admin dashboard's usage counters (2026-11-26): `aiUsage/{uid}` and
-// `adminConfig/pricing` — run with `npm run test:rules`.
+// The monitoring pipeline (2026-11-26): `telemetryBatches`, the server-only
+// analytics documents and `adminConfig/*` — run with `npm run test:rules`.
 import { readFileSync } from 'node:fs';
 import { test, before, after, beforeEach } from 'node:test';
 import {
@@ -7,7 +7,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 let env;
 
@@ -22,44 +22,42 @@ beforeEach(async () => env.clearFirestore());
 
 function as(uid, email) {
   return env
-    .authenticatedContext(uid, {
-      email,
-      email_verified: true,
-      firebase: { sign_in_provider: 'password' },
-    })
+    .authenticatedContext(uid, { email, email_verified: true, firebase: { sign_in_provider: 'password' } })
     .firestore();
 }
 
-const first = {
-  calls: 1,
-  inputTokens: 100,
-  outputTokens: 20,
-  months: { '2026-11': { calls: 1, inputTokens: 100, outputTokens: 20 } },
-  features: { card: { calls: 1, inputTokens: 100, outputTokens: 20 } },
-};
-
-test('an account keeps its own AI counters, and they only grow', async () => {
-  const db = as('u1');
-  await assertSucceeds(setDoc(doc(db, 'aiUsage/u1'), first));
-  await assertSucceeds(
-    updateDoc(doc(db, 'aiUsage/u1'), { calls: increment(1), inputTokens: increment(5), outputTokens: increment(1) }),
-  );
-  await assertFails(updateDoc(doc(db, 'aiUsage/u1'), { calls: 0 }));
-  await assertFails(updateDoc(doc(db, 'aiUsage/u1'), { prompt: 'text' }));
+const batch = (uid) => ({
+  uid,
+  did: 'device',
+  v: '1.0.20',
+  p: 'android',
+  ut: 'matchmaker',
+  events: [{ id: 'e1', t: 'open', f: 'home', ts: 1 }],
+  createdAt: serverTimestamp(),
 });
 
-test('nobody writes or reads another account\'s counters', async () => {
-  await assertFails(setDoc(doc(as('u2'), 'aiUsage/u1'), first));
-  await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'aiUsage/u1'), first));
-  await assertFails(getDoc(doc(as('u2'), 'aiUsage/u1')));
+test('a phone adds a batch in its own name only, and cannot read it back', async () => {
+  await assertSucceeds(setDoc(doc(as('u1'), 'telemetryBatches/b1'), batch('u1')));
+  await assertFails(setDoc(doc(as('u1'), 'telemetryBatches/b2'), batch('u2')));
+  await assertFails(getDoc(doc(as('u1'), 'telemetryBatches/b1')));
+  await assertFails(deleteDoc(doc(as('u1'), 'telemetryBatches/b1')));
+  await assertFails(setDoc(doc(as('u1'), 'telemetryBatches/b3'), { ...batch('u1'), text: 'card text' }));
 });
 
-test('the root administrator reads every counter and sets the prices', async () => {
-  await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'aiUsage/u1'), first));
+test('the monitoring documents are for administrators only, and the server writes them', async () => {
+  await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'analyticsUsers/u1'), { uid: 'u1' }));
+  await assertFails(getDoc(doc(as('u1'), 'analyticsUsers/u1')));
+  await assertSucceeds(getDoc(doc(as('adm', 'yitz292@gmail.com'), 'analyticsUsers/u1')));
+  await assertFails(setDoc(doc(as('adm', 'yitz292@gmail.com'), 'analyticsUsers/u1'), { uid: 'u1' }));
+});
+
+test('prices are versions that only grow; thresholds are administrators\' alone', async () => {
   const admin = as('adm', 'yitz292@gmail.com');
-  await assertSucceeds(getDoc(doc(admin, 'aiUsage/u1')));
-  const pricing = { aiInputPerMillion: 0.5, aiOutputPerMillion: 3, storagePerGbMonth: 0.026, usdToIls: 3.7, updatedAt: serverTimestamp() };
-  await assertSucceeds(setDoc(doc(admin, 'adminConfig/pricing'), pricing));
-  await assertFails(setDoc(doc(as('u1'), 'adminConfig/pricing'), pricing));
-  await assertFails(getDoc(doc(as('u1'), 'adminConfig/pricing')));
+  const v = { id: 'v1', from: 1, usdToIls: 3.7, aiIn: 0.5, aiOut: 3 };
+  await assertSucceeds(setDoc(doc(admin, 'adminConfig/pricing'), { versions: [v], updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(admin, 'adminConfig/pricing'), { versions: [], updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(as('u1'), 'adminConfig/pricing'), { versions: [v, v], updatedAt: serverTimestamp() }));
+  const t = { aiDailyIls: 20, userDailyIls: 5, featureSpikeFactor: 3, errorRatePercent: 10, updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(admin, 'adminConfig/thresholds'), t));
+  await assertFails(setDoc(doc(as('u1'), 'adminConfig/thresholds'), t));
 });

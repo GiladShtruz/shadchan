@@ -1,5 +1,4 @@
-import 'package:shadchan/services/analytics_service.dart';
-import 'package:shadchan/services/feature_usage.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/branch_gate.dart';
@@ -192,18 +191,90 @@ List<int> _navBranches() => WorkspaceStore.matchmakerEnabled
       ];
 
 abstract final class AppRouter {
-  static bool _tallying = false;
+  static bool _tracking = false;
 
-  /// Counts every page opened into [FeatureUsage] (path only, ids folded).
-  static void tallyScreens() {
-    if (_tallying) return;
-    _tallying = true;
+  /// The fixed monitoring id of a page, by its path (ids already in it).
+  static AppFeature featureOf(String path) {
+    final List<String> parts = path
+        .split('?')
+        .first
+        .split('/')
+        .where((String p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return AppFeature.home;
+    final String a = parts.first;
+    final String? b = parts.length > 1 ? parts[1] : null;
+    switch (a) {
+      case 'home':
+        return AppFeature.home;
+      case 'people':
+        return switch (b) {
+          null => AppFeature.people,
+          'import' => AppFeature.add_contacts,
+          'add' => AppFeature.add_manual,
+          'ai' => AppFeature.ai,
+          'shared-import' || 'shared-voice' => AppFeature.add_friend,
+          _ => AppFeature.card_open,
+        };
+      case 'matches':
+        return b == 'add' ? AppFeature.idea_open : AppFeature.ideas;
+      case 'ideas':
+        return AppFeature.ideas;
+      case 'chats':
+        return AppFeature.chats;
+      case 'profile':
+        if (b == 'card') return AppFeature.personal_card;
+        if (b == null) return AppFeature.profile;
+        return AppFeature.settings;
+      case 'me':
+        if (b == 'matchmakers') return AppFeature.my_matchmakers;
+        return AppFeature.personal_card;
+      case 'my-matchmakers':
+        return AppFeature.my_matchmakers;
+      case 'known-matchmakers':
+      case 'matchmakers':
+      case 'partner':
+        return AppFeature.partner_matchmakers;
+      case 'network':
+        return b == 'sharing'
+            ? AppFeature.database_sharing
+            : AppFeature.partner_matchmakers;
+      case 'reminders':
+        return AppFeature.notifications;
+      case 'activity':
+      case 'stats':
+      case 'married':
+        return AppFeature.activity;
+      case 'board':
+        return AppFeature.board;
+      case 'card-friends':
+      case 'card-friend':
+        return AppFeature.access;
+      default:
+        return AppFeature.other;
+    }
+  }
+
+  /// Every page opened is `feature_opened` under its fixed id, and the time
+  /// from the navigation to its first frame is a performance measure.
+  static void trackScreens() {
+    if (_tracking) return;
+    _tracking = true;
     String? last;
     void note() {
       final String path = router.routerDelegate.currentConfiguration.uri.path;
-      if (path == last || Analytics.optedOut) return;
+      if (path == last) return;
       last = path;
-      FeatureUsage.screen(path);
+      final AppFeature feature = featureOf(path);
+      Telemetry.currentFeature = feature;
+      Telemetry.opened(
+        feature,
+        action: feature == AppFeature.other ? path.split('/').where((String p) => p.isNotEmpty).firstOrNull : null,
+      );
+      final Stopwatch watch = Stopwatch()..start();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Telemetry.timing(feature, 'load', watch.elapsedMilliseconds);
+      });
     }
 
     router.routerDelegate.addListener(note);

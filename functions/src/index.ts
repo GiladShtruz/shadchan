@@ -63,6 +63,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { isSupportAdminEmail, writeAdminStats } from './admin_stats';
 import { sendDueReminders } from './reminders';
+import { checkThresholds, dashboard, deleteAnalyticsOf, processBatch, userDetail } from './analytics_store';
 import * as functionsV1 from 'firebase-functions/v1';
 import { logger } from 'firebase-functions';
 import { isHebrewBirthday, israelToday, hebrewMonthKey } from './hebrew_birthday';
@@ -1134,6 +1135,8 @@ export const onAccountDeleted = functionsV1
     await db.collection('tagUsage').doc(uid).delete();
     // The support view of this account's sync (counts and error codes).
     await db.collection('accountHealth').doc(uid).delete();
+    // The monitoring metadata about this account (counts and codes only).
+    await deleteAnalyticsOf(uid);
     await db.recursiveDelete(
       db.collection('users').doc(uid).collection('inbox'),
     );
@@ -1199,6 +1202,7 @@ async function purgeAccount(uid: string): Promise<void> {
   await deleteQuery('communityMazelTov', 'fromUid', uid);
   await deleteQuery('communityMazelTov', 'toUid', uid);
   await db.collection('accountHealth').doc(uid).delete();
+  await deleteAnalyticsOf(uid);
   // The whole tree under users/{uid}: every record, tombstone, setting,
   // the inbox and the deletion marker itself.
   await db.recursiveDelete(db.collection('users').doc(uid));
@@ -1445,5 +1449,76 @@ export const sendReminders = onSchedule(
   { schedule: 'every 60 minutes', timeoutSeconds: 300, memory: '512MiB' },
   async () => {
     await sendDueReminders(db);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Monitoring (2026-11-26): usage, costs, errors, performance. See
+// `analytics.ts` for the taxonomy and `analytics_store.ts` for the storage.
+
+/** One batch of usage events from a phone, folded and deleted. */
+export const onTelemetryBatch = onDocumentCreated(
+  { document: 'telemetryBatches/{batchId}', memory: '256MiB', retry: false },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+    try {
+      await processBatch(db, event.params.batchId, data);
+    } catch (error) {
+      logger.error('onTelemetryBatch failed', { batchId: event.params.batchId, error: String(error) });
+    }
+  },
+);
+
+async function requireAdmin(request: { auth?: { token?: unknown } }): Promise<void> {
+  const token = request.auth?.token as { email?: string; email_verified?: boolean } | undefined;
+  if (!token?.email || token.email_verified === false || !(await isSupportAdminEmail(db, token.email))) {
+    throw new HttpsError('permission-denied', 'Administrators only.');
+  }
+}
+
+/** The monitoring dashboard for one period and segment — administrators only. */
+export const adminAnalytics = onCall({ timeoutSeconds: 300, memory: '1GiB' }, async (request) => {
+  await requireAdmin(request);
+  const d = (request.data ?? {}) as Record<string, unknown>;
+  const seg = (d.segment ?? {}) as Record<string, unknown>;
+  try {
+    return await dashboard(db, {
+      from: String(d.from ?? ''),
+      to: String(d.to ?? ''),
+      force: d.force === true,
+      release: typeof d.release === 'string' && d.release ? d.release : undefined,
+      segment: {
+        platform: typeof seg.platform === 'string' && seg.platform ? seg.platform : undefined,
+        version: typeof seg.version === 'string' && seg.version ? seg.version : undefined,
+        userType: typeof seg.userType === 'string' && seg.userType ? seg.userType : undefined,
+        cohort: seg.cohort === 'new' || seg.cohort === 'veteran' ? seg.cohort : undefined,
+      },
+    });
+  } catch (error) {
+    if (String(error).includes('bad-range')) throw new HttpsError('invalid-argument', 'Bad date range.');
+    throw error;
+  }
+});
+
+/** One account's drill-down — administrators only. */
+export const adminUserAnalytics = onCall({ timeoutSeconds: 120, memory: '512MiB' }, async (request) => {
+  await requireAdmin(request);
+  const d = (request.data ?? {}) as Record<string, unknown>;
+  const uid = String(d.uid ?? '');
+  if (!uid) throw new HttpsError('invalid-argument', 'uid required.');
+  try {
+    return await userDetail(db, uid, String(d.from ?? ''), String(d.to ?? ''));
+  } catch (error) {
+    if (String(error).includes('bad-range')) throw new HttpsError('invalid-argument', 'Bad date range.');
+    throw error;
+  }
+});
+
+/** The administrator's thresholds, checked hourly. */
+export const checkAnalyticsThresholds = onSchedule(
+  { schedule: 'every 60 minutes', timeoutSeconds: 300, memory: '512MiB' },
+  async () => {
+    await checkThresholds(db);
   },
 );

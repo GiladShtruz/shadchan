@@ -92,6 +92,7 @@ abstract final class AiCardParser {
     }
 
     final GenerateContentResponse response;
+    final Stopwatch watch = Stopwatch()..start();
     try {
       response = await AiClient.model(
         systemInstruction: Content.system(_systemInstruction),
@@ -108,9 +109,18 @@ abstract final class AiCardParser {
         ),
       ).generateContent(<Content>[Content.text(text)]).timeout(AiConfig.requestTimeout);
     } catch (error) {
+      AiUsage.failure(
+        AiFeature.card,
+        error,
+        latencyMs: watch.elapsedMilliseconds,
+      );
       throw classifyAiFailure(error);
     }
-    AiUsage.record(response, AiFeature.card);
+    AiUsage.record(
+      response,
+      AiFeature.card,
+      latencyMs: watch.elapsedMilliseconds,
+    );
 
     final ParsedCard card = decodeResponse(response.text);
     if (card.isEmpty) {

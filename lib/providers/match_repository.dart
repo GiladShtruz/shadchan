@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/sync_quiet.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_guard.dart';
@@ -169,6 +170,13 @@ class MatchRepository extends ChangeNotifier {
   }) async {
     if (from != to && !automatic) {
       _measureStatusChange(from, to);
+      // The monitoring: an idea opened, or moved to a stage by hand.
+      if (from == null) {
+        Telemetry.completed(AppFeature.idea_open, 'create');
+        Telemetry.fulfil('idea');
+      } else {
+        Telemetry.completed(AppFeature.idea_status, to.name);
+      }
     }
     final Box<MatchStatusEvent>? box = _statusEventBox;
     if (box == null || from == to) {

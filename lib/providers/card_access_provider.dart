@@ -22,6 +22,7 @@ import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/matchmaker_shares.dart';
 import 'package:shadchan/services/score_ledger.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
@@ -462,6 +463,7 @@ class CardAccessProvider extends ChangeNotifier {
     final Box<dynamic>? settings = _settingsBox;
     if (settings == null || settings.get(restoredKey(uid)) == true) return;
     try {
+      Telemetry.meter(functions: 1);
       await FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable(
             'restoreRevokedGrants',
@@ -1076,6 +1078,8 @@ class CardAccessProvider extends ChangeNotifier {
     // revoked and re-approved card earns nothing twice (`ScoreLedger`).
     if (!wasLinked && person.cardOwnerUid == ownerUid) {
       ScoreLedger.recordCard(person);
+      // The end of "ביקש גישה → הגישה אושרה".
+      Telemetry.completed(AppFeature.access, 'approved');
     }
     if (localPhotos != null && photosComplete) {
       final Set<String> kept = <String>{
@@ -1229,17 +1233,22 @@ class CardAccessProvider extends ChangeNotifier {
 
   // --- Actions --------------------------------------------------------------
 
-  Future<bool> _run(String key, Future<void> Function() action) async {
+  Future<bool> _run(String key, Future<void> Function() action_) async {
     if (_busy.contains(key) || _uid == null) {
       return false;
     }
     _busy.add(key);
     notifyListeners();
+    // Every access action is measured by its kind (`helper` = a grant,
+    // `access` = approve / decline / block, `report`, `onward`…).
+    final String action = key.split(':').first;
     try {
-      await action();
+      await action_();
+      Telemetry.completed(AppFeature.access, action);
       return true;
     } catch (error, stackTrace) {
       _log(error, stackTrace);
+      Telemetry.failed(AppFeature.access, action, error);
       return false;
     } finally {
       _busy.remove(key);
@@ -1532,9 +1541,11 @@ class CardAccessProvider extends ChangeNotifier {
           ownerPhoneHash: ownerPhoneHash,
         ),
       );
+      Telemetry.completed(AppFeature.access, 'request');
       return CardRequestOutcome.sent;
     } on FirebaseException catch (error) {
       _log(error);
+      Telemetry.failed(AppFeature.access, 'request', error);
       return error.code == 'permission-denied'
           ? CardRequestOutcome.notAllowed
           : CardRequestOutcome.failed;
