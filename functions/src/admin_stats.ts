@@ -24,6 +24,7 @@ import {
   newAlerts,
 } from './admin_alerts';
 import { notify } from './notices';
+import { AiDoc, HealthDoc, UsageBlock, usageBlock } from './usage_stats';
 
 const ROOT_ADMIN = 'yitz292@gmail.com';
 const DAY = 24 * 60 * 60 * 1000;
@@ -37,6 +38,7 @@ export interface AdminStats {
   ideas: Record<string, number>;
   databases: Record<string, number>;
   contacts: ContactsBlock;
+  usage: UsageBlock;
   alerts: AdminAlert[];
 }
 
@@ -47,12 +49,11 @@ function isoMillis(value: unknown): number | undefined {
 }
 
 /** Every device's address-book report, from `accountHealth` (no contacts). */
-async function contactDevices(db: Firestore, internal: Set<string>): Promise<ContactsDevice[]> {
+function contactDevices(docs: HealthDoc[], internal: Set<string>): ContactsDevice[] {
   const out: ContactsDevice[] = [];
-  const docs = await db.collection('accountHealth').select('devices').get();
-  for (const doc of docs.docs) {
-    if (internal.has(doc.id)) continue;
-    const devices = doc.get('devices');
+  for (const doc of docs) {
+    if (internal.has(doc.uid)) continue;
+    const devices = doc.devices;
     if (!devices || typeof devices !== 'object') continue;
     for (const device of Object.values(devices as Record<string, unknown>)) {
       if (!device || typeof device !== 'object') continue;
@@ -241,7 +242,17 @@ export async function computeAdminStats(db: Firestore, now = Date.now()): Promis
   };
 
   // ---- address-book reads, and the early warnings
-  const devices = await contactDevices(db, internal);
+  // One read of every account's health report: the address-book reads, and
+  // the storage footprint and page/feature tally (`usage_stats.ts`).
+  const healthDocs: HealthDoc[] = (
+    await db.collection('accountHealth').select('devices', 'email').get()
+  ).docs.map((d) => ({ uid: d.id, email: d.get('email'), devices: d.get('devices') }));
+  const devices = contactDevices(healthDocs, internal);
+  const aiDocs: AiDoc[] = (await db.collection('aiUsage').get()).docs.map((d) => ({
+    uid: d.id,
+    ...(d.data() as Omit<AiDoc, 'uid'>),
+  }));
+  const usage = usageBlock(healthDocs, aiDocs, now, internal);
   const contacts = contactsBlock(devices, now);
   const history = (
     await db
@@ -280,6 +291,7 @@ export async function computeAdminStats(db: Firestore, now = Date.now()): Promis
     ideas: ideasBlock,
     databases: databasesBlock,
     contacts,
+    usage,
     alerts,
   };
 }

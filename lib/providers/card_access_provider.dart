@@ -21,6 +21,7 @@ import 'package:shadchan/services/card_sync_engine.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/matchmaker_shares.dart';
+import 'package:shadchan/services/score_ledger.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
@@ -1003,13 +1004,9 @@ class CardAccessProvider extends ChangeNotifier {
       // Access is the matchmaker's friend arriving in the database: a record
       // that was kept out of it — a name on an idea, or a draft — joins it.
       //
-      // **And it is a friend added, for the activity points.** A brand-new
-      // record already is (it is born now); a hidden one was born when its
-      // name was first typed, outside the database, and never counted. Dating
-      // it from today is what makes `ActivityStats.countedFriends` give the
-      // same one point a hand-added friend earns. A friend who was already
-      // visible in the database was counted when they were added and earns
-      // nothing twice.
+      // A hidden record (a name on an idea, a draft) is dated from today:
+      // that is when the friend actually joined the database. The card's
+      // activity points are written by `ScoreLedger.recordCard` below.
       if (person.hidden && !created) {
         person.createdAt = now;
       }
@@ -1072,6 +1069,14 @@ class CardAccessProvider extends ChangeNotifier {
       localPhotoPaths: localPhotos,
       previousRemote: previous,
     );
+    // **The card's points, dated today** — the day access was approved, not
+    // the day the friend was first typed. Written before the save below,
+    // which wakes every screen that would otherwise backfill it with the
+    // friend's own date. Once per card owner whatever happens later: a
+    // revoked and re-approved card earns nothing twice (`ScoreLedger`).
+    if (!wasLinked && person.cardOwnerUid == ownerUid) {
+      ScoreLedger.recordCard(person);
+    }
     if (localPhotos != null && photosComplete) {
       final Set<String> kept = <String>{
         for (final String p in localPhotos) PhotoPickerService.basenameOf(p),

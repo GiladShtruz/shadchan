@@ -4,6 +4,7 @@ import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/services/ai_client.dart';
+import 'package:shadchan/services/ai_usage.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/ai_config.dart';
 import 'package:shadchan/utils/card_parser.dart';
@@ -106,6 +107,7 @@ abstract final class AiPeopleParser {
     } catch (error) {
       throw classifyAiFailure(error);
     }
+    AiUsage.record(response, AiFeature.import);
 
     if (isChat) {
       final finishReason = response.candidates.isEmpty

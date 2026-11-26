@@ -76,6 +76,9 @@ Future<void> main() async {
           // and must not be allowed to stop it appearing. See
           // `_startNotifications`.
           unawaited(_startNotifications());
+          // Which pages are opened, for the administrator's list of what is
+          // used and what is not — codes only. See `FeatureUsage`.
+          AppRouter.tallyScreens();
           // Whether the server can be reached — after the first frame like
           // everything else that is not needed to draw it. Offline, the app
           // shows the last synced copy and refuses edits; see

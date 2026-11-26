@@ -77,7 +77,7 @@ class ActivityFigureRow extends StatelessWidget {
           children: <Widget>[
             // Reading order in RTL: friends at the start (the right).
             tile(
-              all.friends,
+              people.databaseCount,
               'חברים',
               MonthlyStatMetric.people,
               AppColors.metric(MetricKind.friends, dark: dark),
@@ -278,7 +278,7 @@ class ActivityFigureLine extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            part(all.friends, 'חברים', () => context.go('/people')),
+            part(people.databaseCount, 'חברים', () => context.go('/people')),
             dot(),
             part(all.ideas, 'רעיונות', () => context.go('/matches')),
             dot(),

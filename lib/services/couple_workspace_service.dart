@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/score_ledger.dart';
 
 /// Account identity stays individual; this is only the matchmaker database.
 abstract final class CoupleWorkspaceService {
@@ -34,6 +35,8 @@ abstract final class CoupleWorkspaceService {
     'suggestionDismiss',
     'cardSyncRemote.',
     'deletedIdeas',
+    // The activity points are the shared database's, like the score.
+    ScoreLedger.prefix,
   ].any(key.startsWith);
   static List<String> sources(String id) =>
       (metadata['people/$id']?['_sources'] as List?)?.cast<String>() ?? [];

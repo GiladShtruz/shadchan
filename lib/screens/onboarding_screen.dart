@@ -17,6 +17,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
+import 'package:shadchan/services/image_shrink.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -496,6 +497,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     try {
       final XFile? pickedFile = await ImagePicker().pickImage(
         source: ImageSource.gallery,
+        maxWidth: ImageShrink.pickerMaxSide,
+        maxHeight: ImageShrink.pickerMaxSide,
+        imageQuality: ImageShrink.pickerQuality,
       );
       if (pickedFile == null || !mounted) {
         return;
@@ -513,7 +517,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       final int timestamp = DateTime.now().millisecondsSinceEpoch;
       final String targetPath =
           '${photosDirectory.path}${Platform.pathSeparator}me_$timestamp.jpg';
-      await File(pickedFile.path).copy(targetPath);
+      await ImageShrink.shrinkInto(File(pickedFile.path), targetPath);
 
       if (!mounted) {
         return;

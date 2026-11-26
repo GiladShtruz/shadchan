@@ -1,4 +1,5 @@
 import 'package:shadchan/services/analytics_service.dart';
+import 'package:shadchan/services/feature_usage.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/read_throttle.dart';
 import 'package:shadchan/utils/home_next_step.dart';
@@ -298,6 +299,7 @@ abstract final class AccountSwitch {
       }
       // Every store's in-memory copy of a setting just removed.
       LocalSettingCaches.forgetAll();
+      FeatureUsage.forget();
     }
     for (final Future<Directory> Function() folder
         in <Future<Directory> Function()>[

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/services/image_shrink.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -137,6 +138,10 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
     final String batchId = const Uuid().v4();
     int added = 0;
     for (final _Draft draft in _kept) {
+      // The photo a WhatsApp export carried is the camera original; made
+      // phone-sized before it becomes the friend's photo ([ImageShrink]).
+      final String? photo = draft.parsed.photoPath;
+      if (photo != null) await ImageShrink.shrinkInPlace(photo);
       await repository.add(draft.toPerson(now, importBatchId: batchId));
       added++;
     }

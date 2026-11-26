@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/feature_usage.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/home_board_store.dart';
 
@@ -150,10 +151,14 @@ abstract final class Analytics {
 
   /// A feature was used — counted per feature, so "who uses tags at all" is
   /// a unique-user count in the console.
-  static void feature(AnalyticsFeature feature) => log(
-    AnalyticsEvent.feature_used,
-    <String, Object?>{'feature': feature.name},
-  );
+  static void feature(AnalyticsFeature feature) {
+    // Also tallied on the device for the administrator's feature list
+    // (`FeatureUsage`), which the console can read without the Analytics UI.
+    if (!optedOut) FeatureUsage.hit('feature:${feature.name}');
+    log(AnalyticsEvent.feature_used, <String, Object?>{
+      'feature': feature.name,
+    });
+  }
 
   /// Logs [event] only the first time it happens on this account — the
   /// funnel steps ("first friend", "5 friends", "first idea"). Remembered in

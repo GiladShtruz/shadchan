@@ -1,3 +1,5 @@
+import 'package:shadchan/utils/dating_history.dart';
+import 'package:shadchan/services/score_ledger.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/screens/network_screen.dart';
@@ -1116,6 +1118,31 @@ class _FriendCardTile extends StatefulWidget {
 }
 
 class _FriendCardTileState extends State<_FriendCardTile> {
+  /// The ledger brought up to date first (memoised, free when nothing
+  /// changed), so a friend opened straight from a notification shows the
+  /// same figure as their row in המאגר שלי.
+  int _activityPoints(BuildContext context, Person person) {
+    try {
+      final PersonRepository people = Provider.of<PersonRepository>(
+        context,
+        listen: false,
+      );
+      final MatchRepository matches = Provider.of<MatchRepository>(
+        context,
+        listen: false,
+      );
+      ScoreLedger.reconcile(
+        people: people.getAll(),
+        matches: matches.getAll(),
+        statusEvents: matches.getAllStatusEvents(),
+        excludedFromDating: DatingCountExclusions.all(),
+      );
+    } on ProviderNotFoundException {
+      // Drawn alone (a test): whatever the ledger already holds.
+    }
+    return ScoreLedger.pointsFor(person);
+  }
+
   /// Past this many lines the text folds, with a link to the rest — the tile
   /// opens a page, it should not be the whole of it.
   static const int _foldedLines = 8;
@@ -1171,6 +1198,18 @@ class _FriendCardTileState extends State<_FriendCardTile> {
                 facts.join(' · '),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: _profileMutedColor(theme),
+                ),
+              ),
+            ],
+            // What this friend brought the matchmaker, in the smallest and
+            // quietest type on the card — an encouragement to keep working
+            // around them, never a heading. See `ScoreLedger.pointsFor`.
+            if (_activityPoints(context, person) > 0) ...<Widget>[
+              const SizedBox(height: 2),
+              Text(
+                '${_activityPoints(context, person)} נקודות פעילות',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: _profileMutedColor(theme).withValues(alpha: 0.8),
                 ),
               ),
             ],

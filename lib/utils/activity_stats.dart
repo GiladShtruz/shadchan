@@ -1,8 +1,8 @@
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/services/score_ledger.dart';
 import 'package:shadchan/utils/dating_history.dart';
-import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 
 /// What one act of matchmaking is worth.
@@ -13,24 +13,27 @@ import 'package:shadchan/utils/monthly_stats.dart';
 /// product decision, and the wording that goes with them is "נקודות פעילות"
 /// rather than "פעולות" for exactly that reason: not every event is worth one.
 abstract final class ActivityPoints {
-  static const int friend = 1;
-  static const int idea = 1;
-  static const int couple = 5;
-  static const int engagement = 50;
+  static const int friend = ScoreRules.friend;
+  static const int card = ScoreRules.card;
+  static const int idea = ScoreRules.idea;
+  static const int couple = ScoreRules.dating;
+  static const int engagement = ScoreRules.engaged;
 
   /// The one line that fits under a figure. The full table is [scoringLines],
   /// which is what the home block's explanation opens.
   static const String shortExplanation =
-      'כל חבר או רעיון = נקודה · זוג שיוצא לדייט = 5 · חתונה = 50';
+      'חבר מאנשי הקשר = נקודה · כרטיס אישי = 2 · רעיון = נקודה · '
+      'זוג שיוצא = 5 · אירוסין = 50';
 
   static const String howItIsCountedTitle = 'איך הפעילות נספרת?';
 
   /// The scoring method, said in full and in the order the acts happen in.
   static const List<String> scoringLines = <String>[
-    'הוספת חבר = נקודת פעילות אחת.',
+    'הוספת חבר מאנשי הקשר = נקודת פעילות אחת.',
+    'חבר שאישר לך גישה לכרטיס האישי שלו = 2 נקודות בסך הכול.',
     'פתיחת רעיון = נקודת פעילות אחת.',
     'זוג שהתחיל לצאת = 5 נקודות פעילות.',
-    'חתונה = 50 נקודות פעילות.',
+    'זוג שהתארס = 50 נקודות פעילות.',
   ];
 
   /// The one question the table above still raises, answered once.
@@ -42,7 +45,10 @@ abstract final class ActivityPoints {
   /// that moment; four paragraphs of small print under a four-line table read
   /// as terms and conditions rather than as an explanation.
   static const List<String> scoringNotes = <String>[
-    'ייבוא חברים נספר לפי מספר החברים שנוספו בפועל. כפילויות לא נספרות.',
+    'נקודת חבר ניתנת רק על הוספה מאנשי הקשר שלך — הוספה ידנית, ייבוא AI '
+        'או שיתוף כרטיס לא מזכים בה.',
+    'כל אירוע נספר פעם אחת בלבד: מחיקה והוספה מחדש, או שינוי סטטוס הלוך '
+        'ושוב, לא מוסיפים נקודות.',
   ];
 }
 
@@ -57,12 +63,19 @@ class ActivityBreakdown {
     this.ideas = 0,
     this.couples = 0,
     this.engagements = 0,
-  });
+    int? friendPoints,
+  }) : _friendPoints = friendPoints;
 
   static const ActivityBreakdown empty = ActivityBreakdown();
 
-  /// Friends added to the database.
+  /// Friends who earned their base points: added from the contacts, or
+  /// whose personal card the matchmaker was given (counted once each).
   final int friends;
+
+  final int? _friendPoints;
+
+  /// The friends' base points — 1 each from the contacts, 2 for a card.
+  int get friendPoints => _friendPoints ?? friends * ActivityPoints.friend;
 
   /// Proposals opened.
   final int ideas;
@@ -77,7 +90,7 @@ class ActivityBreakdown {
   final int engagements;
 
   int get points =>
-      friends * ActivityPoints.friend +
+      friendPoints +
       ideas * ActivityPoints.idea +
       couples * ActivityPoints.couple +
       engagements * ActivityPoints.engagement;
@@ -140,36 +153,6 @@ abstract final class ActivityStats {
       .toLowerCase()
       .replaceAll(RegExp(r'''[\s'"־–—.,()\-]+'''), ' ')
       .trim();
-
-  /// The day each proposal became a wedding, from the ledger where there is
-  /// one and from the proposal's own `updatedAt` where there is not.
-  ///
-  /// The fallback is not a guess for its own sake: [MatchStatusEvent] only
-  /// started being written on 2026-08-14, and every couple who married before
-  /// that has no event to read. Their date is approximate; that they married is
-  /// not, and dropping them would quietly erase the best thing in the database.
-  static Map<String, DateTime> _engagementDates(
-    List<MatchIdea> matches,
-    List<MatchStatusEvent> statusEvents,
-  ) {
-    final Map<String, DateTime> byMatch = <String, DateTime>{};
-    for (final MatchStatusEvent event in statusEvents) {
-      if (event.toStatus != MatchStatus.married) {
-        continue;
-      }
-      final DateTime? seen = byMatch[event.matchId];
-      // The first time it was marked, not the last. A record edited a year
-      // later did not get engaged a year later.
-      if (seen == null || event.createdAt.isBefore(seen)) {
-        byMatch[event.matchId] = event.createdAt;
-      }
-    }
-    return <String, DateTime>{
-      for (final MatchIdea match in matches)
-        if (match.status == MatchStatus.married)
-          match.id: byMatch[match.id] ?? match.updatedAt,
-    };
-  }
 
   /// The friends counted as added inside `[start, end)`, newest first.
   ///
@@ -258,55 +241,56 @@ abstract final class ActivityStats {
     List<DatingCoupleRecord>? datingCouples,
     DateTime? now,
   }) {
-    bool inRange(DateTime at) => !at.isBefore(start) && at.isBefore(end);
-
-    // The friends and the ideas are counted by listing them, through the same
-    // two functions the drill-down screens read. That is not indirection for
-    // its own sake: a number and the list behind it that are produced by two
-    // pieces of code drift, and "42 חברים שהוספת" opening a list of 39 is the
-    // one thing about a statistics screen nobody forgives.
-    final int friends = countedFriends(
+    // **Every figure comes from the score ledger** — the same events the
+    // profile, the board, "שדכני השבוע" and each friend's card add up. The
+    // records are only read to bring the ledger up to date.
+    return fromEvents(
+      ScoreLedger.reconcile(
+        people: people,
+        matches: matches,
+        statusEvents: matchStatusEvents,
+        excludedFromDating: excludedFromDating,
+        datingCouples: datingCouples,
+        now: now,
+      ),
       start: start,
       end: end,
-      people: people,
-    ).length;
-    final int ideas = countedIdeas(
-      start: start,
-      end: end,
-      matches: matches,
-    ).length;
+    );
+  }
 
-    // Couples, from the same history the rest of the app counts them with — so
-    // "זוגות שהתחילו לצאת" on the stats screen and the five points here can
-    // never disagree about what a couple is. A couple enters the count a day
-    // after the status was set and never leaves it again.
-    final List<DatingCoupleRecord> dating =
-        datingCouples ??
-        DatingHistory.all(
-          matches: matches,
-          statusEvents: matchStatusEvents,
-          excludedMatchIds: excludedFromDating,
-          now: now,
-        );
+  /// The events inside `[start, end)`, added up.
+  static ActivityBreakdown fromEvents(
+    Iterable<ScoreEvent> events, {
+    required DateTime start,
+    required DateTime end,
+  }) {
+    int friends = 0;
+    int friendPoints = 0;
+    int ideas = 0;
     int couples = 0;
-    for (final DatingCoupleRecord record in dating) {
-      if (inRange(record.startedAt)) {
-        couples++;
-      }
-    }
-
     int engagements = 0;
-    for (final DateTime at in _engagementDates(
-      matches,
-      matchStatusEvents,
-    ).values) {
-      if (inRange(at)) {
-        engagements++;
+    for (final ScoreEvent event in events) {
+      if (event.at.isBefore(start) || !event.at.isBefore(end)) continue;
+      switch (event.type) {
+        case ScoreEventType.friend:
+          friends++;
+          friendPoints += event.points;
+        case ScoreEventType.card:
+          // A card on top of a contacts friend is the same friend: one more
+          // point, not one more friend.
+          if (event.points >= ScoreRules.card) friends++;
+          friendPoints += event.points;
+        case ScoreEventType.idea:
+          ideas++;
+        case ScoreEventType.dating:
+          couples++;
+        case ScoreEventType.engaged:
+          engagements++;
       }
     }
-
     return ActivityBreakdown(
       friends: friends,
+      friendPoints: friendPoints,
       ideas: ideas,
       couples: couples,
       engagements: engagements,

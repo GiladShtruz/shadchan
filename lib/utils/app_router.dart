@@ -1,3 +1,5 @@
+import 'package:shadchan/services/analytics_service.dart';
+import 'package:shadchan/services/feature_usage.dart';
 import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/branch_gate.dart';
@@ -190,6 +192,24 @@ List<int> _navBranches() => WorkspaceStore.matchmakerEnabled
       ];
 
 abstract final class AppRouter {
+  static bool _tallying = false;
+
+  /// Counts every page opened into [FeatureUsage] (path only, ids folded).
+  static void tallyScreens() {
+    if (_tallying) return;
+    _tallying = true;
+    String? last;
+    void note() {
+      final String path = router.routerDelegate.currentConfiguration.uri.path;
+      if (path == last || Analytics.optedOut) return;
+      last = path;
+      FeatureUsage.screen(path);
+    }
+
+    router.routerDelegate.addListener(note);
+    note();
+  }
+
   static final GoRouter router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/home',

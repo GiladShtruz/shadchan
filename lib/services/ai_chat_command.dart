@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/ai_client.dart';
+import 'package:shadchan/services/ai_usage.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/ai_config.dart';
 import 'package:shadchan/utils/chat_idea_command.dart';
@@ -50,6 +51,7 @@ abstract final class AiChatCommand {
               )
               .generateContent(<Content>[Content.text(sentence)])
               .timeout(const Duration(seconds: 30));
+      AiUsage.record(response, AiFeature.chat);
       return decode(response.text);
     } catch (error) {
       debugPrint('AiChatCommand: $error');

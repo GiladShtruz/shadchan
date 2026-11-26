@@ -4,6 +4,7 @@ import 'package:firebase_ai/firebase_ai.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/ai_client.dart';
+import 'package:shadchan/services/ai_usage.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/ai_config.dart';
 import 'package:shadchan/utils/card_parser.dart';
@@ -109,6 +110,7 @@ abstract final class AiCardParser {
     } catch (error) {
       throw classifyAiFailure(error);
     }
+    AiUsage.record(response, AiFeature.card);
 
     final ParsedCard card = decodeResponse(response.text);
     if (card.isEmpty) {
