@@ -84,8 +84,8 @@ class WeeklyPace {
   String headline(Gender? gender) {
     if (reached) {
       return mode == PaceMode.starter
-          ? 'עמדת ביעד השבועי 🎉'
-          : 'שברת את השיא האישי שלך 🎉';
+          ? 'עמדת ביעד השבועי'
+          : 'שברת את השיא האישי שלך';
     }
     switch (mode) {
       case PaceMode.lastWeek:

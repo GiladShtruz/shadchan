@@ -127,15 +127,15 @@ abstract final class CommunityHighlight {
       for (final CommunityEngagement engagement in namedEngagements)
         CommunityPulseLine(
           text: engagement.canBeCongratulated
-              ? 'מזל טוב לשדכן ${engagement.matchmakerName} שזוג שלו התארס השבוע! 🎉 לשליחת ברכה'
-              : 'מזל טוב לשדכן ${engagement.matchmakerName} שזוג שלו התארס השבוע! 🎉',
+              ? 'מזל טוב לשדכן ${engagement.matchmakerName} שזוג שלו התארס השבוע! לשליחת ברכה'
+              : 'מזל טוב לשדכן ${engagement.matchmakerName} שזוג שלו התארס השבוע!',
           engagement: engagement,
         ),
       if (unnamed > 0)
         plain(
           unnamed == 1
-              ? 'מזל טוב! זוג נוסף התארס 🎉'
-              : 'מזל טוב! $unnamed זוגות התארסו השבוע 🎉',
+              ? 'מזל טוב! זוג נוסף התארס'
+              : 'מזל טוב! $unnamed זוגות התארסו השבוע',
         ),
       if (day.ideas > 0)
         plain(
@@ -178,8 +178,8 @@ abstract final class CommunityHighlight {
       if (totals.engagements > 0)
         plain(
           totals.engagements == 1
-              ? 'מזל טוב! חתונה אחת $when 🎉'
-              : 'מזל טוב! ${totals.engagements} חתונות $when 🎉',
+              ? 'מזל טוב! חתונה אחת $when'
+              : 'מזל טוב! ${totals.engagements} חתונות $when',
         ),
       if (totals.couples > 0)
         plain(

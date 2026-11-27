@@ -60,8 +60,8 @@ void main() {
     expect(t.isUnreadFor('b'), isTrue);
     expect(t.unreadCountFor('b'), 3);
     expect(t.isUnreadFor('a'), isFalse);
-    expect(t.previewFor('b'), '🎤 הודעה קולית');
-    expect(t.previewFor('a'), 'את/ה: 🎤 הודעה קולית');
+    expect(t.previewFor('b'), 'הודעה קולית');
+    expect(t.previewFor('a'), 'אני: הודעה קולית');
   });
 
   test('a system line never makes a conversation unread', () {

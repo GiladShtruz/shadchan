@@ -38,6 +38,7 @@ export {
   sharedCardPhoto,
   onIdeaProposalWritten,
   onChatMessageCreated,
+  openCommunityChat,
   onCardAccessShareOnward,
   onPersonalCardDeletedUnshare,
   onPartnershipWritten,

@@ -75,7 +75,7 @@ class _PersonalCommunityNewsState extends State<PersonalCommunityNews>
           items.add(
             PersonalNews(
               id: entry.$1,
-              title: 'הקהילה ממשיכה להתחבר ❤️',
+              title: 'הקהילה ממשיכה להתחבר',
               text: '$value ${entry.$2}',
             ),
           );

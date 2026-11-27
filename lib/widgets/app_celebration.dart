@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
@@ -61,7 +62,7 @@ abstract final class AppCelebration {
     BuildContext context, {
     required String headline,
     required String message,
-    String emoji = '🎉',
+    AppGlyph glyph = AppGlyph.spark,
     Duration? duration,
     List<CelebrationAction> actions = const <CelebrationAction>[],
   }) {
@@ -76,7 +77,7 @@ abstract final class AppCelebration {
       builder: (BuildContext context) => _Celebration(
         headline: headline,
         message: message,
-        emoji: emoji,
+        glyph: glyph,
         onTap: dismiss,
         actions: actions,
       ),
@@ -102,7 +103,7 @@ class _Celebration extends StatefulWidget {
   const _Celebration({
     required this.headline,
     required this.message,
-    required this.emoji,
+    required this.glyph,
     required this.onTap,
     this.actions = const <CelebrationAction>[],
   });
@@ -110,7 +111,7 @@ class _Celebration extends StatefulWidget {
   final List<CelebrationAction> actions;
   final String headline;
   final String message;
-  final String emoji;
+  final AppGlyph glyph;
   final VoidCallback onTap;
 
   @override
@@ -188,7 +189,7 @@ class _CelebrationState extends State<_Celebration>
                     _Card(
                       headline: widget.headline,
                       message: widget.message,
-                      emoji: widget.emoji,
+                      glyph: widget.glyph,
                       lead: lead,
                       actions: widget.actions,
                     ),
@@ -207,7 +208,7 @@ class _Card extends StatelessWidget {
   const _Card({
     required this.headline,
     required this.message,
-    required this.emoji,
+    required this.glyph,
     required this.lead,
     this.actions = const <CelebrationAction>[],
   });
@@ -216,7 +217,7 @@ class _Card extends StatelessWidget {
 
   final String headline;
   final String message;
-  final String emoji;
+  final AppGlyph glyph;
   final Color lead;
 
   @override
@@ -243,7 +244,7 @@ class _Card extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Text(emoji, style: const TextStyle(fontSize: 52)),
+          AppGlyphIcon(glyph, size: 52, color: lead),
           const SizedBox(height: 14),
           Text(
             headline,

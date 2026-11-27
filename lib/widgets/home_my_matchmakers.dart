@@ -8,6 +8,7 @@ import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/utils/matchmaker_friends.dart';
 import 'package:shadchan/utils/personal_nav.dart';
 import 'package:shadchan/widgets/personal_home_sections.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 
 /// "השדכנים שלי" on בית, after "שדכנים שותפים" — for a user who keeps a
 /// personal card. The matchmakers among the user's friends, as a horizontal
@@ -97,28 +98,117 @@ class _HomeMyMatchmakersState extends State<HomeMyMatchmakers> {
         }
         if (_shown.isEmpty) return const SizedBox.shrink();
         final ThemeData theme = Theme.of(context);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              HomeMyMatchmakers.title,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
+        final bool dark = theme.brightness == Brightness.dark;
+        // **A place of its own, not one more row of matchmakers.** "שדכנים
+        // שותפים" above is work; this is the user's own side as a single —
+        // so it sits on a soft wash of the women's bordeaux, with no frame,
+        // a heading in a warmer voice and a small "ניהול הכרטיס האישי" tag
+        // that says what the area is about.
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: dark
+                ? theme.colorScheme.surfaceContainerHighest
+                : context.tokens.femaleWash,
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    AppGlyphIcon(
+                      AppGlyph.heart,
+                      size: 18,
+                      color: context.tokens.femaleInk,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        HomeMyMatchmakers.title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: context.tokens.femaleInk,
+                        ),
+                      ),
+                    ),
+                    // Scaled down rather than pushed out on a narrow phone
+                    // with large type.
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: _CardTag(
+                          onTap: () => PersonalNav.openCard(context),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'השדכנים שחושבים עליך — הכרטיס, הגישה והצ\'אט',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                _Row(list: _shown),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: context.tokens.femaleInk,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => PersonalNav.openMatchmakers(context),
+                    child: const Text(HomeMyMatchmakers.seeAllLabel),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            _Row(list: _shown),
-            const SizedBox(height: 6),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton(
-                onPressed: () => PersonalNav.openMatchmakers(context),
-                child: const Text(HomeMyMatchmakers.seeAllLabel),
-              ),
-            ),
-          ],
+          ),
         );
       },
+    );
+  }
+}
+
+/// "ניהול הכרטיס האישי" — a small tag in the corner of the area: this is
+/// the user's side as a single, and a tap opens the card.
+class _CardTag extends StatelessWidget {
+  const _CardTag({required this.onTap});
+  final VoidCallback onTap;
+
+  static const String label = 'ניהול הכרטיס האישי';
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color ink = context.tokens.femaleInk;
+    return Material(
+      color: theme.colorScheme.surface,
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              AppGlyphIcon(AppGlyph.card, size: 14, color: ink),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -193,8 +283,7 @@ class _Card extends StatelessWidget {
       width: width,
       child: Material(
         color: theme.colorScheme.surface,
-        elevation: 1,
-        shadowColor: context.tokens.textPrimary.withValues(alpha: 0.18),
+        elevation: 0,
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -211,7 +300,7 @@ class _Card extends StatelessWidget {
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: friend.canReadCard
-                          ? context.tokens.maleAccent
+                          ? context.tokens.femaleAccent
                           : context.tokens.lightAccent,
                       width: 2,
                     ),

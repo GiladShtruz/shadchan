@@ -1,3 +1,4 @@
+import 'package:shadchan/services/chat_service.dart';
 import 'package:shadchan/services/own_card_mirror.dart';
 import 'package:shadchan/services/auto_match_rules.dart';
 import 'package:shadchan/screens/people_screen.dart';
@@ -57,6 +58,7 @@ abstract final class LocalSettingCaches {
     CardLinkConsent.forgetCache();
     NetworkSharing.forgetCache();
     PartnerCarouselHidden.forgetCache();
+    ChatArchive.forgetCache();
     SharedIdeas.forgetCache();
     ScoreLedger.forgetCache();
   }

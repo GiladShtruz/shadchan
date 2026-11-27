@@ -191,7 +191,7 @@ abstract final class PersonalAccessFlow {
       AppNotice.show(
         context,
         ok
-            ? 'הגישה ניתנה ל${friend.name} ❤️'
+            ? 'הגישה ניתנה ל${friend.name}'
             : 'הגישה לא נשמרה. כדאי לרענן ולנסות שוב.',
       );
     }

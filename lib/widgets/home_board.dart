@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/workspace_store.dart';
+import 'package:shadchan/widgets/personal_home_sections.dart';
+import 'package:shadchan/utils/personal_next_step.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/app_tokens.dart';
@@ -847,32 +851,61 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     final bool dark = theme.brightness == Brightness.dark;
     final double inset = homeHorizontalInset(context);
 
-    final List<(int, int, BoardFeedEntry<_BoardItem>)> ranked =
-        <(int, int, BoardFeedEntry<_BoardItem>)>[];
+    final List<(int, int, Object)> ranked = <(int, int, Object)>[];
     for (int i = 0; i < collected.length; i++) {
       final int? tier = _tierOf(collected[i]);
       if (tier != null) {
         ranked.add((tier, i, collected[i]));
       }
     }
+    // The user's own card, for somebody who keeps one: its steps are rows
+    // of the same list ("מה כדאי לעשות עכשיו" is not a block of its own any
+    // more), each at the tier of how much it waits on.
+    final bool single =
+        (_maybeWatch<UserProfileProvider>(context)?.isSingle ?? false) ||
+        !WorkspaceStore.matchmakerEnabled;
+    if (single) {
+      final List<PersonalNextStep> steps = PersonalNextAction.stepsFor(context);
+      for (int k = 0; k < steps.length; k++) {
+        ranked.add((PersonalNextStep.tierOf(steps[k].kind), -1 - k, steps[k]));
+      }
+    }
     ranked.sort((a, b) {
       final int byTier = a.$1.compareTo(b.$1);
       if (byTier != 0) return byTier;
+      // Within a tier, the card's own steps first, in their own order.
+      final bool aStep = a.$3 is PersonalNextStep;
+      final bool bStep = b.$3 is PersonalNextStep;
+      if (aStep || bStep) {
+        if (aStep && bStep) return b.$2.compareTo(a.$2);
+        return aStep ? -1 : 1;
+      }
+      final BoardFeedEntry<_BoardItem> ea = a.$3 as BoardFeedEntry<_BoardItem>;
+      final BoardFeedEntry<_BoardItem> eb = b.$3 as BoardFeedEntry<_BoardItem>;
       // The database's pairs keep the order they were suggested in.
       if (a.$1 == 3) return a.$2.compareTo(b.$2);
       // An idea untouched for a while: the longest-untouched first.
       final int byTime = a.$1 == 2
-          ? a.$3.activityAt.compareTo(b.$3.activityAt)
-          : b.$3.activityAt.compareTo(a.$3.activityAt);
+          ? ea.activityAt.compareTo(eb.activityAt)
+          : eb.activityAt.compareTo(ea.activityAt);
       return byTime != 0 ? byTime : a.$2.compareTo(b.$2);
     });
-    final List<BoardFeedEntry<_BoardItem>> work = <BoardFeedEntry<_BoardItem>>[
-      for (final (int, int, BoardFeedEntry<_BoardItem>) r in ranked)
-        r.$1 == 4 ? _asCardAction(r.$3) : r.$3,
+    final List<Object> work = <Object>[
+      for (final (int, int, Object) r in ranked)
+        if (r.$3 is BoardFeedEntry<_BoardItem>)
+          r.$1 == 4 &&
+                  (r.$3 as BoardFeedEntry<_BoardItem>).value.type ==
+                      _ItemType.sharedCard
+              ? _asCardAction(r.$3 as BoardFeedEntry<_BoardItem>)
+              : r.$3
+        else
+          r.$3,
     ];
     // Rows about using the app more — a photo, invitations, connections —
     // mixed in from the third place on.
-    final List<HomeActionPrompt> prompts = _prompts(context);
+    final List<HomeActionPrompt> prompts = WorkspaceStore.matchmakerEnabled
+        ? _prompts(context)
+        : const <HomeActionPrompt>[];
     final List<int> at = HomeActionPrompts.positions(
       work.length,
       prompts.length,
@@ -917,6 +950,11 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
             else
               for (int i = 0; i < shown; i++) ...<Widget>[
                 switch (rows[i]) {
+                  final PersonalNextStep step => _PersonalStepRow(
+                    key: ValueKey<String>('step:${step.kind.name}:$i'),
+                    step: step,
+                    onChanged: () => setState(() {}),
+                  ),
                   final HomeActionPrompt prompt => _PromptRow(
                     key: ValueKey<String>(prompt.key),
                     prompt: prompt,
@@ -934,24 +972,27 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
                 },
                 hairline,
               ],
-            // "עוד", at the left — the end of the line in RTL.
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: TextButton(
-                onPressed: more
-                    ? _showMoreActions
-                    : () => AppNavigation.open(context, HomeBoardSection.route),
-                style: TextButton.styleFrom(
-                  foregroundColor: link,
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  textStyle: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
+            // "עוד", at the left — the end of the line in RTL. A single who
+            // does not matchmake has no board to go on to.
+            if (more || WorkspaceStore.matchmakerEnabled)
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: TextButton(
+                  onPressed: more
+                      ? _showMoreActions
+                      : () =>
+                            AppNavigation.open(context, HomeBoardSection.route),
+                  style: TextButton.styleFrom(
+                    foregroundColor: link,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    textStyle: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
+                  child: Text(more ? 'עוד' : 'לכל הלוח'),
                 ),
-                child: Text(more ? 'עוד' : 'לכל הלוח'),
               ),
-            ),
             // The page's last line: joining the WhatsApp group and sharing
             // the app, light grey, under a faint rule.
             if (_footerShown)
@@ -987,12 +1028,17 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
+    if (widget.mode == HomeBoardMode.actions) {
+      return _buildActions(
+        context,
+        widget.personRepository.databaseCount == 0 && widget.entries.isEmpty
+            ? const <BoardFeedEntry<_BoardItem>>[]
+            : _collect(context),
+      );
+    }
     // Nothing to put on a board before the first friend.
     if (widget.personRepository.databaseCount == 0 && widget.entries.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
-    if (widget.mode == HomeBoardMode.actions) {
-      return _buildActions(context, _collect(context));
     }
     final List<BoardFeedEntry<_BoardItem>> arranged = HomeBoardFeed.arrange(
       _collect(context),
@@ -1846,7 +1892,7 @@ class _BoardRow extends StatelessWidget {
           : CircleAvatar(
               radius: _r,
               backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              child: const Icon(Icons.badge_outlined, size: 18),
+              child: const AppGlyphIcon(AppGlyph.card, size: 18),
             ),
       title: name,
       subtitle: line,
@@ -1943,7 +1989,7 @@ class _BoardRow extends StatelessWidget {
       leading: CircleAvatar(
         radius: _r,
         backgroundColor: theme.colorScheme.surfaceContainerHighest,
-        child: const Icon(Icons.forum_outlined, size: 18),
+        child: const AppGlyphIcon(AppGlyph.chat, size: 18),
       ),
       title: title,
       subtitle: report.text,
@@ -2032,12 +2078,12 @@ class _PromptRow extends StatelessWidget {
   final HomeActionPrompt prompt;
   final VoidCallback onChanged;
 
-  IconData get _icon => switch (prompt.kind) {
-    HomeActionPromptKind.askCardFriends => Icons.badge_outlined,
-    HomeActionPromptKind.inviteFriends => Icons.person_add_alt_1_outlined,
-    HomeActionPromptKind.addPhoto => Icons.add_a_photo_outlined,
-    HomeActionPromptKind.connectMatchmakers => Icons.handshake_outlined,
-    HomeActionPromptKind.completeProfile => Icons.edit_note_rounded,
+  AppGlyph get _glyph => switch (prompt.kind) {
+    HomeActionPromptKind.askCardFriends => AppGlyph.card,
+    HomeActionPromptKind.inviteFriends => AppGlyph.share,
+    HomeActionPromptKind.addPhoto => AppGlyph.photo,
+    HomeActionPromptKind.connectMatchmakers => AppGlyph.people,
+    HomeActionPromptKind.completeProfile => AppGlyph.person,
   };
 
   Future<void> _open(BuildContext context) async {
@@ -2077,7 +2123,7 @@ class _PromptRow extends StatelessWidget {
       leading: CircleAvatar(
         radius: 22,
         backgroundColor: blue.withValues(alpha: dark ? 0.2 : 0.12),
-        child: Icon(_icon, size: 20, color: blue),
+        child: AppGlyphIcon(_glyph, size: 20, color: blue),
       ),
       title: prompt.title,
       subtitle: prompt.subtitle,
@@ -2085,6 +2131,99 @@ class _PromptRow extends StatelessWidget {
       onTap: () => _open(context),
       onLongPress: (BuildContext anchor) => _MenuButton.open(anchor, menu),
       menu: const SizedBox.shrink(),
+    );
+  }
+}
+
+/// One step for the user's own card on the action list: the glyph of what it
+/// is about, the sentence, and the step's own button.
+class _PersonalStepRow extends StatelessWidget {
+  const _PersonalStepRow({
+    super.key,
+    required this.step,
+    required this.onChanged,
+  });
+
+  final PersonalNextStep step;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color rose = context.tokens.femaleAccent;
+    Future<void> run() async {
+      await PersonalNextAction.run(context, step);
+      onChanged();
+    }
+
+    // Its own row rather than [BoardRow]: the step is a whole sentence (two
+    // lines), and its button says what it does.
+    return InkWell(
+      onTap: run,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Row(
+            children: <Widget>[
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: context.tokens.femaleWash,
+                child: AppGlyphIcon(
+                  PersonalNextAction.glyphOf(step.kind),
+                  size: 20,
+                  color: rose,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      step.text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'הכרטיס האישי שלך',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: context.tokens.femaleInk,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 112),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: TextButton(
+                    onPressed: run,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: context.tokens.ctaInk,
+                      textStyle: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    child: Text(step.action),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

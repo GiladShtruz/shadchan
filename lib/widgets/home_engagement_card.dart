@@ -128,8 +128,8 @@ class _HomeEngagementCardState extends State<HomeEngagementCard> {
     // matters, and the button under it still works — a bracha is addressed by
     // account, not by name.
     final String headline = engagement.matchmakerName.isEmpty
-        ? 'מזל טוב! לאחד השדכנים בקהילה התחתן זוג 🎉'
-        : 'מזל טוב! לשדכן ${engagement.matchmakerName} התחתן זוג 🎉';
+        ? 'מזל טוב! לאחד השדכנים בקהילה התחתן זוג'
+        : 'מזל טוב! לשדכן ${engagement.matchmakerName} התחתן זוג';
 
     // The one line there is. It names nobody on purpose, and there is no other
     // version of it: the good news travels, the couple does not.
@@ -172,7 +172,7 @@ class _HomeEngagementCardState extends State<HomeEngagementCard> {
                         Icon(Icons.check_circle_outline, size: 16, color: tone),
                         const SizedBox(width: 6),
                         Text(
-                          'שלחת מזל טוב 💛',
+                          'שלחת מזל טוב',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: tone,
                             fontWeight: FontWeight.w800,

@@ -1,3 +1,4 @@
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/services/community_service.dart';
 
 /// One thing the whole community reached.
@@ -6,7 +7,7 @@ class CommunityMilestone {
     required this.id,
     required this.title,
     required this.body,
-    required this.emoji,
+    required this.glyph,
   });
 
   /// Stable across releases — it is what "already celebrated" is remembered by.
@@ -16,7 +17,7 @@ class CommunityMilestone {
   final String body;
 
   /// The one mark on the card. Big, and the only decoration on it.
-  final String emoji;
+  final AppGlyph glyph;
 }
 
 /// What the community is congratulated on, and — the part that took the most
@@ -105,7 +106,7 @@ abstract final class CommunityMilestones {
           id: 'community.couples.$milestone',
           title: '$milestone זוגות יצאו לדייט דרך שדכני הקהילה',
           body: 'כל אחד מהם התחיל ממישהו שחשב על מישהו. תודה שאתם חלק מזה.',
-          emoji: '💞',
+          glyph: AppGlyph.couple,
         ),
       if (reached(engagementMilestones, allTime.engagements)
           case final int milestone)
@@ -113,21 +114,21 @@ abstract final class CommunityMilestones {
           id: 'community.engagements.$milestone',
           title: '$milestone זוגות כבר הגיעו לחופה מהקהילה',
           body: 'מזל טוב לכולם. שנזכה להמשיך.',
-          emoji: '🎉',
+          glyph: AppGlyph.ring,
         ),
       if (reached(ideaMilestones, allTime.ideas) case final int milestone)
         CommunityMilestone(
           id: 'community.ideas.$milestone',
           title: 'הקהילה הגיעה ל־${_grouped(milestone)} רעיונות',
           body: 'זה הרבה מאוד מחשבה על אנשים אחרים. ממשיכים.',
-          emoji: '💡',
+          glyph: AppGlyph.spark,
         ),
       if (reached(friendMilestones, allTime.friends) case final int milestone)
         CommunityMilestone(
           id: 'community.friends.$milestone',
           title: '${_grouped(milestone)} חברים כבר במאגרים של הקהילה',
           body: 'ככל שהמאגרים גדלים, יש למי לחשוב.',
-          emoji: '🌱',
+          glyph: AppGlyph.sprout,
         ),
     ];
 

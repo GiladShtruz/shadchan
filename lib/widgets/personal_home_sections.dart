@@ -4,6 +4,9 @@ import 'dart:async';
 import 'package:shadchan/utils/avatar_image.dart';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/screens/chats_screen.dart';
 import 'package:provider/provider.dart';
@@ -536,30 +539,10 @@ class _RecentMatchmakerRow extends StatelessWidget {
   }
 }
 
-/// "מה כדאי לעשות עכשיו": exactly one short step, chosen by
-/// [PersonalNextStep.pick], whose button goes straight to where it is done.
-class PersonalNextAction extends StatelessWidget {
-  const PersonalNextAction({
-    super.key,
-    required this.card,
-    required this.live,
-    required this.onMatchmakers,
-  });
-
-  final Person card;
-  final bool live;
-
-  /// Opens "השדכנים שלי" — where several friends are given access.
-  final VoidCallback onMatchmakers;
-
-  static const String title = 'מה כדאי לעשות עכשיו';
-
-  @override
-  Widget build(BuildContext context) => ValueListenableBuilder<int>(
-    valueListenable: PersonalHelpersStore.revision,
-    builder: (BuildContext context, _, _) => _build(context),
-  );
-
+/// The steps worth doing for the user's own card — **rows on "הפעולה הבאה
+/// שלך"**, the one list of what to do next on בית, mixed by urgency with the
+/// matchmaker's work. There is no separate "מה כדאי לעשות עכשיו" any more.
+abstract final class PersonalNextAction {
   /// Whether the card is due for a look: three months since it was last
   /// edited or confirmed, on this phone or on the server.
   static bool reviewDueFor(BuildContext context, Person card) {
@@ -574,125 +557,100 @@ class PersonalNextAction extends StatelessWidget {
     return PersonalAreaProvider.reviewDue(reviewed);
   }
 
-  /// The one step this visit offers — shared with "מה חדש אצלי", so the two
-  /// never say the same thing.
-  static PersonalNextStep stepFor(
-    BuildContext context, {
-    required Person card,
-    required bool live,
-  }) {
-    final CardAccessProvider access = context.watch<CardAccessProvider>();
-    final UserProfileProvider profile = context.watch<UserProfileProvider>();
+  /// Every step for the card, first the most pressing. With no card (or a
+  /// deleted one) the one step is to write (or restore) it.
+  static List<PersonalNextStep> stepsFor(BuildContext context) {
+    final PersonalCardProvider? cards = maybeWatch<PersonalCardProvider>(
+      context,
+    );
+    final CardAccessProvider? access = maybeWatch<CardAccessProvider>(context);
+    final UserProfileProvider? profile = maybeWatch<UserProfileProvider>(
+      context,
+    );
+    if (cards == null || access == null || profile == null) {
+      return const <PersonalNextStep>[];
+    }
+    final Person? card = cards.card;
+    if (card == null || cards.isDeleted) {
+      return <PersonalNextStep>[
+        PersonalNextStep.withoutCard(deleted: cards.isDeleted),
+      ];
+    }
     final PersonalAreaProvider? data = maybeWatch<PersonalAreaProvider>(
       context,
     );
     DateTime touched = card.updatedAt;
     final DateTime? remote = data?.date('editedAt');
     if (remote != null && remote.isAfter(touched)) touched = remote;
-    return PersonalNextStep.pick(
+    return PersonalNextStep.steps(
       card: card,
-      live: live,
+      live: cards.hasCard,
       friends: matchmakerFriendsOf(access),
       hidden: PersonalHelpersStore.hidden,
       hasPhone: profile.myPhone != null,
       friendsLoaded: access.helpersLoaded && access.ownerAccessLoaded,
       lastTouched: touched,
       reviewDue: reviewDueFor(context, card),
-      gender: context.userGender,
+      gender: profile.gender,
       draftHint: PersonalCardCodec.draftHint(card),
     );
   }
 
-  Widget _build(BuildContext context) {
-    final UserProfileProvider profile = context.watch<UserProfileProvider>();
-    final PersonalNextStep step = stepFor(context, card: card, live: live);
-
-    Future<void> run() async {
-      switch (step.kind) {
-        case PersonalNextStepKind.request:
-          await MatchmakerFriendSheet.show(context, step.friend!);
-        case PersonalNextStepKind.grant:
-          if (step.friend != null) {
-            await PersonalAccessFlow.grant(context, step.friend!);
-          } else {
-            onMatchmakers();
-          }
-        case PersonalNextStepKind.addPhone:
-          final String? phone = await MyPhoneDialog.show(context);
-          if (phone != null) await profile.setMyPhone(phone);
-        case PersonalNextStepKind.finishCard ||
-            PersonalNextStepKind.review ||
-            PersonalNextStepKind.refresh:
-          await PersonalAreaService.editCard(context);
-        case PersonalNextStepKind.invite:
-          try {
-            await PersonalAreaService.invite(context);
-          } on Object {
-            // Nothing to share to is not worth a message.
-          }
-      }
-    }
-
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = dark
-        ? AppColors.secondaryDarkDm
-        : context.tokens.ctaAccent;
-    final IconData icon = switch (step.kind) {
-      PersonalNextStepKind.request => Icons.mark_email_unread_outlined,
-      PersonalNextStepKind.grant => Icons.lock_open_rounded,
-      PersonalNextStepKind.addPhone => Icons.phone_outlined,
-      PersonalNextStepKind.finishCard => Icons.edit_note_rounded,
-      PersonalNextStepKind.review => Icons.auto_awesome_outlined,
-      PersonalNextStepKind.refresh => Icons.add_a_photo_outlined,
-      PersonalNextStepKind.invite => Icons.person_add_alt_1_outlined,
-    };
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        const PersonalSectionTitle(title),
-        HomePaperCard(
-          key: ValueKey<PersonalNextStepKind>(step.kind),
-          stripe: accent,
-          onTap: run,
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Icon(icon, size: 22, color: accent),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      step.text,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: FilledButton.tonal(
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  onPressed: run,
-                  child: Text(step.action),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+  /// The one step first in line — what "מה חדש אצלי" does not repeat.
+  static PersonalNextStep stepFor(
+    BuildContext context, {
+    required Person card,
+    required bool live,
+  }) {
+    final List<PersonalNextStep> all = stepsFor(context);
+    return all.isEmpty
+        ? PersonalNextStep.withoutCard(deleted: false)
+        : all.first;
   }
+
+  /// Does [step] — straight to where it is done.
+  static Future<void> run(BuildContext context, PersonalNextStep step) async {
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    switch (step.kind) {
+      case PersonalNextStepKind.request:
+        await MatchmakerFriendSheet.show(context, step.friend!);
+      case PersonalNextStepKind.grant:
+        if (step.friend != null) {
+          await PersonalAccessFlow.grant(context, step.friend!);
+        } else {
+          PersonalNav.openMatchmakers(context);
+        }
+      case PersonalNextStepKind.addPhone:
+        final String? phone = await MyPhoneDialog.show(context);
+        if (phone != null) await profile.setMyPhone(phone);
+      case PersonalNextStepKind.finishCard ||
+          PersonalNextStepKind.review ||
+          PersonalNextStepKind.refresh ||
+          PersonalNextStepKind.createCard:
+        await PersonalAreaService.editCard(context);
+      case PersonalNextStepKind.restoreCard:
+        await PersonalCardLifecycle.restore(context);
+      case PersonalNextStepKind.invite:
+        try {
+          await PersonalAreaService.invite(context);
+        } on Object {
+          // Nothing to share to is not worth a message.
+        }
+    }
+  }
+
+  /// The step's mark, in the app's own glyphs.
+  static AppGlyph glyphOf(PersonalNextStepKind kind) => switch (kind) {
+    PersonalNextStepKind.request => AppGlyph.key,
+    PersonalNextStepKind.grant => AppGlyph.key,
+    PersonalNextStepKind.addPhone => AppGlyph.person,
+    PersonalNextStepKind.finishCard ||
+    PersonalNextStepKind.createCard ||
+    PersonalNextStepKind.restoreCard ||
+    PersonalNextStepKind.review => AppGlyph.card,
+    PersonalNextStepKind.refresh => AppGlyph.photo,
+    PersonalNextStepKind.invite => AppGlyph.share,
+  };
 }
 
 /// One figure about the community — a different one on each visit, never a
@@ -746,16 +704,15 @@ class PersonalCommunityFigure extends StatelessWidget {
       add(
         'engagementsWeek',
         (num v) => v == 1
-            ? 'מזל טוב! זוג מהקהילה התארס השבוע 🎉'
-            : 'מזל טוב! $v זוגות מהקהילה התארסו השבוע 🎉',
+            ? 'מזל טוב! זוג מהקהילה התארס השבוע'
+            : 'מזל טוב! $v זוגות מהקהילה התארסו השבוע',
       );
     }
     // A Hebrew month, as everywhere the community counts by the month.
     if (stats['hebrewMonthKey'] == CommunityPeriods.monthKey(now)) {
       add(
         'engagementsMonth',
-        (num v) =>
-            v == 1 ? 'חתונה אחת נוספה החודש 🎉' : '$v חתונות נוספו החודש 🎉',
+        (num v) => v == 1 ? 'חתונה אחת נוספה החודש' : '$v חתונות נוספו החודש',
       );
     }
     if (stats['monthKey'] == monthKey(now)) {

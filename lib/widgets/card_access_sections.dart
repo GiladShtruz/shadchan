@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/services/private_looking_service.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/matchmaker_friends.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -428,8 +429,10 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
                     row.matchmakerUid,
                     row.matchmakerName,
                   ),
-                  permissionsLabel:
-                      'כרטיס ${row.canReadCard ? '✓' : '—'} | מה אני מחפש ${row.canReadLooking ? '✓' : '—'}',
+                  permissionsLabel: MatchmakerFriends.permissionsText(
+                    card: row.canReadCard,
+                    looking: row.canReadLooking,
+                  ),
                   busy: access.isBusy('access:${row.id}'),
                   menu: <String, VoidCallback>{
                     'שינוי הרשאות': () => _editPermissions(access, row),

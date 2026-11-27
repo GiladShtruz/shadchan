@@ -10,6 +10,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
 /// "חברים שהתחתנו" — the one page in the app that only holds good news.
@@ -181,7 +182,11 @@ class _MarriedHeader extends StatelessWidget {
       ),
       child: Column(
         children: <Widget>[
-          Text('🎉', style: theme.textTheme.displaySmall),
+          AppGlyphIcon(
+            AppGlyph.spark,
+            size: 40,
+            color: context.tokens.ctaAccent,
+          ),
           const SizedBox(height: 6),
           Text(
             count == 1
@@ -233,7 +238,11 @@ class _QuietHeader extends StatelessWidget {
 
     return Row(
       children: <Widget>[
-        Text('💍', style: theme.textTheme.titleLarge),
+        AppGlyphIcon(
+          AppGlyph.ring,
+          size: 24,
+          color: context.tokens.adapt(AppColors.statusMarried),
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -319,7 +328,7 @@ class _CoupleCard extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                'מזל טוב 💍',
+                'מזל טוב',
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: context.tokens.adapt(AppColors.statusMarried),
                   fontWeight: FontWeight.w800,
@@ -369,7 +378,11 @@ class _MarriedFriendRow extends StatelessWidget {
                   ),
                 ),
               ),
-              Text('🎉', style: theme.textTheme.titleMedium),
+              AppGlyphIcon(
+                AppGlyph.spark,
+                size: 20,
+                color: context.tokens.ctaAccent,
+              ),
             ],
           ),
         ),

@@ -380,19 +380,81 @@ export function chatPreview(type: unknown, text: string): string {
   if (text.trim().length > 0) return text;
   switch (type) {
     case 'voice':
-      return '🎤 הודעה קולית';
+      return 'הודעה קולית';
     case 'image':
-      return '📷 תמונה';
+      return 'תמונה';
     case 'card':
-      return '🪪 כרטיס';
+      return 'כרטיס';
     case 'idea':
-      return '💡 רעיון';
+      return 'רעיון';
     case 'ideaOffer':
-      return '💡 יש לי רעיון בשבילך';
+      return 'יש לי רעיון בשבילך';
     default:
       return 'הודעה חדשה';
   }
 }
+
+/** The one conversation id of two accounts: the uids, sorted. */
+export function directChatId(a: string, b: string): string {
+  return a < b ? `${a}_${b}` : `${b}_${a}`;
+}
+
+/**
+ * Whether [other] may be written to by somebody who is not tied to them — a
+ * card, a share, a partnership, the phone book: only a matchmaker the caller
+ * was shown by the app itself, that is somebody who appears in the
+ * community (a row on the board that is not hidden).
+ */
+export function communityExposed(member: Record<string, unknown> | undefined): boolean {
+  return member !== undefined && member['hidden'] !== true;
+}
+
+/**
+ * "צ'אט" from a matchmaker's public page (the leaderboard, the community):
+ * opens the conversation with somebody the caller is not tied to, as an
+ * ordinary chat — no request and no approval. The rules let a conversation
+ * be *created* only between people tied to each other, and are already at
+ * Firestore's ten-read limit, so this one case is created here, after the
+ * server checked that [otherUid] is shown in the community. The first
+ * message is then an ordinary update. Writes nothing when the conversation
+ * already exists.
+ */
+export const openCommunityChat = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  const provider = (request.auth?.token as { firebase?: { sign_in_provider?: string } } | undefined)
+    ?.firebase?.sign_in_provider;
+  if (!uid || provider === 'anonymous') {
+    throw new HttpsError('unauthenticated', 'Sign in first.');
+  }
+  const otherUid = String((request.data as { otherUid?: unknown } | undefined)?.otherUid ?? '');
+  if (!/^[A-Za-z0-9]{10,128}$/.test(otherUid) || otherUid === uid) {
+    throw new HttpsError('invalid-argument', 'otherUid');
+  }
+  const db = getFirestore();
+  const chatId = directChatId(uid, otherUid);
+  const chat = db.doc(`chats/${chatId}`);
+  const existing = await chat.get();
+  if (existing.exists) return { chatId, created: false };
+  const member = await db.doc(`communityMembers/${otherUid}`).get();
+  if (!communityExposed(member.exists ? member.data() : undefined)) {
+    throw new HttpsError('permission-denied', 'Not in the community.');
+  }
+  await db.runTransaction(async (tx) => {
+    const again = await tx.get(chat);
+    if (again.exists) return;
+    tx.create(chat, {
+      members: [uid, otherUid].sort(),
+      type: 'direct',
+      names: {},
+      photos: {},
+      unread: {},
+      readAt: {},
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return { chatId, created: true };
+});
 
 /** One chat message, pushed to the other members' phones (no inbox row). */
 export const onChatMessageCreated = onDocumentCreated(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 
 /// One row the way "הלוח שלי" draws it: an accent bar in the person's colour
 /// (two, one on each edge, for a couple), the face or faces, a bold title with
@@ -70,6 +71,29 @@ class BoardRow extends StatelessWidget {
   /// row's "⋯" (a direct action such as "בקשת גישה").
   final bool flat;
 
+  /// The row's mark in the app's own glyph family where there is one — a
+  /// bell, a card, a spark, a chat — and the plain icon otherwise.
+  static Widget markOf(IconData icon, double size, Color color) {
+    final AppGlyph? glyph = glyphFor(icon);
+    return glyph == null
+        ? Icon(icon, size: size, color: color)
+        : AppGlyphIcon(glyph, size: size + 1, color: color);
+  }
+
+  /// The glyph that stands for a Material [icon] on the board, if any.
+  static AppGlyph? glyphFor(IconData icon) {
+    if (icon == Icons.notifications_none_rounded ||
+        icon == Icons.notifications_active_outlined) {
+      return AppGlyph.bell;
+    }
+    if (icon == Icons.badge_outlined) return AppGlyph.card;
+    if (icon == Icons.auto_awesome_outlined || icon == Icons.cake_outlined) {
+      return AppGlyph.spark;
+    }
+    if (icon == Icons.forum_outlined) return AppGlyph.chat;
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (flat) {
@@ -132,7 +156,7 @@ class BoardRow extends StatelessWidget {
                                 const SizedBox(width: 6),
                               ],
                               Flexible(
-                                child: Text(
+                                child: AppGlyphText(
                                   title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -146,10 +170,10 @@ class BoardRow extends StatelessWidget {
                               ),
                               if (why != null) ...<Widget>[
                                 const SizedBox(width: 5),
-                                Icon(
+                                markOf(
                                   why,
-                                  size: 14,
-                                  color: theme.colorScheme.onSurfaceVariant,
+                                  14,
+                                  theme.colorScheme.onSurfaceVariant,
                                 ),
                               ],
                             ],
@@ -235,7 +259,7 @@ class BoardRow extends StatelessWidget {
                             const SizedBox(width: 6),
                           ],
                           Flexible(
-                            child: Text(
+                            child: AppGlyphText(
                               title,
                               maxLines: 1,
                               softWrap: false,
@@ -248,7 +272,7 @@ class BoardRow extends StatelessWidget {
                           ),
                           if (why != null) ...<Widget>[
                             const SizedBox(width: 6),
-                            Icon(why, size: 15, color: muted),
+                            markOf(why, 15, muted),
                           ],
                         ],
                       ),

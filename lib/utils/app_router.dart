@@ -41,7 +41,6 @@ import 'package:shadchan/screens/privacy_policy_screen.dart';
 import 'package:shadchan/screens/reminders_screen.dart';
 import 'package:shadchan/screens/entry_route_screen.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
-import 'package:shadchan/screens/personal_home_screen.dart';
 import 'package:shadchan/screens/personal_invite_screen.dart';
 import 'package:shadchan/screens/card_friend_screen.dart';
 import 'package:shadchan/services/invite_link_service.dart';
@@ -269,7 +268,9 @@ abstract final class AppRouter {
       Telemetry.currentFeature = feature;
       Telemetry.opened(
         feature,
-        action: feature == AppFeature.other ? path.split('/').where((String p) => p.isNotEmpty).firstOrNull : null,
+        action: feature == AppFeature.other
+            ? path.split('/').where((String p) => p.isNotEmpty).firstOrNull
+            : null,
       );
       final Stopwatch watch = Stopwatch()..start();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -511,14 +512,13 @@ abstract final class AppRouter {
                   // keep one.
                   return ValueListenableBuilder<int>(
                     valueListenable: WorkspaceStore.revision,
-                    builder: (BuildContext context, _, _) =>
-                        WorkspaceStore.matchmakerEnabled
-                        ? HomeScreen(
-                            key: ValueKey<String>('home:${state.uri}'),
-                            initialSearch: q['q'] ?? '',
-                            focusBoard: q['section'] == 'board',
-                          )
-                        : const PersonalHomeScreen(),
+                    builder: (BuildContext context, _, _) => HomeScreen(
+                      key: ValueKey<String>(
+                        'home:${state.uri}:${WorkspaceStore.matchmakerEnabled}',
+                      ),
+                      initialSearch: q['q'] ?? '',
+                      focusBoard: q['section'] == 'board',
+                    ),
                   );
                 },
               ),

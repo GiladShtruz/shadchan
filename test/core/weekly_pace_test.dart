@@ -98,7 +98,7 @@ void main() {
       expect(pace.reached, isTrue);
       expect(pace.done, 7);
       expect(pace.progress, 1);
-      expect(pace.headline(Gender.male), 'שברת את השיא האישי שלך 🎉');
+      expect(pace.headline(Gender.male), 'שברת את השיא האישי שלך');
     });
   });
 

@@ -2,15 +2,16 @@ import 'package:shadchan/utils/enums.dart';
 
 /// One rung of the matchmaker ladder: earned by the number of ideas opened.
 class MatchmakerRank {
-  const MatchmakerRank(this.ideas, this.male, this.female, this.emoji);
+  const MatchmakerRank(this.ideas, this.male, this.female);
 
   /// Ideas opened to reach it.
   final int ideas;
   final String male;
   final String female;
 
-  /// A small visual mark beside the name — never the name itself.
-  final String emoji;
+  /// The rung on the ladder, from 1 — the figure drawn inside the medal
+  /// ([RankMark]). The app draws its own mark; no emoji stands for a rank.
+  int get level => MatchmakerRanks.ladder.indexOf(this) + 1;
 
   /// The rank's name in the matchmaker's own gender — the masculine form when
   /// it is not known, as in the app's other titles.
@@ -27,15 +28,15 @@ class MatchmakerRank {
 /// next rank to be half way to).
 abstract final class MatchmakerRanks {
   static const List<MatchmakerRank> ladder = <MatchmakerRank>[
-    MatchmakerRank(0, 'שדכן מתחיל', 'שדכנית מתחילה', '🌱'),
-    MatchmakerRank(15, 'שדכן חבר', 'שדכנית חברה', '🤝'),
-    MatchmakerRank(50, 'שדכן פעיל', 'שדכנית פעילה', '🔥'),
-    MatchmakerRank(100, 'שדכן מתקדם', 'שדכנית מתקדמת', '🚀'),
-    MatchmakerRank(150, 'שדכן מצטיין', 'שדכנית מצטיינת', '⭐'),
-    MatchmakerRank(200, 'שדכן מקצוען', 'שדכנית מקצוענית', '🏅'),
-    MatchmakerRank(300, 'שדכן בכיר', 'שדכנית בכירה', '🏆'),
-    MatchmakerRank(500, 'שדכן־על', 'שדכנית־על', '👑'),
-    MatchmakerRank(1000, 'מאסטר שדכן', 'מאסטר שדכנית', '💎'),
+    MatchmakerRank(0, 'שדכן מתחיל', 'שדכנית מתחילה'),
+    MatchmakerRank(15, 'שדכן חבר', 'שדכנית חברה'),
+    MatchmakerRank(50, 'שדכן פעיל', 'שדכנית פעילה'),
+    MatchmakerRank(100, 'שדכן מתקדם', 'שדכנית מתקדמת'),
+    MatchmakerRank(150, 'שדכן מצטיין', 'שדכנית מצטיינת'),
+    MatchmakerRank(200, 'שדכן מקצוען', 'שדכנית מקצוענית'),
+    MatchmakerRank(300, 'שדכן בכיר', 'שדכנית בכירה'),
+    MatchmakerRank(500, 'שדכן־על', 'שדכנית־על'),
+    MatchmakerRank(1000, 'מאסטר שדכן', 'מאסטר שדכנית'),
   ];
 
   /// The explanation shown with the whole ladder.
@@ -78,9 +79,8 @@ abstract final class MatchmakerRanks {
   static String nameAt(int ideas, Gender? gender) =>
       '${current(ideas).nameFor(gender)}${plus(ideas) ? '+' : ''}';
 
-  /// "🔥 שדכן פעיל+" — the emoji, then the name.
-  static String titleAt(int ideas, Gender? gender) =>
-      '${current(ideas).emoji} ${nameAt(ideas, gender)}';
+  /// "שדכן פעיל+" — the rank as a title. Drawn beside a [RankMark].
+  static String titleAt(int ideas, Gender? gender) => nameAt(ideas, gender);
 
   /// Ideas opened out of the next rank's threshold, 0–1. Full at the top.
   static double progress(int ideas) {
@@ -89,15 +89,14 @@ abstract final class MatchmakerRanks {
     return (ideas / to.ideas).clamp(0.0, 1.0);
   }
 
-  /// "עוד 81 רעיונות לשדכן בכיר 🏆", or — at the top — the rank itself.
+  /// "עוד 81 רעיונות לשדכן בכיר", or — at the top — the rank itself.
   static String progressLine(int ideas, Gender? gender) {
     final MatchmakerRank? to = next(ideas);
     if (to == null) {
-      return 'הגעת לדרגה הגבוהה ביותר: ${ladder.last.nameFor(gender)} '
-          '${ladder.last.emoji}';
+      return 'הגעת לדרגה הגבוהה ביותר: ${ladder.last.nameFor(gender)}';
     }
     final int missing = to.ideas - ideas;
     final String more = missing == 1 ? 'עוד רעיון אחד' : 'עוד $missing רעיונות';
-    return '$more ל${to.nameFor(gender)} ${to.emoji}';
+    return '$more ל${to.nameFor(gender)}';
   }
 }

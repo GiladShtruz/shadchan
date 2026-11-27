@@ -61,7 +61,7 @@ class _PersonalCardProfileSectionState
       final bool? sure = await showDialog<bool>(
         context: context,
         builder: (BuildContext dialogContext) => AlertDialog(
-          title: const Text('מזל טוב! 🎉'),
+          title: const Text('מזל טוב!'),
           content: const Text(
             'לסמן את הסטטוס שלך כ"מזל טוב"? השדכנים שיש להם גישה לכרטיס '
             'שלך יראו את העדכון.',

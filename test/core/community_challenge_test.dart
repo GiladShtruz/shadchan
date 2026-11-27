@@ -238,7 +238,7 @@ void main() {
         ))
           line.text,
       ];
-      expect(lines.first, 'מזל טוב! זוג נוסף התארס 🎉');
+      expect(lines.first, 'מזל טוב! זוג נוסף התארס');
       expect(lines, contains('18 רעיונות נפתחו היום'));
       expect(lines, contains('6 זוגות התחילו לצאת השבוע'));
       // The week's ideas are not repeated when today already has some.

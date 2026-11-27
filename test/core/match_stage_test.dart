@@ -260,18 +260,15 @@ void main() {
     });
 
     test('are described in the unit a person would use', () {
-      expect(
-        DatingCheckIn.headline(7),
-        'הם יוצאים כבר 7 ימים 😊 בדקת איך הולך?',
-      );
-      expect(DatingCheckIn.headline(1), 'הם יוצאים כבר יום 😊 בדקת איך הולך?');
+      expect(DatingCheckIn.headline(7), 'הם יוצאים כבר 7 ימים. בדקת איך הולך?');
+      expect(DatingCheckIn.headline(1), 'הם יוצאים כבר יום. בדקת איך הולך?');
       expect(
         DatingCheckIn.headline(14),
-        'הם יוצאים כבר שבועיים 😊 בדקת איך הולך?',
+        'הם יוצאים כבר שבועיים. בדקת איך הולך?',
       );
       expect(
         DatingCheckIn.headline(90),
-        'הם יוצאים כבר 3 חודשים 😊 בדקת איך הולך?',
+        'הם יוצאים כבר 3 חודשים. בדקת איך הולך?',
       );
       // A clock that has gone backwards must not produce "כבר -2 ימים".
       expect(

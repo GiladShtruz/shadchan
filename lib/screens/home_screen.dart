@@ -1,6 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
-import 'package:shadchan/widgets/app_refresh.dart';
+import 'package:shadchan/services/workspace_store.dart';
+import 'package:shadchan/widgets/home_whats_new.dart';
 import 'package:shadchan/screens/personal_home_screen.dart';
+import 'package:shadchan/widgets/personal_home_sections.dart';
+import 'package:shadchan/widgets/reminders_bell_button.dart';
+import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -29,7 +35,6 @@ import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_board.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
-import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:shadchan/widgets/home_action_area.dart';
 import 'package:shadchan/widgets/home_week_block.dart';
 import 'package:shadchan/widgets/home_card_friends.dart';
@@ -140,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// below shows.
   void _scheduleCommunityPrompts() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (!mounted || !WorkspaceStore.matchmakerEnabled) {
         return;
       }
       final PersonRepository people = context.read<PersonRepository>();
@@ -223,13 +228,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       child: Builder(
         builder: (BuildContext context) => Scaffold(
-          appBar: _buildGreetingAppBar(),
+          appBar: WorkspaceStore.matchmakerEnabled
+              ? _buildGreetingAppBar()
+              // A single who does not matchmake has no database to search.
+              : const ShadchanAppBar(
+                  actions: <Widget>[RemindersBellButton(boxed: true)],
+                ),
           // The same floating "+" as המאגר שלי and הרעיונות שלי, in the same
           // corner; here it asks which of the two is meant.
-          floatingActionButton: AddFab(
-            tooltip: 'הוספה',
-            onPressed: () => AddChoiceDialog.show(context),
-          ),
+          floatingActionButton: WorkspaceStore.matchmakerEnabled
+              ? AddFab(
+                  tooltip: 'הוספה',
+                  onPressed: () => AddChoiceDialog.show(context),
+                )
+              : null,
           body: SafeArea(
             child: Stack(
               children: <Widget>[
@@ -244,7 +256,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ]),
                   builder: (BuildContext context, _) => _buildHome(),
                 ),
-                _buildSearchPanel(Theme.of(context), personRepository),
+                if (WorkspaceStore.matchmakerEnabled)
+                  _buildSearchPanel(Theme.of(context), personRepository),
               ],
             ),
           ),
@@ -351,9 +364,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final UserProfileProvider userProfile = context
         .watch<UserProfileProvider>();
     final Gender? userGender = userProfile.gender;
-    // Somebody who keeps a card (or is about to write one) sees it on this
-    // same home — written or not, deleted or not.
-    final bool hasOwnCard = userProfile.isSingle;
+    // **One home for every kind of user, built from the same blocks** — a
+    // block is shown or left out by the two capabilities, never by a second
+    // home with a logic of its own.
+    final bool matchmaker = WorkspaceStore.matchmakerEnabled;
+    // Never neither: somebody without the matchmaker's tools keeps a card.
+    final bool single = userProfile.isSingle || !matchmaker;
     context.watch<PersonalCardProvider>();
     final HomeBoardStore board = HomeBoardStore.instance;
 
@@ -361,11 +377,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _scheduleBoardFocus(force: true);
     }
 
-    final List<HomeOpenIdea> openIdeas = boardOpenIdeas(
-      matches: matchRepository,
-      people: personRepository,
-    );
-    final int friends = personRepository.databaseCount;
+    final List<HomeOpenIdea> openIdeas = matchmaker
+        ? boardOpenIdeas(matches: matchRepository, people: personRepository)
+        : const <HomeOpenIdea>[];
 
     double inset() => homeHorizontalInset(context);
     // One gap between blocks, everywhere.
@@ -376,58 +390,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
 
-    // **An action screen, not a dashboard.** In a few seconds somebody who
-    // opens the app should see where they stand (the four squares), the two
-    // things they can add (two large buttons, pinned under the search bar),
-    // and what is worth moving forward ("מה השלב הבא שלך?" — a chat-list of
-    // rows with hairlines between them, no card per row, then "הצג עוד").
-    final String greetingName =
-        userProfile.firstName ?? '{שדכן|שדכנית}'.forGender(userGender);
+    final String first = (userProfile.firstName ?? '').trim();
+    final String greetingName = first.isNotEmpty
+        ? first
+        : matchmaker
+        ? '{שדכן|שדכנית}'.forGender(userGender)
+        : 'שלום';
 
     return AppRefreshIndicator(
-      scope: RefreshScope.records,
+      scope: matchmaker ? RefreshScope.records : RefreshScope.matchmakers,
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         controller: _homeScrollController,
         slivers: <Widget>[
-          // 1. The greeting. A matchmaker who also keeps a card of their own
-          // finds the way into it in the far corner of the same line.
+          // 1. The header: the greeting (the search row is in the bar).
           block(
             HomeGreeting(
               greeting: _timeOfDayGreeting(
                 TimeOfDay.fromDateTime(DateTime.now()),
               ),
               name: greetingName,
-              // No photo beside the greeting: the user's face is the profile
-              // circle in the middle of the bottom bar.
-              line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
+              line: matchmaker
+                  ? '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender)
+                  : null,
             ),
             top: 8,
           ),
 
-          // 2. The four all-time figures, back in their squares — smaller and
-          // closer together than they once were, each still a tap into its list.
-          if (friends > 0)
+          // 2. "הנתונים שלי" | "נתוני הקהילה" and the weekly target — where
+          // the four squares used to be. The window switch is pinned under
+          // the search row once the figures scroll away.
+          if (matchmaker) ...<Widget>[
+            const SliverToBoxAdapter(child: SizedBox(height: 4)),
+            HomeDataTabs.pinnedSliver(context, inset: inset()),
             block(
-              ActivityFigureRow(
-                people: personRepository,
-                matches: matchRepository,
-                compact: true,
+              HomeWeekBlock(
+                showTabs: false,
+                onOpen: () => AppNavigation.open(context, '/activity'),
               ),
-              top: 8,
+              top: 2,
             ),
+          ],
 
-          // 3. "הוספת חברים" | "הוספת רעיון" — the page's two main buttons.
-          // Pinned: the greeting and the figures scroll away, the search bar
-          // and these two stay at the top of the page.
-          const SliverToBoxAdapter(child: SizedBox(height: 10)),
-          HomeActionArea.pinnedSliver(context, inset: inset()),
+          // 3. "מה חדש אצלי" — a small living feed, both sides mixed.
+          block(const HomeWhatsNew(), top: 22),
 
-          // 4. "הפעולה הבאה שלך" — the progress line, then what to do next,
-          // five rows and "הצג עוד". First after the greeting: it is what the
-          // page is opened for.
-          block(const HomeNextStepTitle(), top: 22),
-          block(const HomeWeeklyProgress(), top: 6),
+          // 4. "החברים שלך" and 5. "שדכנים שותפים" — the matchmaker's work.
+          if (matchmaker) ...<Widget>[
+            block(const HomeCardFriendsSection(), top: 22),
+            block(const HomePartnerMatchmakers()),
+          ],
+
+          // 6. "השדכנים שלי" — the user's own side as a single, drawn as a
+          // place of its own (see [HomeMyMatchmakers]).
+          if (single) block(const HomeMyMatchmakers(), top: 22),
+
+          // 7. Everything else worth having on the page.
+          if (matchmaker) ...<Widget>[
+            block(const HomeActionArea(), top: 22),
+            block(const HomeEngagementCard()),
+          ] else ...<Widget>[
+            block(PersonalCommunityFigure(visit: _visit), top: 8),
+            if (context.watch<PersonalCardProvider>().hasCard)
+              block(const PersonalWhoSees()),
+          ],
+
+          // 8. "הפעולה הבאה שלך" — the one list of what to do next, at the
+          // foot of the page and as long as there is work: the matchmaker's
+          // ideas and the card's own steps, mixed by urgency.
+          block(const HomeNextStepTitle(), top: 26),
+          if (matchmaker && personRepository.databaseCount > 0)
+            block(const HomeWeeklyProgress(), top: 6),
           const SliverToBoxAdapter(child: SizedBox(height: 6)),
           HomeBoardSection(
             focusKey: _boardSectionKey,
@@ -438,32 +471,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             matchRepository: matchRepository,
             refresh: _boardRefresh,
           ),
-
-          // 5. "החברים שלך" — the friends this matchmaker thinks about — and
-          // "שדכנים שותפים" — the matchmakers they think with.
-          block(const HomeCardFriendsSection(), top: 22),
-          block(const HomePartnerMatchmakers()),
-
-          // 6. "השדכנים שלי" — only for somebody who keeps a card of their own:
-          // the matchmakers among their friends, as one more row of faces, and
-          // under it what is new around the card and the one step worth doing
-          // for it. The card itself lives on the profile, not on a button here.
-          if (hasOwnCard) ...<Widget>[
-            block(const HomeMyMatchmakers()),
-            block(const PersonalHomeBlock()),
-          ],
-
-          // 7. "הפעילות שלי" | "פעילות הקהילה" and the community's weekly
-          // target under them.
-          block(
-            HomeWeekBlock(
-              onOpen: () => AppNavigation.open(context, '/activity'),
-            ),
-          ),
-
-          // Somebody else's good news, for one launch. It draws nothing at all
-          // when there is none, which is nearly always.
-          block(const HomeEngagementCard()),
+          if (!matchmaker)
+            block(PersonalFooterLinks(gender: userGender), top: 18),
 
           SliverToBoxAdapter(
             child: SizedBox(
@@ -477,6 +486,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
+
+  /// Counts arrivals at the home, so each one can show a different
+  /// community figure (a single's home).
+  static int _visitCounter = Random().nextInt(1 << 16);
+  final int _visit = ++_visitCounter;
 
   // --- Search -------------------------------------------------------------
 
