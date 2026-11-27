@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:shadchan/utils/dating_history.dart';
+import 'package:shadchan/services/score_ledger.dart';
+import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/widgets/app_refresh.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
@@ -199,6 +202,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     final List<Person> pendingContactDrafts = personRepository
         .getPendingContactDrafts();
     final List<Person> visiblePeople = _getVisiblePeople(personRepository);
+    _bringScoresUpToDate(personRepository);
 
     final Set<String>? selection = _detailsSelection;
 
@@ -605,6 +609,24 @@ class _PeopleScreenState extends State<PeopleScreen> {
     );
   }
 
+  /// The score ledger brought up to date with the records, so every row can
+  /// show what its friend has earned. Memoised inside the ledger; free when
+  /// nothing changed.
+  void _bringScoresUpToDate(PersonRepository people) {
+    MatchRepository? matches;
+    try {
+      matches = Provider.of<MatchRepository>(context, listen: false);
+    } on ProviderNotFoundException {
+      return;
+    }
+    ScoreLedger.reconcile(
+      people: people.getAll(),
+      matches: matches.getAll(),
+      statusEvents: matches.getAllStatusEvents(),
+      excludedFromDating: DatingCountExclusions.all(),
+    );
+  }
+
   /// One friend, as a row or as a square: the same information and the same
   /// actions either way. See [PersonListCard.tile].
   Widget _personCard(Person person, {bool tile = false}) {
@@ -624,6 +646,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     return PersonListCard(
       tile: tile,
       person: person,
+      activityPoints: ScoreLedger.pointsFor(person),
       // Through the same helper the results panel uses: with the
       // keyboard up, pushing straight away makes the avatar's hero
       // measure a viewport that is a keyboard shorter than the one

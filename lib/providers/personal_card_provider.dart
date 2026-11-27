@@ -8,6 +8,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/backup_service.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// The signed-in user's own shidduch card, which they manage themselves.
@@ -234,6 +235,8 @@ class PersonalCardProvider extends ChangeNotifier {
     }
     final String print = _print(person);
     if (_lastSavedPrint == print) return;
+    // Only a save that changed something — the editor autosaves.
+    Telemetry.completed(AppFeature.personal_card, 'save');
     _lastSavedPrint = print;
     editRevision++;
     // The singles' funnel: a first save starts the card, the first time it

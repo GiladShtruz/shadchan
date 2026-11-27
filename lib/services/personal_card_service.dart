@@ -12,6 +12,7 @@ import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/read_throttle.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_tags.dart';
 
@@ -426,6 +427,7 @@ abstract final class PersonalCardService {
       return false;
     }
     try {
+      Telemetry.meter(functions: 1);
       final HttpsCallableResult<dynamic>
       result = await FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable(

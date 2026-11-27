@@ -19,6 +19,7 @@ import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/published_cards.dart';
 import 'package:shadchan/services/read_throttle.dart';
 import 'package:shadchan/services/sync_state_store.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/screen_perf.dart';
 
@@ -263,6 +264,7 @@ abstract final class NetworkSharing {
     required Iterable<Person> people,
     CardAccess? Function(String ownerUid)? accessTo,
   }) async {
+    Telemetry.completed(AppFeature.database_sharing, choice.mode.name);
     final Map<String, ShareChoice> next = Map<String, ShareChoice>.of(choices);
     if (choice.isOn) {
       next[readerUid] = choice;

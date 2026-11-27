@@ -30,6 +30,7 @@ class PersonListCard extends StatelessWidget {
     this.selected,
     this.trailing,
     this.tile = false,
+    this.activityPoints,
   });
 
   /// Drawn as a square for the grid of המאגר שלי: the photo above, then the
@@ -98,6 +99,18 @@ class PersonListCard extends StatelessWidget {
   /// is empty. Dropped entirely while the row is in selection mode, for the
   /// same reason the other trailing buttons are.
   final Widget? trailing;
+
+  /// "נקודות פעילות" this friend brought the matchmaker
+  /// (`ScoreLedger.pointsFor`). Drawn very small and quiet at the end of the
+  /// details line — a nudge to keep working around this friend, never the
+  /// headline of the row. Null or zero: nothing is drawn.
+  final int? activityPoints;
+
+  /// "7 נק׳", or null when there is nothing to say.
+  String? get _pointsLabel {
+    final int? points = activityPoints;
+    return points == null || points <= 0 ? null : '$points נק׳';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -206,15 +219,24 @@ class PersonListCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        if (details.isNotEmpty) ...<Widget>[
+                        if (details.isNotEmpty ||
+                            _pointsLabel != null) ...<Widget>[
                           const SizedBox(height: 2),
-                          Text(
-                            details.join(' · '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: Text(
+                                  details.join(' · '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              if (_pointsLabel != null)
+                                _ActivityPointsLabel(label: _pointsLabel!),
+                            ],
                           ),
                         ],
                       ],
@@ -342,9 +364,9 @@ extension on PersonListCard {
                                   : accent,
                             ),
                           ),
-                          if (details.isNotEmpty)
+                          if (details.isNotEmpty || _pointsLabel != null)
                             Text(
-                              details.join(' · '),
+                              <String>[...details, ?_pointsLabel].join(' · '),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
@@ -588,6 +610,32 @@ class ProfileStatusTag extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The friend's activity points, in the smallest and quietest type on the row.
+class _ActivityPointsLabel extends StatelessWidget {
+  const _ActivityPointsLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 6),
+      child: Tooltip(
+        message: 'נקודות פעילות שהחבר הזה הביא לך',
+        child: Text(
+          label,
+          maxLines: 1,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.75),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ),
     );
   }

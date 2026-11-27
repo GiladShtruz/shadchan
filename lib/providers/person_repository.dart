@@ -3,6 +3,7 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/sync_quiet.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/connectivity_status.dart';
@@ -642,6 +643,13 @@ class PersonRepository extends ChangeNotifier {
             ? 'contacts'
             : 'manual');
     final int count = databaseCount;
+    // The monitoring: a friend added, by the way they came in.
+    Telemetry.completed(AppFeature.add_friend, source);
+    if (source == 'contacts') {
+      Telemetry.completed(AppFeature.add_contacts, 'save');
+    } else if (source == 'manual') {
+      Telemetry.completed(AppFeature.add_manual, 'save');
+    }
     Analytics.log(AnalyticsEvent.friend_added, <String, Object?>{
       'source': source,
       'friends_band': Analytics.band(count),

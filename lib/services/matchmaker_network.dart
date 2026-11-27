@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shadchan/models/idea_proposal.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/shared_card.dart';
@@ -460,6 +461,7 @@ abstract final class MatchmakerNetwork {
       final File file = File('${dir.path}/$safe');
       if (await file.exists() && await file.length() > 0) return file;
       ScreenPerf.notePhoto();
+      Telemetry.meter(functions: 1);
       final HttpsCallableResult<dynamic> result =
           await FirebaseFunctions.instanceFor(region: 'europe-west1')
               .httpsCallable(
@@ -530,9 +532,11 @@ abstract final class MatchmakerNetwork {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      Telemetry.completed(AppFeature.shared_idea, 'propose');
       return doc.id;
     } catch (error, stackTrace) {
       _log(error, stackTrace);
+      Telemetry.failed(AppFeature.shared_idea, 'propose', error);
       return null;
     }
   }
@@ -556,9 +560,14 @@ abstract final class MatchmakerNetwork {
               'idea': const SharedIdeaState(status: MatchStatus.idea).toMap(me),
             'updatedAt': FieldValue.serverTimestamp(),
           });
+      Telemetry.completed(
+        AppFeature.shared_idea,
+        approve ? 'approve' : 'decline',
+      );
       return true;
     } catch (error, stackTrace) {
       _log(error, stackTrace);
+      Telemetry.failed(AppFeature.shared_idea, 'answer', error);
       return false;
     }
   }

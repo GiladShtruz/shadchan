@@ -21,6 +21,7 @@ import 'package:shadchan/widgets/first_visit_tip.dart';
 import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/widgets/home_partner_matchmakers.dart';
 import 'package:shadchan/services/shared_ideas.dart';
+import 'package:shadchan/services/score_ledger.dart';
 
 /// The stores that keep a setting in memory, made to read it again.
 ///
@@ -57,5 +58,6 @@ abstract final class LocalSettingCaches {
     NetworkSharing.forgetCache();
     PartnerCarouselHidden.forgetCache();
     SharedIdeas.forgetCache();
+    ScoreLedger.forgetCache();
   }
 }

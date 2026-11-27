@@ -4,6 +4,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shadchan/services/personal_card_service.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/services/voice_note_store.dart';
 
 /// Never part of Person, card exports, notes, backups or matching telemetry.
@@ -66,6 +67,7 @@ abstract final class PrivateLookingService {
         );
       }
     }
+    Telemetry.meter(functions: 1);
     await FirebaseFunctions.instanceFor(region: 'europe-west1')
         .httpsCallable('savePrivateLooking')
         .call({'text': text.trim(), 'audioPath': audioPath});

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/image_shrink.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
@@ -1221,7 +1222,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         final String extension = _extensionForPath(sourceFile.path);
         final String targetPath =
             '${photosDirectory.path}${Platform.pathSeparator}${personId}_${timestamp}_shared_$index$extension';
-        await sourceFile.copy(targetPath);
+        // A photo shared in from WhatsApp or the gallery, made phone-sized.
+        await ImageShrink.shrinkInto(sourceFile, targetPath);
         copiedPhotoPaths.add(targetPath);
       }
 

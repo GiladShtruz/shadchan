@@ -14,6 +14,7 @@ import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/partner_space.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:uuid/uuid.dart';
 
@@ -322,6 +323,8 @@ abstract final class SharedIdeas {
       await people.delete(theirs.id);
       return;
     }
+    // The end of "נשלחה הצעה → אושרה → הפכה לרעיון", on each side.
+    Telemetry.completed(AppFeature.shared_idea, 'open');
     final String partnerFirst = partnerName.trim().isEmpty
         ? 'השדכן/ית'
         : partnerName.trim().split(RegExp(r'\s+')).first;

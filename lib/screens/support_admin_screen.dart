@@ -8,6 +8,7 @@ import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/support_chat_sheet.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
+import 'package:shadchan/screens/admin_monitoring_screen.dart';
 import 'package:shadchan/screens/tips_admin_screen.dart';
 import 'package:shadchan/screens/personal_news_admin_screen.dart';
 import 'package:shadchan/services/support_service.dart';
@@ -76,7 +77,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
     final int waitingTips = context.watch<TipsProvider>().pending.length;
 
     return DefaultTabController(
-      length: 9,
+      length: 10,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('מרכז הפידבק'),
@@ -84,7 +85,8 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: <Widget>[
-              const Tab(text: 'נתונים'),
+              const Tab(text: 'ניטור'),
+              const Tab(text: 'מדדי מאגר'),
               const Tab(text: 'פידבק'),
               Tab(text: waitingTips == 0 ? 'טיפים' : 'טיפים ($waitingTips)'),
               const Tab(text: 'מה חדש'),
@@ -99,6 +101,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
         body: const SafeArea(
           child: TabBarView(
             children: <Widget>[
+              AdminMonitoringView(),
               AdminStatsTab(),
               _ReportsTab(),
               PendingTipsReview(),

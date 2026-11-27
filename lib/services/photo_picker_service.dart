@@ -7,6 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shadchan/services/face_crop_service.dart';
+import 'package:shadchan/services/image_shrink.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
 /// Picks photos from the gallery and copies them into the app's own `photos`
@@ -25,7 +27,11 @@ abstract final class PhotoPickerService {
     }
 
     try {
-      final List<XFile> pickedFiles = await ImagePicker().pickMultiImage();
+      final List<XFile> pickedFiles = await ImagePicker().pickMultiImage(
+        maxWidth: ImageShrink.pickerMaxSide,
+        maxHeight: ImageShrink.pickerMaxSide,
+        imageQuality: ImageShrink.pickerQuality,
+      );
       if (pickedFiles.isEmpty) {
         return const <String>[];
       }
@@ -37,12 +43,19 @@ abstract final class PhotoPickerService {
       for (int index = 0; index < pickedFiles.length; index++) {
         final String targetPath =
             '${photosDirectory.path}${Platform.pathSeparator}${personId}_${timestamp}_$index.jpg';
-        await File(pickedFiles[index].path).copy(targetPath);
+        // Phone-sized, like WhatsApp: see [ImageShrink].
+        await ImageShrink.shrinkInto(File(pickedFiles[index].path), targetPath);
         copiedPhotoPaths.add(targetPath);
       }
 
+      Telemetry.completed(
+        AppFeature.photo_upload,
+        'pick',
+        extra: <String, num>{'n': copiedPhotoPaths.length},
+      );
       return copiedPhotoPaths;
     } on PlatformException catch (error) {
+      Telemetry.failed(AppFeature.photo_upload, 'pick', error);
       if (!context.mounted) {
         return const <String>[];
       }
@@ -77,6 +90,9 @@ abstract final class PhotoPickerService {
     try {
       final XFile? pickedFile = await ImagePicker().pickImage(
         source: ImageSource.gallery,
+        maxWidth: ImageShrink.pickerMaxSide,
+        maxHeight: ImageShrink.pickerMaxSide,
+        imageQuality: ImageShrink.pickerQuality,
       );
       if (pickedFile == null) {
         return null;
@@ -86,9 +102,11 @@ abstract final class PhotoPickerService {
       final String targetPath =
           '${photosDirectory.path}${Platform.pathSeparator}'
           '${namePrefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      await File(pickedFile.path).copy(targetPath);
+      await ImageShrink.shrinkInto(File(pickedFile.path), targetPath);
+      Telemetry.completed(AppFeature.photo_upload, 'pick');
       return targetPath;
     } on PlatformException catch (error) {
+      Telemetry.failed(AppFeature.photo_upload, 'pick', error);
       if (!context.mounted) {
         return null;
       }

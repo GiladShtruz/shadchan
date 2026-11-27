@@ -957,6 +957,83 @@ service cloud.firestore {
       allow delete: if durable() && request.auth.uid == uid;
     }
 
+    // Usage events from the app, written in batches (`Telemetry`) and folded
+    // by `onTelemetryBatch` into the monitoring documents below, then deleted.
+    // Metadata only — feature ids, action codes, numbers, times. A phone can
+    // only add a batch in its own name; nobody can read one.
+    match /telemetryBatches/{batchId} {
+      allow create: if request.auth != null
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'did', 'v', 'p', 'ut', 'events', 'createdAt'])
+          && request.resource.data.events is list
+          && request.resource.data.events.size() > 0
+          && request.resource.data.events.size() <= 500
+          && (!('v' in request.resource.data) || (request.resource.data.v is string && request.resource.data.v.size() <= 20))
+          && (!('p' in request.resource.data) || request.resource.data.p in ['android', 'ios', 'other'])
+          && (!('ut' in request.resource.data) || request.resource.data.ut in ['single', 'matchmaker', 'both', 'unknown']);
+      allow read, update, delete: if false;
+    }
+
+    // The monitoring itself — per account per day, per account, per version,
+    // raised alerts and cached answers. Written by the server only; read by
+    // support administrators only (user-level data never reaches anyone
+    // else).
+    match /analyticsUserDays/{id} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+    match /analyticsUsers/{uid} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+    match /analyticsVersions/{v} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+    match /analyticsAlerts/{id} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+    match /analyticsCache/{id} {
+      allow read, write: if false;
+    }
+
+    // The prices costs are computed with, as versions: an administrator adds a
+    // new version in force from now; earlier ones are never changed, so a
+    // past month is never repriced.
+    match /adminConfig/pricing {
+      allow read: if isSupportAdmin();
+      allow create, update: if isSupportAdmin()
+          && request.resource.data.keys().hasOnly(['versions', 'updatedAt'])
+          && request.resource.data.versions is list
+          && request.resource.data.versions.size() <= 200
+          && (resource == null
+              || request.resource.data.versions.size() >= resource.data.versions.size())
+          && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    // Alert thresholds, and the actual monthly bills typed in from Google
+    // Cloud (shown beside the estimate).
+    match /adminConfig/thresholds {
+      allow read: if isSupportAdmin();
+      allow create, update: if isSupportAdmin()
+          && request.resource.data.keys().hasOnly(
+               ['aiDailyIls', 'userDailyIls', 'featureSpikeFactor', 'errorRatePercent', 'updatedAt'])
+          && request.resource.data.aiDailyIls is number
+          && request.resource.data.userDailyIls is number
+          && request.resource.data.featureSpikeFactor is number
+          && request.resource.data.errorRatePercent is number;
+      allow delete: if false;
+    }
+    match /adminConfig/billing {
+      allow read: if isSupportAdmin();
+      allow create, update: if isSupportAdmin()
+          && request.resource.data.keys().hasOnly(['months', 'updatedAt'])
+          && request.resource.data.months is map
+          && request.resource.data.months.size() <= 240;
+      allow delete: if false;
+    }
+
     match /fcmTokens/{uid} {
       allow read, write: if durable() && request.auth.uid == uid;
     }

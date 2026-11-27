@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
@@ -42,6 +43,7 @@ class PersonCardViewer extends StatefulWidget {
     String personId, {
     int initialIndex = 0,
   }) {
+    Telemetry.opened(AppFeature.card_open, action: 'viewer');
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,

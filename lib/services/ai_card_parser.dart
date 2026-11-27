@@ -4,6 +4,7 @@ import 'package:firebase_ai/firebase_ai.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/ai_client.dart';
+import 'package:shadchan/services/ai_usage.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/ai_config.dart';
 import 'package:shadchan/utils/card_parser.dart';
@@ -91,6 +92,7 @@ abstract final class AiCardParser {
     }
 
     final GenerateContentResponse response;
+    final Stopwatch watch = Stopwatch()..start();
     try {
       response = await AiClient.model(
         systemInstruction: Content.system(_systemInstruction),
@@ -107,8 +109,18 @@ abstract final class AiCardParser {
         ),
       ).generateContent(<Content>[Content.text(text)]).timeout(AiConfig.requestTimeout);
     } catch (error) {
+      AiUsage.failure(
+        AiFeature.card,
+        error,
+        latencyMs: watch.elapsedMilliseconds,
+      );
       throw classifyAiFailure(error);
     }
+    AiUsage.record(
+      response,
+      AiFeature.card,
+      latencyMs: watch.elapsedMilliseconds,
+    );
 
     final ParsedCard card = decodeResponse(response.text);
     if (card.isEmpty) {

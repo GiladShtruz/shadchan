@@ -11,6 +11,7 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/offline_cache.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/services/push_service.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -43,7 +44,11 @@ import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 
+/// From the first line of `main` to the first frame: the app-start time.
+final Stopwatch _launch = Stopwatch();
+
 Future<void> main() async {
+  _launch.start();
   // A crash during startup used to leave a silent black screen (main threw
   // before runApp was ever called). Now any startup failure is caught and shown
   // on screen so it can be read and reported instead of just going black.
@@ -65,6 +70,8 @@ Future<void> main() async {
           'kind': 'flutter',
           'error_type': Analytics.errorCode(details.exception),
         });
+        // In the monitoring too, on the page it happened on.
+        Telemetry.error(details.exception);
         (previous ?? FlutterError.presentError)(details);
       };
 
@@ -76,6 +83,16 @@ Future<void> main() async {
           // and must not be allowed to stop it appearing. See
           // `_startNotifications`.
           unawaited(_startNotifications());
+          // The monitoring: the local event queue and its batched sending,
+          // the time the app took to appear, and every page opened. Codes and
+          // numbers only — see `Telemetry`.
+          Telemetry.start();
+          Telemetry.timing(
+            AppFeature.app,
+            'start',
+            _launch.elapsedMilliseconds,
+          );
+          AppRouter.trackScreens();
           // Whether the server can be reached — after the first frame like
           // everything else that is not needed to draw it. Offline, the app
           // shows the last synced copy and refuses edits; see
@@ -92,6 +109,7 @@ Future<void> main() async {
         'kind': 'async',
         'error_type': Analytics.errorCode(error),
       });
+      Telemetry.error(error);
     },
   );
 }
@@ -134,6 +152,8 @@ Future<void> _bootstrap() async {
   await Hive.openBox<MatchNote>('match_notes');
   await Hive.openBox<MatchStatusEvent>('match_status_events');
   await Hive.openBox<dynamic>('settings');
+  // The monitoring's local queue — device-only, never synced.
+  await Hive.openBox<dynamic>(Telemetry.boxName);
   // What this device last agreed with the account. Opened here because the
   // router reads it on the first frame — see `AccountSyncLedger`.
   await Hive.openBox<dynamic>(AccountSyncLedger.boxName);

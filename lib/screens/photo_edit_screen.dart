@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/image_shrink.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -344,9 +345,12 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       final Directory photos = await PhotoPickerService.ensurePhotosDirectory();
       final File output = File(
         '${photos.path}${Platform.pathSeparator}'
-        'edited_${DateTime.now().millisecondsSinceEpoch}.png',
+        'edited_${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
       await output.writeAsBytes(encoded.buffer.asUint8List());
+      // The canvas comes out as PNG — many times a photo's size. Stored as a
+      // phone-sized JPEG like every other photo ([ImageShrink]).
+      await ImageShrink.shrinkInPlace(output.path);
 
       if (!mounted) {
         return;

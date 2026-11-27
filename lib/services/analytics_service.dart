@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/telemetry.dart';
 
 /// Product measurement — what matchmakers and singles **do**, never **about
 /// whom**.
@@ -150,10 +151,30 @@ abstract final class Analytics {
 
   /// A feature was used — counted per feature, so "who uses tags at all" is
   /// a unique-user count in the console.
-  static void feature(AnalyticsFeature feature) => log(
-    AnalyticsEvent.feature_used,
-    <String, Object?>{'feature': feature.name},
-  );
+  static void feature(AnalyticsFeature feature) {
+    log(AnalyticsEvent.feature_used, <String, Object?>{
+      'feature': feature.name,
+    });
+    // And in the monitoring, under the fixed feature id it belongs to.
+    Telemetry.completed(_monitored[feature]!, 'use');
+  }
+
+  static const Map<AnalyticsFeature, AppFeature> _monitored =
+      <AnalyticsFeature, AppFeature>{
+        AnalyticsFeature.tags: AppFeature.tags,
+        AnalyticsFeature.ai_import: AppFeature.ai,
+        AnalyticsFeature.matches: AppFeature.matches,
+        AnalyticsFeature.board: AppFeature.board,
+        AnalyticsFeature.search: AppFeature.search,
+        AnalyticsFeature.filter: AppFeature.filters,
+        AnalyticsFeature.share_card: AppFeature.whatsapp_share,
+        AnalyticsFeature.notes: AppFeature.notes,
+        AnalyticsFeature.voice_note: AppFeature.voice_notes,
+        AnalyticsFeature.personal_area: AppFeature.personal_card,
+        AnalyticsFeature.reminders: AppFeature.notifications,
+        AnalyticsFeature.think: AppFeature.ideas,
+        AnalyticsFeature.new_ideas: AppFeature.ideas,
+      };
 
   /// Logs [event] only the first time it happens on this account — the
   /// funnel steps ("first friend", "5 friends", "first idea"). Remembered in
@@ -287,6 +308,12 @@ enum AnalyticsEvent {
   whatsapp_opened,
   // Use and health
   feature_used,
+  // The monitoring's four generic events (`Telemetry`), with `feature` and
+  // `action` as parameters.
+  feature_opened,
+  action_started,
+  action_completed,
+  action_failed,
   app_error,
 }
 

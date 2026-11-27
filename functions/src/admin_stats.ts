@@ -25,6 +25,13 @@ import {
 } from './admin_alerts';
 import { notify } from './notices';
 
+/** One account's `accountHealth` report, as the stats read it. */
+interface HealthDoc {
+  uid: string;
+  email?: string;
+  devices?: Record<string, unknown>;
+}
+
 const ROOT_ADMIN = 'yitz292@gmail.com';
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -47,12 +54,11 @@ function isoMillis(value: unknown): number | undefined {
 }
 
 /** Every device's address-book report, from `accountHealth` (no contacts). */
-async function contactDevices(db: Firestore, internal: Set<string>): Promise<ContactsDevice[]> {
+function contactDevices(docs: HealthDoc[], internal: Set<string>): ContactsDevice[] {
   const out: ContactsDevice[] = [];
-  const docs = await db.collection('accountHealth').select('devices').get();
-  for (const doc of docs.docs) {
-    if (internal.has(doc.id)) continue;
-    const devices = doc.get('devices');
+  for (const doc of docs) {
+    if (internal.has(doc.uid)) continue;
+    const devices = doc.devices;
     if (!devices || typeof devices !== 'object') continue;
     for (const device of Object.values(devices as Record<string, unknown>)) {
       if (!device || typeof device !== 'object') continue;
@@ -92,7 +98,7 @@ function round1(value: number): number {
 }
 
 /** Every durable (non-anonymous) account, with administrators set apart. */
-async function listAccounts(adminEmails: Set<string>): Promise<{
+export async function listAccounts(adminEmails: Set<string>): Promise<{
   users: UserRecord[];
   internal: Set<string>;
 }> {
@@ -241,7 +247,12 @@ export async function computeAdminStats(db: Firestore, now = Date.now()): Promis
   };
 
   // ---- address-book reads, and the early warnings
-  const devices = await contactDevices(db, internal);
+  // One read of every account's health report (the address-book reads).
+  const healthDocs: HealthDoc[] = (
+    await db.collection('accountHealth').select('devices', 'email').get()
+  ).docs.map((d) => ({ uid: d.id, email: d.get('email'), devices: d.get('devices') }));
+  const devices = contactDevices(healthDocs, internal);
+
   const contacts = contactsBlock(devices, now);
   const history = (
     await db
@@ -285,7 +296,7 @@ export async function computeAdminStats(db: Firestore, now = Date.now()): Promis
 }
 
 /** Tells every administrator about alerts that were not raised last time. */
-async function announceAlerts(db: Firestore, fresh: AdminAlert[]): Promise<void> {
+export async function announceAlerts(db: Firestore, fresh: AdminAlert[]): Promise<void> {
   if (fresh.length === 0) return;
   const admins = await db.collection('supportAdmins').get();
   const emails = [ROOT_ADMIN, ...admins.docs.map((d) => d.id.toLowerCase())];

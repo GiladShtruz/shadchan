@@ -1,5 +1,6 @@
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/names.dart';
 import 'package:shadchan/services/self_identity.dart';
@@ -427,6 +428,8 @@ abstract final class ContactsImportService {
     Gender gender = Gender.unknown,
     String source = 'סריקה',
   }) async {
+    // "בחר איש קשר" — the middle step of adding a friend from the contacts.
+    Telemetry.started(AppFeature.add_contacts, 'pick');
     final Person? existing = personRepository.findByPhone(candidate.phone);
     if (existing != null) {
       if (!existing.hidden) {

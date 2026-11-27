@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/card_photo_privacy.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/community_links.dart';
 
 /// Everything that leaves the app as a *card*.
@@ -119,14 +120,19 @@ abstract final class ShareUtils {
         // Same — a test, or an engine without the channel.
       }
     }
-    if (photos.isNotEmpty) {
-      await Share.shareXFiles(
-        photos.map((String path) => XFile(path)).toList(),
-        text: shareText,
-        sharePositionOrigin: origin,
-      );
-    } else {
-      await Share.share(shareText, sharePositionOrigin: origin);
+    try {
+      if (photos.isNotEmpty) {
+        await Share.shareXFiles(
+          photos.map((String path) => XFile(path)).toList(),
+          text: shareText,
+          sharePositionOrigin: origin,
+        );
+      } else {
+        await Share.share(shareText, sharePositionOrigin: origin);
+      }
+    } catch (error) {
+      Telemetry.failed(AppFeature.whatsapp_share, 'card', error);
+      rethrow;
     }
     return true;
   }

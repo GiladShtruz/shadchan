@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/services/telemetry.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/phone_utils.dart';
@@ -185,6 +186,7 @@ abstract final class WhatsAppUtils {
     });
     final String? phone = PhoneUtils.toWhatsAppNumber(recipient.phone);
     if (phone == null) {
+      Telemetry.failed(AppFeature.whatsapp_share, 'send_card', 'no_phone');
       return false;
     }
 
@@ -198,6 +200,7 @@ abstract final class WhatsAppUtils {
           <String, Object>{'phone': phone, 'text': message, 'paths': photos},
         );
         if (sent == true) {
+          Telemetry.completed(AppFeature.whatsapp_share, 'send_card');
           return true;
         }
       } on PlatformException {
@@ -216,10 +219,16 @@ abstract final class WhatsAppUtils {
         origin: origin,
       );
     }
-    return launchUrl(
+    final bool opened = await launchUrl(
       Uri.https('wa.me', '/$phone', <String, String>{'text': message}),
       mode: LaunchMode.externalApplication,
     );
+    if (opened) {
+      Telemetry.completed(AppFeature.whatsapp_share, 'send_card');
+    } else {
+      Telemetry.failed(AppFeature.whatsapp_share, 'send_card', 'not_opened');
+    }
+    return opened;
   }
 
   /// Whether [card] has anything to send at all — text, photos, or both.

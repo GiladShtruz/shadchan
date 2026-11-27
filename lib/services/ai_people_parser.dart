@@ -4,6 +4,7 @@ import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/services/ai_client.dart';
+import 'package:shadchan/services/ai_usage.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/ai_config.dart';
 import 'package:shadchan/utils/card_parser.dart';
@@ -73,6 +74,7 @@ abstract final class AiPeopleParser {
     }
 
     final GenerateContentResponse response;
+    final Stopwatch watch = Stopwatch()..start();
     try {
       final model = AiClient.model(
         systemInstruction: Content.system(
@@ -104,8 +106,18 @@ abstract final class AiPeopleParser {
     } on AiParseException {
       rethrow;
     } catch (error) {
+      AiUsage.failure(
+        AiFeature.import,
+        error,
+        latencyMs: watch.elapsedMilliseconds,
+      );
       throw classifyAiFailure(error);
     }
+    AiUsage.record(
+      response,
+      AiFeature.import,
+      latencyMs: watch.elapsedMilliseconds,
+    );
 
     if (isChat) {
       final finishReason = response.candidates.isEmpty
