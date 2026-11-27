@@ -392,7 +392,7 @@ void main() {
 
     // Asking him, asking her and sending the card are finished business.
     expect(find.textContaining('יאללה לקדם'), findsNothing);
-    expect(find.text('הם יוצאים כבר 7 ימים 😊 בדקת איך הולך?'), findsOneWidget);
+    expect(find.text('הם יוצאים כבר 7 ימים. בדקת איך הולך?'), findsOneWidget);
     // One tap to each of them, and the cadence spelled out underneath.
     expect(find.text('דוד'), findsWidgets);
     expect(find.textContaining('פעם בחודש'), findsOneWidget);

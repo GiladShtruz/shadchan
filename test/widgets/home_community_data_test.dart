@@ -59,6 +59,8 @@ Widget _wrap(Widget child, {_Community? community}) => MultiProvider(
 );
 
 void main() {
+  setUp(() => HomeWeekBlock.period.value = CommunityPeriod.week);
+
   testWidgets('the two figures are large, the window is chosen, the target '
       'follows with last week beside it', (tester) async {
     await tester.pumpWidget(
@@ -76,8 +78,8 @@ void main() {
     // No heading of its own; the window switch is back.
     expect(find.text('השבוע בשדכן'), findsNothing);
     expect(find.text('כל הזמנים'), findsOneWidget);
-    expect(find.text('הפעילות שלי'), findsOneWidget);
-    expect(find.text('פעילות הקהילה'), findsOneWidget);
+    expect(find.text(HomeWeekBlock.myLabel), findsOneWidget);
+    expect(find.text(HomeWeekBlock.communityLabel), findsOneWidget);
     expect(find.text('11'), findsOneWidget);
     expect(find.text('101'), findsOneWidget);
     // The weekly target sits under the figures.
@@ -200,7 +202,7 @@ void main() {
     expect(find.text(CommunityHiddenNotice.text), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(find.text('500'), findsNothing);
-    expect(find.text('פעילות הקהילה'), findsNothing);
+    expect(find.text(HomeWeekBlock.communityLabel), findsNothing);
     // The matchmaker's own activity is still theirs to see.
     expect(find.text('11'), findsOneWidget);
   });

@@ -1643,6 +1643,17 @@ service cloud.firestore {
           && d.get('names', {}) is map
           && d.get('photos', {}) is map;
       }
+      // "חסימה": either member may put themselves on `blockedBy` or take
+      // themselves off it — and nobody else. While anybody is on it the
+      // conversation takes no new message (from either side); its history
+      // stays. (2026-11-27)
+      function blockedByOk(before, after) {
+        let b = before.get('blockedBy', []);
+        let a = after.get('blockedBy', []);
+        return a is list && a.size() <= 2
+          && a.toSet().difference(b.toSet()).hasOnly([request.auth.uid])
+          && b.toSet().difference(a.toSet()).hasOnly([request.auth.uid]);
+      }
       allow read: if durable() && member();
       // Created by its first message, in the same write. The client writes
       // the chat with a merge, so the same write is a create the first time
@@ -1669,7 +1680,8 @@ service cloud.firestore {
                     && request.resource.data.type == resource.data.type
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
                          ['lastText', 'lastFromUid', 'lastType', 'lastAt', 'readAt', 'unread',
-                          'names', 'photos', 'updatedAt'])
+                          'names', 'photos', 'updatedAt', 'blockedBy'])
+                    && blockedByOk(resource.data, request.resource.data)
                     && lastOk(request.resource.data)
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastText', 'lastFromUid', 'lastType'])
                         || request.resource.data.lastFromUid == request.auth.uid)
@@ -1717,6 +1729,7 @@ service cloud.firestore {
         allow read: if durable() && request.auth.uid in chat().members;
         allow create: if durable()
                       && request.auth.uid in chatAfter().members
+                      && chatAfter().get('blockedBy', []).size() == 0
                       && request.resource.data.keys().hasOnly(['fromUid', 'type', 'text', 'at', 'ref', 'media', 'offer'])
                       && request.resource.data.fromUid == request.auth.uid
                       && request.resource.data.at == request.time

@@ -114,7 +114,7 @@ void main() {
           }, now);
       expect(
         lines,
-        containsAll(<String>['186 שדכנים בקהילה', '3 חתונות נוספו החודש 🎉']),
+        containsAll(<String>['186 שדכנים בקהילה', '3 חתונות נוספו החודש']),
       );
       // Another month's weddings are never said as this month's.
       expect(

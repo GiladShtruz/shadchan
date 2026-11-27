@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/widgets/home_week_block.dart';
 import 'package:shadchan/widgets/shell_bottom_bar.dart';
 import 'package:shadchan/providers/personal_area_provider.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
@@ -733,17 +734,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The four all-time figures are back in their squares, above the two
-    // add buttons; "מה עושים עכשיו?" is gone and "הפעולה הבאה שלך" heads
-    // the list under them.
-    final Finder figures = find.byType(ActivityFigureRow);
-    expect(figures, findsOneWidget);
-    expect(find.text('חתונות'), findsOneWidget);
+    // **The top of the page is the data**: "הנתונים שלי" | "נתוני הקהילה"
+    // with its window switch, where the four squares used to be. The
+    // action list is at the foot of the page.
+    expect(find.byType(ActivityFigureRow), findsNothing);
+    expect(find.byType(HomeWeekBlock), findsOneWidget);
+    expect(find.text(HomeWeekBlock.myLabel), findsOneWidget);
     expect(find.text('מה עושים עכשיו?'), findsNothing);
-    expect(
-      tester.getCenter(figures).dy,
-      lessThan(tester.getCenter(find.text('הוספת חברים')).dy),
-    );
     // No standing recommendation in the action area any more.
     expect(find.text('כל חבר שמצטרף למאגר הוא עוד סיכוי להתאמה'), findsNothing);
     // Under a hundred friends: the milestone, as one compact line between
@@ -869,8 +866,8 @@ void main() {
 
     // **The row says who, then what**: "דוד ❤️ שרה", and under it a brand-new
     // proposal's step — the boy is asked first.
-    const String action = 'דוד ❤️ שרה';
-    await _scrollHomeTo(tester, find.text(action));
+    const String action = 'דוד \u2665 שרה';
+    await _scrollHomeTo(tester, _glyphText(action));
     expect(find.text('לשאול את דוד'), findsOneWidget);
 
     // Nobody pinned this proposal: it is on the list because it is open.
@@ -878,13 +875,13 @@ void main() {
       HomeBoardStore.instance.contains(HomeItemKind.idea, idea.id),
       isFalse,
     );
-    expect(find.text(action), findsOneWidget);
+    expect(_glyphText(action), findsOneWidget);
 
     // **On the home screen it is a line of a chat-like list**: no frame and
     // no coloured bars — those stay on the whole board.
     expect(
       find.descendant(
-        of: find.ancestor(of: find.text(action), matching: find.byType(Row)),
+        of: find.ancestor(of: _glyphText(action), matching: find.byType(Row)),
         matching: find.byType(AccentStripe),
       ),
       findsNothing,
@@ -898,7 +895,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.text('רעיונות פתוחים'));
     await tester.pump();
-    expect(find.text('דוד ❤️ שרה'), findsOneWidget);
+    expect(_glyphText('דוד \u2665 שרה'), findsOneWidget);
     // The chips scroll sideways on a narrow phone.
     await tester.ensureVisible(find.text('הצעות מהמאגר'));
     await tester.pump();
@@ -3246,3 +3243,7 @@ Widget _buildProfileTestApp({Widget? home}) {
     ),
   );
 }
+
+/// A line drawn with the app's own glyphs in it ("דוד ♥ שרה").
+Finder _glyphText(String text) =>
+    find.byWidgetPredicate((Widget w) => w is AppGlyphText && w.text == text);

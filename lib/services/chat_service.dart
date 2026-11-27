@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -73,13 +76,14 @@ enum ChatMessageType {
   }
 
   /// The last-line preview of a message of this kind with no words of its
-  /// own.
+  /// own — words only; the list draws the kind's own mark beside it
+  /// (never an emoji).
   String get preview => switch (this) {
-    ChatMessageType.voice => '🎤 הודעה קולית',
-    ChatMessageType.image => '📷 תמונה',
-    ChatMessageType.card => '🪪 כרטיס',
-    ChatMessageType.idea => '💡 רעיון',
-    ChatMessageType.ideaOffer => '💡 יש לי רעיון בשבילך',
+    ChatMessageType.voice => 'הודעה קולית',
+    ChatMessageType.image => 'תמונה',
+    ChatMessageType.card => 'כרטיס',
+    ChatMessageType.idea => 'רעיון',
+    ChatMessageType.ideaOffer => 'יש לי רעיון בשבילך',
     ChatMessageType.text || ChatMessageType.system => '',
   };
 }
@@ -251,6 +255,7 @@ class ChatThread {
     this.lastAt,
     this.readAt = const <String, DateTime>{},
     this.unread = const <String, int>{},
+    this.blockedBy = const <String>[],
   });
 
   final String id;
@@ -268,6 +273,13 @@ class ChatThread {
 
   /// Messages each member has not read yet.
   final Map<String, int> unread;
+
+  /// Members who blocked the conversation ("חסימה"): while anybody is here
+  /// it takes no new message from either side; the history stays.
+  final List<String> blockedBy;
+
+  bool get isBlocked => blockedBy.isNotEmpty;
+  bool blockedByMe(String me) => blockedBy.contains(me);
 
   String otherOf(String me) =>
       members.firstWhere((String m) => m != me, orElse: () => me);
@@ -287,7 +299,7 @@ class ChatThread {
   String previewFor(String me) {
     final String body = lastText.isNotEmpty ? lastText : lastType.preview;
     if (body.isEmpty) return 'שיחה חדשה';
-    if (lastFromUid == me) return 'את/ה: $body';
+    if (lastFromUid == me) return 'אני: $body';
     return body;
   }
 
@@ -345,6 +357,11 @@ class ChatThread {
             if (e.key is String && e.value is num)
               e.key as String: (e.value as num).toInt(),
       },
+      blockedBy: <String>[
+        if (data['blockedBy'] is List)
+          for (final Object? b in data['blockedBy'] as List)
+            if (b is String) b,
+      ],
     );
   }
 }
@@ -533,7 +550,8 @@ abstract final class ChatService {
           !mapEquals(x.unread, y.unread) ||
           !mapEquals(x.readAt, y.readAt) ||
           !mapEquals(x.names, y.names) ||
-          !mapEquals(x.photos, y.photos)) {
+          !mapEquals(x.photos, y.photos) ||
+          !listEquals(x.blockedBy, y.blockedBy)) {
         return false;
       }
     }
@@ -548,6 +566,7 @@ abstract final class ChatService {
     _sub = null;
     _uid = null;
     openChatId = null;
+    ChatOutbox.clear();
     threads.value = const <ChatThread>[];
     unread.value = 0;
     loaded.value = false;
@@ -666,6 +685,8 @@ abstract final class ChatService {
     ChatOffer? offer,
     String? myName,
     String? theirName,
+    String? messageId,
+    bool keepOnFailure = true,
   }) async {
     final String? uid = await me();
     final String body = text.trim();
@@ -673,7 +694,125 @@ abstract final class ChatService {
     if (body.isEmpty && type == ChatMessageType.text) return false;
     final String other = otherOfId(chatId, uid);
     if (other.isEmpty || other == uid) return false;
+    if (thread(chatId)?.isBlocked ?? false) return false;
+    // The message's id is decided here, once, so a retry writes the same
+    // message again instead of a second copy.
+    final String id =
+        messageId ??
+        FirebaseFirestore.instance
+            .collection('chats')
+            .doc(chatId)
+            .collection('messages')
+            .doc()
+            .id;
+    void keep() {
+      if (!keepOnFailure) return;
+      ChatOutbox.fail(
+        ChatOutboxItem(
+          localId: id,
+          chatId: chatId,
+          type: type,
+          text: body,
+          ref: ref,
+          media: media,
+          offer: offer,
+          at: DateTime.now(),
+        ),
+      );
+    }
+
     try {
+      final bool ok = await _commit(
+        chatId: chatId,
+        uid: uid,
+        other: other,
+        id: id,
+        body: body,
+        type: type,
+        ref: ref,
+        media: media,
+        offer: offer,
+        myName: myName,
+        theirName: theirName,
+        onLateFailure: keep,
+      );
+      if (ok) ChatOutbox.remove(id);
+      return ok;
+    } on FirebaseException catch (error) {
+      // A first message to somebody this account is not tied to — a
+      // matchmaker met on the board or in the community: the server opens
+      // the conversation (after checking they are shown there), and the
+      // message is then an ordinary one.
+      if (error.code == 'permission-denied' &&
+          thread(chatId) == null &&
+          await _openCommunityChat(other)) {
+        try {
+          final bool ok = await _commit(
+            chatId: chatId,
+            uid: uid,
+            other: other,
+            id: id,
+            body: body,
+            type: type,
+            ref: ref,
+            media: media,
+            offer: offer,
+            myName: myName,
+            theirName: theirName,
+            onLateFailure: keep,
+            forceAwait: true,
+          );
+          if (ok) ChatOutbox.remove(id);
+          return ok;
+        } catch (again, stackTrace) {
+          _log(again, stackTrace);
+        }
+      } else {
+        _log(error);
+      }
+      Telemetry.failed(AppFeature.chats, 'send_${type.name}', error);
+      keep();
+      return false;
+    } catch (error, stackTrace) {
+      _log(error, stackTrace);
+      Telemetry.failed(AppFeature.chats, 'send_${type.name}', error);
+      keep();
+      return false;
+    }
+  }
+
+  /// "צ'אט" with a matchmaker the app showed this account (the board, the
+  /// community) and nothing else ties them to: the `openCommunityChat`
+  /// function creates the conversation. False when the server said no.
+  static Future<bool> _openCommunityChat(String other) async {
+    try {
+      await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('openCommunityChat')
+          .call<Object?>(<String, Object?>{'otherUid': other})
+          .timeout(const Duration(seconds: 20));
+      return true;
+    } catch (error) {
+      _log(error);
+      return false;
+    }
+  }
+
+  static Future<bool> _commit({
+    required String chatId,
+    required String uid,
+    required String other,
+    required String id,
+    required String body,
+    required ChatMessageType type,
+    ChatRef? ref,
+    ChatMedia? media,
+    ChatOffer? offer,
+    String? myName,
+    String? theirName,
+    required VoidCallback onLateFailure,
+    bool forceAwait = false,
+  }) async {
+    {
       final FirebaseFirestore db = FirebaseFirestore.instance;
       final DocumentReference<Map<String, dynamic>> chat = db
           .collection('chats')
@@ -694,7 +833,7 @@ abstract final class ChatService {
         ),
         SetOptions(merge: true),
       );
-      batch.set(chat.collection('messages').doc(), <String, Object?>{
+      batch.set(chat.collection('messages').doc(id), <String, Object?>{
         'fromUid': uid,
         'type': type.name,
         'text': body.length > 4000 ? body.substring(0, 4000) : body,
@@ -703,7 +842,7 @@ abstract final class ChatService {
         if (media != null) 'media': media.toMap(),
         if (offer != null) 'offer': offer.toMap(),
       });
-      if (known == null) {
+      if (known == null || forceAwait) {
         // A first message (or one to a conversation the list has not shown
         // yet) is awaited: if the server says no, the screen says so instead
         // of showing a line that never arrives.
@@ -713,14 +852,38 @@ abstract final class ChatService {
         return true;
       }
       // Not awaited past the local write: Firestore keeps the message queued
-      // through a bad connection, like WhatsApp's clock.
-      unawaited(batch.commit().catchError(_log));
+      // through a bad connection, like WhatsApp's clock. If the server
+      // refuses it later, the line comes back as "לא נשלחה" with a retry.
+      unawaited(
+        batch.commit().catchError((Object error) {
+          _log(error);
+          onLateFailure();
+        }),
+      );
       Telemetry.completed(AppFeature.chats, 'send_${type.name}');
       Telemetry.meter(writes: 2);
       return true;
-    } catch (error, stackTrace) {
-      _log(error, stackTrace);
-      Telemetry.failed(AppFeature.chats, 'send_${type.name}', error);
+    }
+  }
+
+  /// Blocks the conversation from this side ("חסימה") — no new message from
+  /// either side until unblocked — or unblocks it. The history stays, and
+  /// ideas already opened go on in the ideas system.
+  static Future<bool> setBlocked(String chatId, bool blocked) async {
+    final String? uid = await me();
+    if (uid == null) return false;
+    try {
+      await FirebaseFirestore.instance.collection('chats').doc(chatId).update(
+        <String, Object?>{
+          'blockedBy': blocked
+              ? FieldValue.arrayUnion(<String>[uid])
+              : FieldValue.arrayRemove(<String>[uid]),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+      return true;
+    } catch (error) {
+      _log(error);
       return false;
     }
   }
@@ -759,6 +922,21 @@ abstract final class ChatService {
         '${uid.substring(0, uid.length < 6 ? uid.length : 6)}'
         '${DateTime.now().microsecondsSinceEpoch}';
     final String path = 'chats/$chatId/$id.$ext';
+    // Drawn at once as "שולח…" in the conversation — the composer stays
+    // free, so text can be sent while the file goes up.
+    final String localId = 'upload_$id';
+    ChatOutbox.add(
+      ChatOutboxItem(
+        localId: localId,
+        chatId: chatId,
+        type: type,
+        text: caption.trim(),
+        filePath: file.path,
+        durationMs: durationMs,
+        at: DateTime.now(),
+        sending: true,
+      ),
+    );
     try {
       final int size = await file.length();
       await FirebaseStorage.instance
@@ -767,8 +945,8 @@ abstract final class ChatService {
           .timeout(const Duration(minutes: 2));
       Telemetry.meter(uploads: 1, uploadBytes: size);
       // Kept beside the cache, so this phone never downloads its own file.
-      unawaited(_cacheCopy(file, path));
-      return await send(
+      await _cacheCopy(file, path);
+      final bool sent = await send(
         chatId,
         caption,
         type: type,
@@ -782,12 +960,56 @@ abstract final class ChatService {
         ),
         myName: myName,
         theirName: theirName,
+        keepOnFailure: false,
       );
+      if (sent) {
+        ChatOutbox.remove(localId);
+      } else {
+        ChatOutbox.markFailed(localId);
+      }
+      return sent;
     } catch (error, stackTrace) {
       _log(error, stackTrace);
       Telemetry.failed(AppFeature.chats, 'upload_${type.name}', error);
+      ChatOutbox.markFailed(localId);
       return false;
     }
+  }
+
+  /// Sends a message that did not go — the same message (same id), or the
+  /// same file uploaded again.
+  static Future<bool> retry(
+    ChatOutboxItem item, {
+    String? myName,
+    String? theirName,
+  }) async {
+    final String? file = item.filePath;
+    if (file != null) {
+      ChatOutbox.remove(item.localId);
+      final File local = File(file);
+      if (!local.existsSync()) return false;
+      return sendFile(
+        item.chatId,
+        local,
+        type: item.type,
+        durationMs: item.durationMs,
+        caption: item.text,
+        myName: myName,
+        theirName: theirName,
+      );
+    }
+    ChatOutbox.markSending(item.localId);
+    return send(
+      item.chatId,
+      item.text,
+      type: item.type,
+      ref: item.ref,
+      media: item.media,
+      offer: item.offer,
+      myName: myName,
+      theirName: theirName,
+      messageId: item.localId,
+    );
   }
 
   static Future<Directory> _cacheDir() async {
@@ -1041,4 +1263,152 @@ class ChatMessagesController extends ChangeNotifier {
     _sub = null;
     super.dispose();
   }
+}
+
+/// A message written on this phone that the server has not got: an upload
+/// still going ("שולח…"), or one that failed ("לא נשלחה · ניסיון חוזר").
+/// Never thrown away by itself — the user retries or deletes it.
+class ChatOutboxItem {
+  const ChatOutboxItem({
+    required this.localId,
+    required this.chatId,
+    required this.type,
+    required this.text,
+    required this.at,
+    this.ref,
+    this.media,
+    this.offer,
+    this.filePath,
+    this.durationMs,
+    this.sending = false,
+  });
+
+  /// The message's own id (a text) or the upload's (a file).
+  final String localId;
+  final String chatId;
+  final ChatMessageType type;
+  final String text;
+  final DateTime at;
+  final ChatRef? ref;
+  final ChatMedia? media;
+  final ChatOffer? offer;
+
+  /// The local photo or recording, for an upload.
+  final String? filePath;
+  final int? durationMs;
+
+  /// Still on its way; false once it failed.
+  final bool sending;
+
+  ChatOutboxItem copyWith({bool? sending}) => ChatOutboxItem(
+    localId: localId,
+    chatId: chatId,
+    type: type,
+    text: text,
+    at: at,
+    ref: ref,
+    media: media,
+    offer: offer,
+    filePath: filePath,
+    durationMs: durationMs,
+    sending: sending ?? this.sending,
+  );
+}
+
+/// The messages not on the server yet, for every conversation, in memory.
+abstract final class ChatOutbox {
+  static final ValueNotifier<List<ChatOutboxItem>> items =
+      ValueNotifier<List<ChatOutboxItem>>(const <ChatOutboxItem>[]);
+
+  static List<ChatOutboxItem> of(String chatId) => <ChatOutboxItem>[
+    for (final ChatOutboxItem i in items.value)
+      if (i.chatId == chatId) i,
+  ];
+
+  static void add(ChatOutboxItem item) {
+    items.value = <ChatOutboxItem>[
+      for (final ChatOutboxItem i in items.value)
+        if (i.localId != item.localId) i,
+      item,
+    ];
+  }
+
+  /// [item] did not go: kept as failed.
+  static void fail(ChatOutboxItem item) => add(item.copyWith(sending: false));
+
+  static void markFailed(String localId) => _mark(localId, false);
+  static void markSending(String localId) => _mark(localId, true);
+
+  static void _mark(String localId, bool sending) {
+    items.value = <ChatOutboxItem>[
+      for (final ChatOutboxItem i in items.value)
+        i.localId == localId ? i.copyWith(sending: sending) : i,
+    ];
+  }
+
+  static void remove(String localId) {
+    if (!items.value.any((ChatOutboxItem i) => i.localId == localId)) return;
+    items.value = <ChatOutboxItem>[
+      for (final ChatOutboxItem i in items.value)
+        if (i.localId != localId) i,
+    ];
+  }
+
+  static void clear() => items.value = const <ChatOutboxItem>[];
+}
+
+/// Conversations put away from the list ("העברה לארכיון") — on this
+/// account, synced like any setting. A conversation comes back by itself
+/// with its next message. Nothing is deleted, on either side.
+abstract final class ChatArchive {
+  static const String key = 'chats.archived';
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+  static Map<String, int>? _cache;
+
+  static Map<String, int> get _all {
+    final Map<String, int>? cached = _cache;
+    if (cached != null) return cached;
+    final Map<String, int> out = <String, int>{};
+    final Object? raw = Hive.isBoxOpen('settings')
+        ? Hive.box<dynamic>('settings').get(key)
+        : null;
+    if (raw is String && raw.isNotEmpty) {
+      for (final String part in raw.split(',')) {
+        final int cut = part.lastIndexOf(':');
+        if (cut <= 0) continue;
+        final int? at = int.tryParse(part.substring(cut + 1));
+        if (at != null) out[part.substring(0, cut)] = at;
+      }
+    }
+    return _cache = out;
+  }
+
+  /// Whether [t] is put away: archived after its last line.
+  static bool isArchived(ChatThread t) {
+    final int? at = _all[t.id];
+    if (at == null) return false;
+    final DateTime? last = t.lastAt;
+    return last == null || last.millisecondsSinceEpoch <= at;
+  }
+
+  static void archive(String chatId, {DateTime? at}) => _write(<String, int>{
+    ..._all,
+    chatId: (at ?? DateTime.now()).millisecondsSinceEpoch,
+  });
+
+  static void restore(String chatId) =>
+      _write(<String, int>{..._all}..remove(chatId));
+
+  static void _write(Map<String, int> next) {
+    _cache = next;
+    persistHomeSetting(
+      key,
+      next.entries
+          .map((MapEntry<String, int> e) => '${e.key}:${e.value}')
+          .join(','),
+    );
+    revision.value++;
+  }
+
+  static void forgetCache() => _cache = null;
 }

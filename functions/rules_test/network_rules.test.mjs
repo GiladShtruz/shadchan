@@ -414,3 +414,26 @@ test('an idea may be offered for a card that was sent, not only shared', async (
     ),
   );
 });
+
+test('a member blocks a chat: no new message from either side, only own uid on the list', async () => {
+  await assertSucceeds(sendBatch(as(B), B, A, 'm0', 'שלום'));
+  // Nobody puts the other on the list.
+  await assertFails(
+    updateDoc(doc(as(A), `chats/${PAIR}`), { blockedBy: [B], updatedAt: serverTimestamp() }),
+  );
+  await assertSucceeds(
+    updateDoc(doc(as(A), `chats/${PAIR}`), { blockedBy: [A], updatedAt: serverTimestamp() }),
+  );
+  await assertFails(sendBatch(as(B), B, A, 'm1', 'עדיין?'));
+  await assertFails(sendBatch(as(A), A, B, 'm2', 'גם אני לא'));
+  // The history stays readable.
+  await assertSucceeds(getDoc(doc(as(B), `chats/${PAIR}/messages/m0`)));
+  // B cannot take A off; A can.
+  await assertFails(
+    updateDoc(doc(as(B), `chats/${PAIR}`), { blockedBy: [], updatedAt: serverTimestamp() }),
+  );
+  await assertSucceeds(
+    updateDoc(doc(as(A), `chats/${PAIR}`), { blockedBy: [], updatedAt: serverTimestamp() }),
+  );
+  await assertSucceeds(sendBatch(as(B), B, A, 'm3', 'שוב שלום'));
+});

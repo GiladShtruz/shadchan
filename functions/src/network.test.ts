@@ -6,6 +6,8 @@ import {
   proposalNotice,
   proposalEvents,
   chatPreview,
+  communityExposed,
+  directChatId,
   sideEvent,
   allowsOnward,
   granteesOf,
@@ -126,8 +128,16 @@ test('approving opens the idea at once, said in one line', () => {
 });
 
 test('a push of a message without words says what it is', () => {
-  assert.equal(chatPreview('voice', ''), '🎤 הודעה קולית');
-  assert.equal(chatPreview('image', '  '), '📷 תמונה');
-  assert.equal(chatPreview('ideaOffer', ''), '💡 יש לי רעיון בשבילך');
+  assert.equal(chatPreview('voice', ''), 'הודעה קולית');
+  assert.equal(chatPreview('image', '  '), 'תמונה');
+  assert.equal(chatPreview('ideaOffer', ''), 'יש לי רעיון בשבילך');
   assert.equal(chatPreview('text', 'שלום'), 'שלום');
+});
+
+test('a conversation from the community: one id per pair, only somebody shown', () => {
+  assert.equal(directChatId('bbb', 'aaa'), 'aaa_bbb');
+  assert.equal(directChatId('aaa', 'bbb'), 'aaa_bbb');
+  assert.equal(communityExposed(undefined), false);
+  assert.equal(communityExposed({ hidden: true }), false);
+  assert.equal(communityExposed({ hidden: false, name: 'x' }), true);
 });

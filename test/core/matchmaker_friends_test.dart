@@ -110,7 +110,7 @@ void main() {
     expect(f.asksForCard, isFalse);
     expect(MatchmakerFriends.approved(friends), hasLength(1));
     expect(MatchmakerFriends.grantable(friends), isEmpty);
-    expect(MatchmakerFriends.permissionsLabel(f), 'כרטיס ✓ | מה אני מחפש —');
+    expect(MatchmakerFriends.permissionsLabel(f), 'רואה: הכרטיס');
   });
 
   test('hiding tidies the list and never hides a request', () {

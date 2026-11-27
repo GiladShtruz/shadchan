@@ -77,17 +77,17 @@ abstract final class HomeActionPhrases {
           .forGender(_g(person));
 }
 
-/// The action list's rows: who it is about first ("אבי ❤️ הודיה"), and under
+/// The action list's rows: who it is about first ("אבי ♥ הודיה", the heart drawn as the app's own glyph), and under
 /// it one short grey line of what to do ("לשאול את אבי מה דעתו"). Short
 /// enough to fit one line on a narrow phone — never cut with "…".
 abstract final class HomeActionLines {
   static String _first(Person? person, String fallback) =>
       HomeActionPhrases._first(person, fallback);
 
-  /// "אבי ❤️ הודיה" — the two people of an idea, a heart between them. The
+  /// "אבי ♥ הודיה" — the two people of an idea, the app's heart between them (drawn by [AppGlyphText], never an emoji). The
   /// pair is already clear from the two faces beside it; no "×", no bulb.
   static String couple({Person? male, Person? female}) =>
-      '${_first(male, 'הבחור')} ❤️ ${_first(female, 'הבחורה')}';
+      '${_first(male, 'הבחור')} \u2665 ${_first(female, 'הבחורה')}';
 
   /// What to do next with an open idea, by where it stands — one short line:
   /// "לשאול את אבי", "מחכים לתשובה מ־אבי".
@@ -108,7 +108,7 @@ abstract final class HomeActionLines {
     }
   }
 
-  /// "רעיון מהמאגר: איתמר ❤️ נועה".
+  /// "רעיון מהמאגר: איתמר ♥ נועה".
   static String pair({required Person male, required Person female}) =>
       'רעיון מהמאגר: ${couple(male: male, female: female)}';
 

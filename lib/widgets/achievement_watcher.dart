@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/sync_quiet.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -135,7 +136,10 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
     if (imported >= CommunityProfileStore.bulkImportNoticeFrom) {
       CommunityProfileStore.clearPendingBulkImport();
       _baselineQuietly();
-      _toast(CommunityAchievements.bulkImportMessage(imported), '🙌');
+      _toast(
+        CommunityAchievements.bulkImportMessage(imported),
+        AppGlyph.people,
+      );
       return;
     }
 
@@ -150,7 +154,7 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
     // marking just this one seen leaves the rest for the days they are the best
     // thing that happened — which is the whole point of not queueing.
     CommunityProfileStore.markSeen(achievement.id);
-    _toast(achievement.title, '🎉');
+    _toast(achievement.title, AppGlyph.spark);
   }
 
   /// The router's navigator overlay: this widget sits above the navigator,
@@ -159,10 +163,10 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
       AppRouter.router.routerDelegate.navigatorKey.currentState?.overlay ??
       Overlay.maybeOf(context, rootOverlay: true);
 
-  void _toast(String message, String emoji) {
+  void _toast(String message, AppGlyph glyph) {
     final OverlayState? overlay = _overlay;
     if (overlay != null) {
-      AppToast.showIn(overlay, message, emoji: emoji);
+      AppToast.showIn(overlay, message, glyph: glyph);
     }
   }
 

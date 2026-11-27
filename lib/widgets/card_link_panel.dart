@@ -76,7 +76,7 @@ Future<void> offerMazelTovWhatsApp(BuildContext context, Person person) async {
   final bool? send = await showDialog<bool>(
     context: context,
     builder: (BuildContext dialogContext) => AlertDialog(
-      title: const Text('מזל טוב! 🎉'),
+      title: const Text('מזל טוב!'),
       content: Text(
         'לשלוח ל$name הודעת וואטסאפ ש${female ? 'תעדכן' : 'יעדכן'} את הסטטוס '
         'בכרטיס ${female ? 'שלה' : 'שלו'}? בנוסף תישלח ${female ? 'אליה' : 'אליו'} '

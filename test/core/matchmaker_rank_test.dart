@@ -13,7 +13,8 @@ void main() {
     expect(MatchmakerRanks.current(219).male, 'שדכן מקצוען');
     expect(MatchmakerRanks.current(999).male, 'שדכן־על');
     expect(MatchmakerRanks.current(5000).male, 'מאסטר שדכן');
-    expect(MatchmakerRanks.current(5000).emoji, '💎');
+    expect(MatchmakerRanks.current(5000).level, 9);
+    expect(MatchmakerRanks.current(0).level, 1);
     expect(MatchmakerRanks.next(5000), isNull);
   });
 
@@ -26,7 +27,7 @@ void main() {
     expect(MatchmakerRanks.nameAt(74, Gender.male), 'שדכן פעיל');
     expect(MatchmakerRanks.nameAt(250, Gender.male), 'שדכן מקצוען+');
     expect(MatchmakerRanks.plus(4000), isFalse); // מאסטר: no next rank.
-    expect(MatchmakerRanks.titleAt(219, Gender.male), '🏅 שדכן מקצוען');
+    expect(MatchmakerRanks.titleAt(219, Gender.male), 'שדכן מקצוען');
   });
 
   test('progress is ideas out of the next rank threshold', () {
@@ -37,13 +38,13 @@ void main() {
 
   test('the home line: rank and figures, then what is next', () {
     final HomeProgress p = HomeProgress.rank(ideas: 219, gender: Gender.male);
-    expect(p.line, '🏅 שדכן מקצוען · 219/300 רעיונות');
-    expect(p.subline, 'עוד 81 רעיונות לשדכן בכיר 🏆');
+    expect(p.line, 'שדכן מקצוען · 219/300 רעיונות');
+    expect(p.subline, 'עוד 81 רעיונות לשדכן בכיר');
     expect(p.progress, closeTo(219 / 300, 1e-9));
     expect(p.rankIdeas, 219);
     expect(
       HomeProgress.rank(ideas: 149, gender: Gender.female).subline,
-      'עוד רעיון אחד לשדכנית מצטיינת ⭐',
+      'עוד רעיון אחד לשדכנית מצטיינת',
     );
     expect(HomeProgress.rank(ideas: 1200).fractionLabel, isNull);
   });

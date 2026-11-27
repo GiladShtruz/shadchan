@@ -292,15 +292,19 @@ void main() {
   );
 
   testWidgets(
-    'home greets without an emoji, offers two shortcuts and one action that grants access',
+    'home greets without an emoji, and the action list grants access',
     (tester) async {
       await tall(tester);
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
       expect(find.textContaining('👋', findRichText: true), findsNothing);
       expect(find.textContaining('יעל', findRichText: true), findsWidgets);
-      expect(find.text('הכרטיס שלי'), findsOneWidget);
-      expect(find.text('מה כדאי לעשות עכשיו'), findsOneWidget);
+      // "השדכנים שלי" is a place of its own, tagged as the card's side.
+      expect(find.text('ניהול הכרטיס האישי'), findsOneWidget);
+      // "מה כדאי לעשות עכשיו" is not a block of its own any more: its steps
+      // are rows of "הפעולה הבאה שלך".
+      expect(find.text('מה כדאי לעשות עכשיו'), findsNothing);
+      expect(find.text('הפעולה הבאה שלך'), findsOneWidget);
       // "מי רואה אותי": nobody yet, said in one compact line.
       expect(find.text('מי רואה אותי'), findsOneWidget);
       expect(find.text('כרגע אף שדכן לא רואה את הכרטיס'), findsOneWidget);
@@ -333,18 +337,18 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
     },
   );
-  testWidgets('the shortcuts open the profile and the matchmakers', (
+  testWidgets('the card tag opens the profile; the row opens the matchmakers', (
     tester,
   ) async {
     await tall(tester);
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('הכרטיס שלי'));
+    await tester.tap(find.text('ניהול הכרטיס האישי'));
     await tester.pumpAndSettle();
     expect(find.text('עריכת הכרטיס'), findsOneWidget);
     await tester.tap(find.text('בית').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('השדכנים שלי').first);
+    await tester.tap(find.text('לכל השדכנים שלי'));
     await tester.pumpAndSettle();
     expect(find.text('אפשר לתת גישה · 1'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -358,7 +362,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('צפייה בכרטיס המלא'), findsNothing);
     expect(find.text(cards.card!.description!), findsNothing);
-    expect(find.text('הכרטיס שלי'), findsOneWidget);
+    expect(find.text('ניהול הכרטיס האישי'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 5));
   });
@@ -652,7 +656,7 @@ void main() {
   });
 
   testWidgets(
-    'home shows the four most recently active matchmakers and the full screen has every one',
+    'home shows the matchmakers, most recently active first, and the full screen has every one',
     (tester) async {
       await tall(tester);
       final now = DateTime.now();
@@ -671,13 +675,13 @@ void main() {
       );
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
-      expect(find.text('השדכנים שלי שהיו פעילים לאחרונה'), findsOneWidget);
+      expect(find.text('השדכנים שלי'), findsWidgets);
+      // The most recent leads the row.
       expect(find.text('חבר 24'), findsOneWidget);
-      expect(find.text('חבר 23'), findsOneWidget);
-      expect(find.text('חבר 22'), findsOneWidget);
-      expect(find.text('חבר 21'), findsOneWidget);
-      expect(find.text('חבר 20'), findsNothing);
-      expect(find.text('פעיל לפני 5 דקות · 34 חברים במאגר'), findsOneWidget);
+      expect(
+        tester.getTopRight(find.text('חבר 24')).dx,
+        greaterThan(tester.getTopRight(find.text('חבר 23')).dx),
+      );
       await tester.tap(find.text('חבר 24'));
       await tester.pumpAndSettle();
       expect(find.text('לתת גישה'), findsWidgets);
@@ -953,7 +957,7 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.dragUntilVisible(
         find.text('רוצה לחשוב גם על חברים?'),
-        find.byType(ListView).first,
+        find.byType(CustomScrollView).first,
         const Offset(0, -300),
       );
       await tester.pumpAndSettle();

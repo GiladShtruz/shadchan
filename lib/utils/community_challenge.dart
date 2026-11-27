@@ -160,7 +160,7 @@ class CommunityChallenge {
     final int? last = record;
     if (last != null && last > 0) {
       final String reached = 'שבוע שעבר הגענו ל־$last ${metric.shortNoun}.';
-      if (beatsRecord) return '$reached השבוע כבר שברנו את השיא! 🎉';
+      if (beatsRecord) return '$reached השבוע כבר שברנו את השיא!';
       return '$reached השבוע שוברים את השיא ומגיעים ל־$aim.';
     }
     return 'השבוע היעד הוא $aim ${metric.shortNoun}.';

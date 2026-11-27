@@ -118,7 +118,7 @@ abstract final class PersonalAreaService {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialog, true),
-              child: const Text('לעדכן את החברים ❤️'),
+              child: const Text('לעדכן את החברים'),
             ),
           ],
         ),
@@ -130,7 +130,7 @@ abstract final class PersonalAreaService {
         throw StateError('הכרטיס עדיין לא סונכרן');
       }
       await call('remindMyMatchmakers');
-      if (context.mounted) AppNotice.show(context, 'התזכורת לחברים נשלחה ❤️');
+      if (context.mounted) AppNotice.show(context, 'התזכורת לחברים נשלחה');
     } catch (_) {
       if (requested && context.mounted) {
         AppNotice.show(

@@ -307,7 +307,16 @@ abstract final class MatchmakerFriends {
     if (f.lastActiveAt != null) activityLabel(f.lastActiveAt!, now),
   ].join(' · ');
 
-  /// "כרטיס ✓ | מה אני מחפש ✓", as granted.
+  /// "רואה: הכרטיס · מה אני מחפש", as granted — in words, no tick marks.
   static String permissionsLabel(MatchmakerFriend f) =>
-      'כרטיס ${f.canReadCard ? '✓' : '—'} | מה אני מחפש ${f.canReadLooking ? '✓' : '—'}';
+      permissionsText(card: f.canReadCard, looking: f.canReadLooking);
+
+  /// The same line for any grant.
+  static String permissionsText({required bool card, required bool looking}) {
+    final List<String> seen = <String>[
+      if (card) 'הכרטיס',
+      if (looking) 'מה אני מחפש',
+    ];
+    return seen.isEmpty ? 'אין גישה' : 'רואה: ${seen.join(' · ')}';
+  }
 }

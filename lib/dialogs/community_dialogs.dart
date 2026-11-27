@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
@@ -193,10 +194,12 @@ abstract final class CommunityMilestoneDialog {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      Text(
-                        milestone.emoji,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 46),
+                      Center(
+                        child: AppGlyphIcon(
+                          milestone.glyph,
+                          size: 46,
+                          color: context.tokens.ctaAccent,
+                        ),
                       ),
                       const SizedBox(height: 14),
                       Text(

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 
 /// The app's way of saying "that worked" without stopping anybody.
@@ -36,24 +37,24 @@ abstract final class AppToast {
 
   /// Shows [message], replacing whatever is on screen.
   ///
-  /// [emoji] rides at the end of the line — in Hebrew, its left-hand side —
-  /// because that is where a sentence finishes. It is optional and should stay
-  /// that way: a mark on every message is a mark that means nothing.
-  static void show(BuildContext context, String message, {String? emoji}) {
+  /// [glyph] is the app's own small mark at the start of the line — never an
+  /// emoji. It is optional and should stay that way: a mark on every message
+  /// is a mark that means nothing.
+  static void show(BuildContext context, String message, {AppGlyph? glyph}) {
     final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) {
       return;
     }
-    showIn(overlay, message, emoji: emoji);
+    showIn(overlay, message, glyph: glyph);
   }
 
   /// [show], into a given overlay — for a caller above the navigator.
-  static void showIn(OverlayState overlay, String message, {String? emoji}) {
+  static void showIn(OverlayState overlay, String message, {AppGlyph? glyph}) {
     dismiss();
 
     final OverlayEntry entry = OverlayEntry(
       builder: (BuildContext context) =>
-          _Toast(message: message, emoji: emoji, onTap: dismiss),
+          _Toast(message: message, glyph: glyph, onTap: dismiss),
     );
     _entry = entry;
     overlay.insert(entry);
@@ -71,12 +72,12 @@ abstract final class AppToast {
 class _Toast extends StatefulWidget {
   const _Toast({
     required this.message,
-    required this.emoji,
+    required this.glyph,
     required this.onTap,
   });
 
   final String message;
-  final String? emoji;
+  final AppGlyph? glyph;
   final VoidCallback onTap;
 
   @override
@@ -102,7 +103,7 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
     final Color lead = dark
         ? theme.colorScheme.primary
         : context.tokens.maleAccent;
-    final String? emoji = widget.emoji;
+    final AppGlyph? glyph = widget.glyph;
 
     return Positioned(
       // Clear of the bottom navigation bar, so it never covers the tab
@@ -149,17 +150,25 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
                 ),
                 child: Directionality(
                   textDirection: TextDirection.rtl,
-                  child: Text(
-                    emoji == null || emoji.isEmpty
-                        ? widget.message
-                        : '${widget.message} $emoji',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.start,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
-                    ),
+                  child: Row(
+                    children: <Widget>[
+                      if (glyph != null) ...<Widget>[
+                        AppGlyphIcon(glyph, size: 20, color: lead),
+                        const SizedBox(width: 10),
+                      ],
+                      Expanded(
+                        child: Text(
+                          widget.message,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.start,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

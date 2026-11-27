@@ -13,6 +13,7 @@ import 'package:shadchan/utils/community_challenge.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 
 /// The activity card on בית — "הפעילות שלי" beside "פעילות הקהילה", large,
 /// under one window switch (השבוע | החודש | כל הזמנים), and the community's
@@ -40,7 +41,20 @@ class HomeWeekBlock extends StatefulWidget {
     required this.onOpen,
     this.watchGoal = CommunityGoalService.watch,
     this.loadTotals = CommunityService.totals,
+    this.showTabs = true,
   });
+
+  /// The window on show — shared with [HomeDataTabs], which pins the switch
+  /// under the search row on בית while the figures scroll away.
+  static final ValueNotifier<CommunityPeriod> period =
+      ValueNotifier<CommunityPeriod>(CommunityPeriod.week);
+
+  /// "הנתונים שלי" | "נתוני הקהילה".
+  static const String myLabel = 'הנתונים שלי';
+  static const String communityLabel = 'נתוני הקהילה';
+
+  /// False when the window switch is drawn elsewhere (pinned on בית).
+  final bool showTabs;
 
   static const List<CommunityPeriod> periods = <CommunityPeriod>[
     CommunityPeriod.week,
@@ -64,7 +78,7 @@ class HomeWeekBlock extends StatefulWidget {
 
 class _HomeWeekBlockState extends State<HomeWeekBlock>
     with WidgetsBindingObserver {
-  CommunityPeriod _period = CommunityPeriod.week;
+  CommunityPeriod get _period => HomeWeekBlock.period.value;
 
   /// Per window, with the period key each was read under — a resolved window
   /// is kept only while its key is still the current one (a phone left open
@@ -85,12 +99,20 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HomeWeekBlock.period.addListener(_onPeriod);
     _loadAll();
+  }
+
+  void _onPeriod() {
+    if (!mounted) return;
+    setState(() {});
+    _load(_period);
   }
 
   @override
   void dispose() {
     _goalSubscription?.cancel();
+    HomeWeekBlock.period.removeListener(_onPeriod);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -159,11 +181,7 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
   }
 
   void _select(CommunityPeriod period) {
-    if (period == _period) {
-      return;
-    }
-    setState(() => _period = period);
-    _load(period);
+    HomeWeekBlock.period.value = period;
   }
 
   @override
@@ -226,19 +244,21 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          CommunityPeriodTabs(
-            selected: _period,
-            onChanged: _select,
-            periods: HomeWeekBlock.periods,
-          ),
-          const SizedBox(height: 10),
+          if (widget.showTabs) ...<Widget>[
+            CommunityPeriodTabs(
+              selected: _period,
+              onChanged: _select,
+              periods: HomeWeekBlock.periods,
+            ),
+            const SizedBox(height: 10),
+          ],
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Expanded(
                   child: _Figure(
-                    label: 'הפעילות שלי',
+                    label: HomeWeekBlock.myLabel,
                     value: community.myPoints(_period),
                     period: _period,
                     color: warm,
@@ -258,7 +278,7 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
                           child: CommunityHiddenNotice(compact: true),
                         )
                       : _Figure(
-                          label: 'פעילות הקהילה',
+                          label: HomeWeekBlock.communityLabel,
                           value: totals?.resolved == true
                               ? totals!.points
                               : null,
@@ -416,9 +436,9 @@ class _ChallengeBar extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(
-              won ? Icons.emoji_events_outlined : Icons.flag_outlined,
-              size: 15,
+            AppGlyphIcon(
+              won ? AppGlyph.trophy : AppGlyph.flag,
+              size: 17,
               color: fill,
             ),
             const SizedBox(width: 8),
@@ -474,4 +494,75 @@ class _ChallengeBar extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The window switch of the data block, pinned under the search row on בית:
+/// the greeting and the figures scroll away, השבוע | החודש | כל הזמנים stays,
+/// so the period being read is always in sight.
+abstract final class HomeDataTabs {
+  static Widget pinnedSliver(BuildContext context, {required double inset}) {
+    // The tabs' own frame (border, padding) plus one line of text, scaled
+    // with the reader's font, and the band's air above and below.
+    final double height =
+        2 + 6 + 16 + MediaQuery.textScalerOf(context).scale(22) + 16;
+    return SliverPersistentHeader(
+      pinned: true,
+      delegate: _TabsDelegate(height: height, inset: inset),
+    );
+  }
+}
+
+class _TabsDelegate extends SliverPersistentHeaderDelegate {
+  _TabsDelegate({required this.height, required this.inset});
+
+  final double height;
+  final double inset;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final bool covering = overlapsContent || shrinkOffset > 0;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: covering
+            ? Border(
+                bottom: BorderSide(
+                  color: theme.colorScheme.outlineVariant,
+                  width: 0.6,
+                ),
+              )
+            : null,
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: inset, vertical: 8),
+        child: Center(
+          child: ValueListenableBuilder<CommunityPeriod>(
+            valueListenable: HomeWeekBlock.period,
+            builder: (BuildContext context, CommunityPeriod selected, _) =>
+                CommunityPeriodTabs(
+                  selected: selected,
+                  onChanged: (CommunityPeriod p) =>
+                      HomeWeekBlock.period.value = p,
+                  periods: HomeWeekBlock.periods,
+                ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_TabsDelegate oldDelegate) =>
+      oldDelegate.height != height || oldDelegate.inset != inset;
 }

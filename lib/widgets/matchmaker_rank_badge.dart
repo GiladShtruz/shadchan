@@ -3,9 +3,10 @@ import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/matchmaker_rank.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 
 /// The matchmaker's rank, as one small pill under the name on a profile —
-/// "🔥 שדכנית פעילה+". A tap opens the whole ladder and how it works.
+/// "שדכנית פעילה+" beside its medal. A tap opens the whole ladder and how it works.
 class MatchmakerRankBadge extends StatelessWidget {
   const MatchmakerRankBadge({
     super.key,
@@ -51,6 +52,12 @@ class MatchmakerRankBadge extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                RankMark(
+                  level: MatchmakerRanks.current(ideas).level,
+                  size: 18,
+                  color: warm,
+                ),
+                const SizedBox(width: 6),
                 Text(
                   title,
                   style: theme.textTheme.labelLarge?.copyWith(
@@ -156,7 +163,13 @@ class _LadderRow extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          SizedBox(width: 26, child: Text(rank.emoji)),
+          SizedBox(
+            width: 28,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: RankMark(level: rank.level, size: 20, color: warm),
+            ),
+          ),
           Expanded(
             child: Text(
               rank.nameFor(gender),

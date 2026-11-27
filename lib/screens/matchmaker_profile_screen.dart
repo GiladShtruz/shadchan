@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/screens/chats_screen.dart';
+import 'package:shadchan/services/chat_service.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/utils/app_tokens.dart';
 import 'package:shadchan/utils/avatar_image.dart';
 import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
@@ -134,6 +137,22 @@ class _MatchmakerProfileScreenState extends State<MatchmakerProfileScreen> {
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: ProfilePalette.muted(theme),
                   height: 1.45,
+                ),
+              ),
+            ],
+            // The one main action: an ordinary conversation, at once — no
+            // request, no approval. Not to oneself.
+            if (widget.uid != ChatService.uid) ...<Widget>[
+              const SizedBox(height: 16),
+              Center(
+                child: FilledButton.icon(
+                  onPressed: () => ChatLauncher.open(
+                    context,
+                    otherUid: widget.uid,
+                    otherName: name,
+                  ),
+                  icon: const AppGlyphIcon(AppGlyph.chat, size: 18),
+                  label: const Text('צ\'אט'),
                 ),
               ),
             ],
@@ -382,16 +401,19 @@ class _Header extends StatelessWidget {
         if (photoUrl.isEmpty)
           fallback
         else
-          ClipOval(
-            child: Image(
-              image: avatarImage(context, photoUrl, diameter: _radius * 2),
-              width: _radius * 2,
-              height: _radius * 2,
-              fit: BoxFit.cover,
-              // A picture that will not load is not worth an error box on
-              // somebody's profile — the neutral circle is the same one a
-              // matchmaker without a photograph gets.
-              errorBuilder: (_, _, _) => fallback,
+          GestureDetector(
+            onTap: () => ProfilePhotoViewer.open(context, photoUrl, name: name),
+            child: ClipOval(
+              child: Image(
+                image: avatarImage(context, photoUrl, diameter: _radius * 2),
+                width: _radius * 2,
+                height: _radius * 2,
+                fit: BoxFit.cover,
+                // A picture that will not load is not worth an error box on
+                // somebody's profile — the neutral circle is the same one a
+                // matchmaker without a photograph gets.
+                errorBuilder: (_, _, _) => fallback,
+              ),
             ),
           ),
         const SizedBox(height: 12),

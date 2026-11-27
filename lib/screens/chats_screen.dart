@@ -35,6 +35,10 @@ import 'package:shadchan/utils/chat_idea_command.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/chat_objects.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
+import 'package:shadchan/services/support_service.dart';
+import 'package:shadchan/utils/chat_search.dart';
+import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/widgets/personal_home_sections.dart';
 
 T? _maybeRead<T>(BuildContext context) {
@@ -64,16 +68,37 @@ class ChatsScreen extends StatefulWidget {
 
 class _ChatsScreenState extends State<ChatsScreen> {
   final TextEditingController _search = TextEditingController();
+  Timer? _debounce;
+
+  /// The query the list answers — the field's text after it rested for
+  /// [ChatSearch.debounce], so nothing is searched on every letter.
+  String _query = '';
+  bool _showArchived = false;
 
   @override
   void initState() {
     super.initState();
     unawaited(ChatService.start());
-    _search.addListener(() => setState(() {}));
+    _search.addListener(_onTyped);
+  }
+
+  void _onTyped() {
+    _debounce?.cancel();
+    final String text = _search.text;
+    if (text.trim().isEmpty) {
+      if (_query.isNotEmpty) setState(() => _query = '');
+      return;
+    }
+    _debounce = Timer(ChatSearch.debounce, () {
+      if (mounted) setState(() => _query = text);
+    });
+    // The clear button follows the field at once.
+    setState(() {});
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -81,10 +106,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
   /// Whether [t] answers the search — by the other side's name or the last
   /// line.
   static bool matches(ChatThread t, String me, String query) {
-    final String q = query.trim().toLowerCase();
-    if (q.isEmpty) return true;
-    return t.titleFor(me).toLowerCase().contains(q) ||
-        t.lastText.toLowerCase().contains(q);
+    if (ChatSearch.fold(query).isEmpty) return true;
+    return ChatSearch.nameMatches(t.titleFor(me), query) ||
+        ChatSearch.fold(t.lastText).contains(ChatSearch.fold(query));
   }
 
   @override
@@ -102,7 +126,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
               textInputAction: TextInputAction.search,
               onTapOutside: (_) => FocusScope.of(context).unfocus(),
               decoration: InputDecoration(
-                hintText: 'חיפוש בצ\'אטים',
+                hintText: 'חיפוש שיחה או איש קשר',
                 prefixIcon: const Icon(Icons.search_rounded),
                 suffixIcon: _search.text.isEmpty
                     ? null
@@ -122,49 +146,233 @@ class _ChatsScreenState extends State<ChatsScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'new-chat',
-        tooltip: 'שיחה חדשה',
-        onPressed: () => NewChatSheet.show(context),
-        child: const Icon(Icons.edit_square),
-      ),
       body: ListenableBuilder(
         listenable: Listenable.merge(<Listenable>[
           ChatService.threads,
           ChatService.loaded,
+          ChatArchive.revision,
         ]),
         builder: (BuildContext context, _) {
           final String me = ChatService.uid ?? '';
           final List<ChatThread> all = ChatService.threads.value;
-          final List<ChatThread> shown = <ChatThread>[
+          final String query = _query;
+          if (ChatSearch.fold(query).isNotEmpty) {
+            return _SearchResults(
+              me: me,
+              query: query,
+              threads: <ChatThread>[
+                for (final ChatThread t in all)
+                  if (matches(t, me, query)) t,
+              ],
+              contacts: ChatSearch.contacts(
+                ChatContactsIndex.of(context),
+                query,
+                withThreads: <String>{
+                  for (final ChatThread t in all) t.otherOf(me),
+                },
+                me: me,
+              ),
+            );
+          }
+          final List<ChatThread> live = <ChatThread>[
             for (final ChatThread t in all)
-              if (matches(t, me, _search.text)) t,
+              if (!ChatArchive.isArchived(t)) t,
+          ];
+          final List<ChatThread> archived = <ChatThread>[
+            for (final ChatThread t in all)
+              if (ChatArchive.isArchived(t)) t,
           ];
           if (all.isEmpty) {
             if (!ChatService.loaded.value && ChatService.uid != null) {
               return const Center(child: CircularProgressIndicator());
             }
-            return _EmptyChats(candidates: NewChatSheet.candidatesOf(context));
+            return const _EmptyChats();
           }
-          if (shown.isEmpty) {
-            return const Center(child: Text('לא נמצאו שיחות'));
-          }
+          final List<ChatThread> shown = _showArchived ? archived : live;
           return AppRefreshIndicator(
             scope: RefreshScope.chats,
             child: ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.only(bottom: 88),
-              itemCount: shown.length,
-              itemBuilder: (BuildContext context, int i) => _ThreadRow(
-                key: ValueKey<String>(shown[i].id),
-                thread: shown[i],
-                me: me,
-              ),
+              itemCount: shown.length + (archived.isEmpty ? 0 : 1),
+              itemBuilder: (BuildContext context, int i) {
+                if (i == shown.length) {
+                  return _ArchiveToggle(
+                    count: archived.length,
+                    showing: _showArchived,
+                    onTap: () => setState(() => _showArchived = !_showArchived),
+                  );
+                }
+                return _ThreadRow(
+                  key: ValueKey<String>(shown[i].id),
+                  thread: shown[i],
+                  me: me,
+                );
+              },
             ),
           );
         },
       ),
     );
+  }
+}
+
+/// "שיחות בארכיון (3)" at the foot of the list, and back.
+class _ArchiveToggle extends StatelessWidget {
+  const _ArchiveToggle({
+    required this.count,
+    required this.showing,
+    required this.onTap,
+  });
+
+  final int count;
+  final bool showing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          onPressed: onTap,
+          icon: Icon(
+            showing ? Icons.arrow_forward_rounded : Icons.inventory_2_outlined,
+            size: 18,
+          ),
+          label: Text(
+            showing ? 'חזרה לכל השיחות' : 'שיחות בארכיון ($count)',
+            style: theme.textTheme.labelLarge,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The search's answer: the conversations that match, then the contacts who
+/// use שדכן and have no conversation yet. A tap on a contact opens an empty
+/// conversation — nothing is created until the first message.
+class _SearchResults extends StatelessWidget {
+  const _SearchResults({
+    required this.me,
+    required this.query,
+    required this.threads,
+    required this.contacts,
+  });
+
+  final String me;
+  final String query;
+  final List<ChatThread> threads;
+  final List<ChatContact> contacts;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    if (threads.isEmpty && contacts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'לא נמצאו אנשי קשר בשדכן',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium,
+          ),
+        ),
+      );
+    }
+    Widget heading(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+      child: Text(
+        text,
+        style: theme.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: context.tokens.textSecondary,
+        ),
+      ),
+    );
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 88),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      children: <Widget>[
+        if (threads.isNotEmpty) ...<Widget>[
+          heading('שיחות'),
+          for (final ChatThread t in threads)
+            _ThreadRow(key: ValueKey<String>(t.id), thread: t, me: me),
+        ],
+        if (contacts.isNotEmpty) ...<Widget>[
+          heading('אנשי קשר בשדכן'),
+          for (final ChatContact c in contacts)
+            ListTile(
+              key: ValueKey<String>('contact:${c.uid}'),
+              leading: ChatAvatar(name: c.name, radius: 24),
+              title: Text(
+                c.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              subtitle: c.why.isEmpty ? null : Text(c.why),
+              trailing: AppGlyphIcon(
+                AppGlyph.chat,
+                size: 20,
+                color: context.tokens.maleAccent,
+              ),
+              onTap: () {
+                FocusScope.of(context).unfocus();
+                ChatLauncher.open(context, otherUid: c.uid, otherName: c.name);
+              },
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Everybody the chat search can find: the people in this phone's contacts
+/// who use שדכן — matchmakers the server found in the address book, single
+/// friends who keep a card — and the people this account is tied to (a card,
+/// a share, the couple space). Read from what the providers already hold; a
+/// search never reads the address book again.
+abstract final class ChatContactsIndex {
+  static List<ChatContact> of(BuildContext context) {
+    final Map<String, ChatContact> out = <String, ChatContact>{};
+    void add(String uid, String name, String why, {String? phone}) {
+      if (uid.isEmpty || uid == ChatService.uid || name.trim().isEmpty) return;
+      out.putIfAbsent(
+        uid,
+        () => ChatContact(uid: uid, name: name.trim(), why: why, phone: phone),
+      );
+    }
+
+    final CardAccessProvider? access = _maybeRead<CardAccessProvider>(context);
+    if (access != null) {
+      for (final CardHelper h in access.knownHelpers) {
+        if (h.granteeUids.length > 1) continue;
+        add(
+          h.uid,
+          access.nameInContacts(h.uid, h.name),
+          'שדכן/ית מאנשי הקשר',
+          phone: ContactHashUpload.phoneFor(h.phoneHash),
+        );
+      }
+      for (final CardHelper f in access.mutualFriends) {
+        add(
+          f.uid,
+          access.nameInContacts(f.uid, f.name),
+          'חבר/ה מאנשי הקשר',
+          phone: ContactHashUpload.phoneFor(f.phoneHash),
+        );
+      }
+    }
+    for (final ChatCandidate c in NewChatSheet.candidatesOf(context)) {
+      add(c.uid, c.name, c.why);
+    }
+    return out.values.toList();
   }
 }
 
@@ -190,43 +398,45 @@ class ChatAvatar extends StatelessWidget {
       foregroundImage: url == null
           ? null
           : avatarImage(context, url, diameter: radius * 2),
-      // No picture: a plain flat figure of a person, the same everywhere a
-      // matchmaker or a friend has no photo.
-      child: Icon(
-        Icons.person_rounded,
-        size: radius * 1.3,
-        color: AppColors.white,
+      // No picture: the app's own plain figure, the same everywhere a
+      // matchmaker or a friend has no photo — never a letter or an emoji.
+      child: AppGlyphIcon(
+        AppGlyph.person,
+        size: radius * 1.1,
+        color: context.tokens.maleAccent,
       ),
     );
   }
 }
 
-/// No conversation yet: what the list is for, and the people a first one can
-/// be started with right here — a tap opens the conversation, ready to
-/// write; nothing is created until the first message is sent.
+/// No conversation yet: what the list is for, and the way to start one —
+/// the search above, which finds the contacts who use שדכן. No list of
+/// suggested people: the list of conversations stays a list of
+/// conversations.
 class _EmptyChats extends StatelessWidget {
-  const _EmptyChats({required this.candidates});
-
-  final List<ChatCandidate> candidates;
-
-  static const int shown = 8;
+  const _EmptyChats();
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final List<ChatCandidate> first = candidates.take(shown).toList();
     return AppRefreshIndicator(
       scope: RefreshScope.chats,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 28, 20, 96),
+        padding: const EdgeInsets.fromLTRB(28, 56, 28, 96),
         children: <Widget>[
-          Icon(
-            Icons.chat_bubble_outline_rounded,
-            size: 44,
-            color: theme.colorScheme.primary,
+          Center(
+            child: CircleAvatar(
+              radius: 34,
+              backgroundColor: context.tokens.maleWash,
+              child: AppGlyphIcon(
+                AppGlyph.chat,
+                size: 32,
+                color: context.tokens.maleAccent,
+              ),
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
           Text(
             'עדיין אין שיחות',
             textAlign: TextAlign.center,
@@ -236,52 +446,11 @@ class _EmptyChats extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'כאן יופיעו כל השיחות שלך — עם שדכנים ועם חברים שמנהלים כרטיס. '
-            'שיחה אחת קבועה עם כל אחד.',
+            'שיחה אחת קבועה עם כל אחד — שדכנים וחברים. כדי להתחיל, אפשר '
+            'לחפש למעלה איש קשר שמשתמש בשדכן.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium,
           ),
-          const SizedBox(height: 20),
-          if (first.isNotEmpty) ...<Widget>[
-            Text(
-              'אפשר להתחיל שיחה עם',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 4),
-            for (final ChatCandidate c in first)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: ChatAvatar(name: c.name, radius: 22),
-                title: Text(
-                  c.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(c.why),
-                trailing: const Icon(Icons.chat_bubble_outline_rounded),
-                onTap: () => ChatLauncher.open(
-                  context,
-                  otherUid: c.uid,
-                  otherName: c.name,
-                ),
-              ),
-            if (candidates.length > shown)
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  onPressed: () => NewChatSheet.show(context),
-                  child: Text('לכל ${candidates.length} האנשים'),
-                ),
-              ),
-          ] else
-            Text(
-              'אפשר לפתוח שיחה עם השדכנים שרואים את הכרטיס שלך, עם חברים '
-              'שהכרטיס האישי שלהם אצלך, ועם שדכנים שמורים אצלך באנשי הקשר.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
-            ),
         ],
       ),
     );
@@ -294,6 +463,38 @@ class _ThreadRow extends StatelessWidget {
   final ChatThread thread;
   final String me;
 
+  static AppGlyph? glyphOf(ChatMessageType type) => switch (type) {
+    ChatMessageType.voice => AppGlyph.mic,
+    ChatMessageType.image => AppGlyph.photo,
+    ChatMessageType.card => AppGlyph.card,
+    ChatMessageType.idea || ChatMessageType.ideaOffer => AppGlyph.spark,
+    ChatMessageType.text || ChatMessageType.system => null,
+  };
+
+  Future<void> _menu(BuildContext context) async {
+    final bool archived = ChatArchive.isArchived(thread);
+    final String? choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheet) => SafeArea(
+        child: ListTile(
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: Text(archived ? 'הוצאה מהארכיון' : 'העברה לארכיון'),
+          subtitle: archived
+              ? null
+              : const Text('השיחה תחזור לרשימה עם ההודעה הבאה'),
+          onTap: () => Navigator.pop(sheet, 'archive'),
+        ),
+      ),
+    );
+    if (choice != 'archive') return;
+    if (archived) {
+      ChatArchive.restore(thread.id);
+    } else {
+      ChatArchive.archive(thread.id);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -301,65 +502,87 @@ class _ThreadRow extends StatelessWidget {
     final int count = thread.unreadCountFor(me);
     final DateTime? at = thread.lastAt;
     final String title = thread.titleFor(me);
-    return ListTile(
-      leading: ChatAvatar(name: title, photoUrl: thread.photoFor(me)),
-      title: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: unread ? FontWeight.w900 : FontWeight.w700,
+    final AppGlyph? kind = glyphOf(thread.lastType);
+    final Color muted = context.tokens.textSecondary;
+    return Material(
+      // A conversation waiting to be read is drawn on a faint wash.
+      color: unread
+          ? context.tokens.maleWash.withValues(alpha: 0.45)
+          : Colors.transparent,
+      child: ListTile(
+        leading: ChatAvatar(name: title, photoUrl: thread.photoFor(me)),
+        title: Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: unread ? FontWeight.w900 : FontWeight.w700,
+          ),
         ),
-      ),
-      subtitle: Text(
-        thread.previewFor(me),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: unread
-            ? theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-              )
-            : null,
-      ),
-      trailing: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: <Widget>[
-          if (at != null)
-            Text(
-              AppDateUtils.notificationTime(at),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: unread ? theme.colorScheme.secondary : null,
-                fontWeight: unread ? FontWeight.w800 : null,
-              ),
-            ),
-          if (unread) ...<Widget>[
-            const SizedBox(height: 4),
-            Container(
-              constraints: const BoxConstraints(minWidth: 20),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.secondary,
-                borderRadius: BorderRadius.circular(10),
-              ),
+        subtitle: Row(
+          children: <Widget>[
+            if (thread.isBlocked) ...<Widget>[
+              Icon(Icons.block_rounded, size: 14, color: muted),
+              const SizedBox(width: 4),
+            ] else if (kind != null) ...<Widget>[
+              AppGlyphIcon(kind, size: 15, color: muted),
+              const SizedBox(width: 4),
+            ],
+            Expanded(
               child: Text(
-                count > 99 ? '99+' : '$count',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSecondary,
-                  fontWeight: FontWeight.w800,
-                ),
+                thread.isBlocked ? 'השיחה חסומה' : thread.previewFor(me),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: unread
+                    ? theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onSurface,
+                      )
+                    : theme.textTheme.bodyMedium?.copyWith(color: muted),
               ),
             ),
           ],
-        ],
-      ),
-      onTap: () => context.push(
-        ChatService.routeTo(
-          me: me,
-          otherUid: thread.otherOf(me),
-          theirName: title,
+        ),
+        trailing: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            if (at != null)
+              Text(
+                AppDateUtils.notificationTime(at),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: unread ? context.tokens.badge : null,
+                  fontWeight: unread ? FontWeight.w800 : null,
+                ),
+              ),
+            if (unread) ...<Widget>[
+              const SizedBox(height: 4),
+              Container(
+                constraints: const BoxConstraints(minWidth: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: context.tokens.badge,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  count > 99 ? '99+' : '$count',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: context.tokens.onBadge,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        onLongPress: () => _menu(context),
+        onTap: () => context.push(
+          ChatService.routeTo(
+            me: me,
+            otherUid: thread.otherOf(me),
+            theirName: title,
+          ),
         ),
       ),
     );
@@ -556,6 +779,15 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _sending = false;
   VoidCallback? _releaseProposals;
 
+  // --- Search inside the conversation ------------------------------------
+  bool _searching = false;
+  final TextEditingController _searchText = TextEditingController();
+  Timer? _searchDebounce;
+  List<String> _hits = const <String>[];
+  int _hit = 0;
+  bool _searchingOlder = false;
+  final Map<String, GlobalKey> _keys = <String, GlobalKey>{};
+
   @override
   void initState() {
     super.initState();
@@ -563,6 +795,7 @@ class _ChatScreenState extends State<ChatScreen> {
     ChatService.openChatId = widget.chatId;
     unawaited(_startService());
     _messages.addListener(_onMessages);
+    ChatOutbox.items.addListener(_onOutbox);
     ChatService.threads.addListener(_onThreads);
     _scroll.addListener(_onScroll);
     _text.addListener(() {
@@ -601,6 +834,211 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.resubscribe();
     }
     if (mounted) setState(() {});
+  }
+
+  void _onOutbox() {
+    if (mounted) setState(() {});
+  }
+
+  // --- Search inside the conversation ------------------------------------
+
+  void _startSearch() => setState(() {
+    _searching = true;
+    _hits = const <String>[];
+    _hit = 0;
+  });
+
+  void _stopSearch() => setState(() {
+    _searching = false;
+    _searchText.clear();
+    _hits = const <String>[];
+  });
+
+  void _onSearchTyped(String _) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(ChatSearch.debounce, () => _runSearch());
+  }
+
+  /// Every message whose words hold the query, newest first. Reads older
+  /// pages (a few at most) so the search covers more than what is on
+  /// screen; the matches are then stepped through with ▲ ▼.
+  Future<void> _runSearch() async {
+    final String q = ChatSearch.fold(_searchText.text);
+    if (q.isEmpty) {
+      if (mounted) setState(() => _hits = const <String>[]);
+      return;
+    }
+    if (!_searchingOlder) {
+      _searchingOlder = true;
+      for (int i = 0; i < 10 && _messages.hasMore; i++) {
+        await _messages.loadOlder();
+        if (!mounted) return;
+      }
+      _searchingOlder = false;
+    }
+    final List<String> hits = <String>[
+      for (final ChatMessage m in _messages.messages.reversed)
+        if (!m.system && ChatSearch.fold(m.text).contains(q)) m.id,
+    ];
+    if (!mounted) return;
+    setState(() {
+      _hits = hits;
+      _hit = 0;
+    });
+    if (hits.isNotEmpty) unawaited(_scrollToHit());
+  }
+
+  void _stepHit(int delta) {
+    if (_hits.isEmpty) return;
+    setState(() => _hit = (_hit + delta) % _hits.length);
+    unawaited(_scrollToHit());
+  }
+
+  /// Brings the current match on screen: the list is built lazily, so it
+  /// steps towards the message until its bubble exists, then centres it.
+  Future<void> _scrollToHit() async {
+    if (_hits.isEmpty || !_scroll.hasClients) return;
+    final String id = _hits[_hit];
+    final List<ChatMessage> list = _messages.messages;
+    final int at = list.indexWhere((ChatMessage m) => m.id == id);
+    if (at < 0) return;
+    // Reversed list: the newest is at offset zero.
+    final int fromNewest = list.length - 1 - at;
+    for (int attempt = 0; attempt < 12; attempt++) {
+      final BuildContext? target = _keys[id]?.currentContext;
+      if (target != null && target.mounted) {
+        await Scrollable.ensureVisible(
+          target,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 250),
+        );
+        return;
+      }
+      final ScrollPosition p = _scroll.position;
+      final double guess = (fromNewest * 64.0).clamp(0, p.maxScrollExtent);
+      final double next = attempt == 0
+          ? guess
+          : (p.pixels + (guess > p.pixels ? 1 : -1) * p.viewportDimension * 0.8)
+                .clamp(0, p.maxScrollExtent);
+      _scroll.jumpTo(next);
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+  }
+
+  // --- The other side's profile, the menu ---------------------------------
+
+  /// The other side's profile — whoever they are to this account: a friend
+  /// whose card is in the database, a matchmaker from the contacts or the
+  /// shares, or somebody met on the board (their public page).
+  void _openProfile() {
+    final String other = _other;
+    if (other.isEmpty) return;
+    final PersonRepository? people = _maybeRead<PersonRepository>(context);
+    if (WorkspaceStore.matchmakerEnabled && people != null) {
+      for (final Person p in people.getAll()) {
+        if (p.cardOwnerUid == other && !p.hidden) {
+          context.push('/people/${p.id}');
+          return;
+        }
+      }
+    }
+    final CardAccessProvider? access = _maybeRead<CardAccessProvider>(context);
+    final bool known =
+        (access?.knownHelpers.any((CardHelper h) => h.uid == other) ?? false) ||
+        MatchmakerShares.connectedNames.containsKey(other) ||
+        PartnerSpace.isPartner(other);
+    context.push(known ? '/known-matchmakers/$other' : '/matchmakers/$other');
+  }
+
+  Future<void> _menu(String choice) async {
+    final ChatThread? t = ChatService.thread(widget.chatId);
+    switch (choice) {
+      case 'search':
+        _startSearch();
+      case 'profile':
+        _openProfile();
+      case 'archive':
+        if (t == null) return;
+        if (ChatArchive.isArchived(t)) {
+          ChatArchive.restore(t.id);
+        } else {
+          ChatArchive.archive(t.id);
+          if (mounted) {
+            AppNotice.show(
+              context,
+              'השיחה הועברה לארכיון. היא תחזור לרשימה עם ההודעה הבאה.',
+            );
+          }
+        }
+      case 'block':
+        await _toggleBlock(t);
+      case 'report':
+        if (!mounted) return;
+        await context.push(
+          '/support/report?kind=${SupportReportKind.contentReport.name}',
+          extra:
+              'דיווח על שיחה עם $_otherName (מזהה $_other):\n\n'
+              'מה קרה:\n',
+        );
+    }
+  }
+
+  Future<void> _toggleBlock(ChatThread? t) async {
+    final String me = ChatService.uid ?? '';
+    if (t == null) {
+      AppNotice.show(context, 'אין עדיין שיחה לחסום.');
+      return;
+    }
+    final bool blocking = !t.blockedByMe(me);
+    if (blocking) {
+      final bool? sure = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialog) => AlertDialog(
+          title: Text('לחסום את $_otherName?'),
+          content: const Text(
+            'לא יישלחו הודעות חדשות בשיחה הזו, משני הצדדים. ההיסטוריה '
+            'נשארת, ורעיונות פתוחים ממשיכים כרגיל. אפשר לבטל בכל רגע.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('חסימה'),
+            ),
+          ],
+        ),
+      );
+      if (sure != true || !mounted) return;
+    }
+    if (!OfflineGuard.allow(context)) return;
+    final bool ok = await ChatService.setBlocked(widget.chatId, blocking);
+    if (!mounted) return;
+    AppNotice.show(
+      context,
+      ok
+          ? (blocking ? 'השיחה נחסמה' : 'החסימה בוטלה')
+          : 'לא הצלחנו כרגע. אפשר לנסות שוב.',
+      isError: !ok,
+    );
+  }
+
+  Future<void> _retry(ChatOutboxItem item) async {
+    if (!OfflineGuard.allow(context)) return;
+    final bool ok = await ChatService.retry(
+      item,
+      myName: _myName,
+      theirName: _otherName,
+    );
+    if (!mounted) return;
+    if (ok) {
+      _messages.resubscribe();
+    } else {
+      _failed();
+    }
   }
 
   void _onMessages() {
@@ -649,7 +1087,10 @@ class _ChatScreenState extends State<ChatScreen> {
     if (ChatService.openChatId == widget.chatId) ChatService.openChatId = null;
     unawaited(ChatService.markRead(widget.chatId));
     _messages.removeListener(_onMessages);
+    ChatOutbox.items.removeListener(_onOutbox);
     _messages.dispose();
+    _searchDebounce?.cancel();
+    _searchText.dispose();
     _text.dispose();
     _scroll.dispose();
     _focus.dispose();
@@ -693,6 +1134,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return ok;
     setState(() => _sending = false);
     if (!ok) {
+      // The line stays in the conversation as "לא נשלחה", with a retry.
+      if (type == ChatMessageType.text &&
+          ChatOutbox.of(widget.chatId).isNotEmpty) {
+        _text.clear();
+      }
       _failed();
       return false;
     }
@@ -945,7 +1391,8 @@ class _ChatScreenState extends State<ChatScreen> {
       imageQuality: 82,
     );
     if (picked == null || !mounted) return;
-    setState(() => _sending = true);
+    // Not awaited by the composer: the photo goes up as "שולח…" in the
+    // conversation, and a failed one stays there with a retry.
     final bool ok = await ChatService.sendFile(
       widget.chatId,
       File(picked.path),
@@ -954,12 +1401,7 @@ class _ChatScreenState extends State<ChatScreen> {
       theirName: _otherName,
     );
     if (!mounted) return;
-    setState(() => _sending = false);
-    if (!ok) {
-      _failed();
-      return;
-    }
-    _messages.resubscribe();
+    if (ok) _messages.resubscribe();
   }
 
   Future<void> _recordVoice() async {
@@ -971,7 +1413,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (recording == null || !mounted) return;
     final File file = await VoiceNoteStore.fileFor(recording.fileName);
     if (!mounted) return;
-    setState(() => _sending = true);
     final bool ok = await ChatService.sendFile(
       widget.chatId,
       file,
@@ -980,16 +1421,11 @@ class _ChatScreenState extends State<ChatScreen> {
       myName: _myName,
       theirName: _otherName,
     );
-    // The recording was made for this message only; the conversation keeps
-    // its own copy.
-    unawaited(VoiceNoteStore.delete(recording.fileName));
+    // The recording was made for this message only; once it went, the
+    // conversation keeps its own copy. A failed one stays for the retry.
+    if (ok) unawaited(VoiceNoteStore.delete(recording.fileName));
     if (!mounted) return;
-    setState(() => _sending = false);
-    if (!ok) {
-      _failed();
-      return;
-    }
-    _messages.resubscribe();
+    if (ok) _messages.resubscribe();
   }
 
   /// A card from my database, as an object in the conversation — or, to a
@@ -1119,6 +1555,59 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  PreferredSizeWidget _searchBar(ThemeData theme) {
+    final int n = _hits.length;
+    return AppBar(
+      leading: IconButton(
+        tooltip: 'סגירת החיפוש',
+        onPressed: _stopSearch,
+        icon: const Icon(Icons.close_rounded),
+      ),
+      titleSpacing: 0,
+      title: TextField(
+        controller: _searchText,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        onChanged: _onSearchTyped,
+        onSubmitted: (_) => _runSearch(),
+        decoration: const InputDecoration(
+          hintText: 'חיפוש בשיחה',
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          filled: false,
+        ),
+      ),
+      actions: <Widget>[
+        if (_searchingOlder)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else if (_searchText.text.trim().isNotEmpty)
+          Center(
+            child: Text(
+              n == 0 ? 'אין תוצאות' : '${_hit + 1}/$n',
+              style: theme.textTheme.labelMedium,
+            ),
+          ),
+        IconButton(
+          tooltip: 'הקודם',
+          onPressed: n < 2 ? null : () => _stepHit(1),
+          icon: const Icon(Icons.keyboard_arrow_up_rounded),
+        ),
+        IconButton(
+          tooltip: 'הבא',
+          onPressed: n < 2 ? null : () => _stepHit(-1),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -1131,35 +1620,93 @@ class _ChatScreenState extends State<ChatScreen> {
         final String other = _other;
         final String title = _otherName.isEmpty ? 'צ\'אט' : _otherName;
         final List<ChatMessage> list = _messages.messages;
+        final List<ChatOutboxItem> outbox = ChatOutbox.of(widget.chatId);
+        final bool blocked = thread?.isBlocked ?? false;
+        final bool blockedByMe = thread?.blockedByMe(me) ?? false;
+        final bool archived = thread != null && ChatArchive.isArchived(thread);
+        final String? highlight = _searching && _hits.isNotEmpty
+            ? _hits[_hit]
+            : null;
+        for (final String id in _hits) {
+          _keys.putIfAbsent(id, GlobalKey.new);
+        }
         return Scaffold(
           backgroundColor: dark
               ? theme.scaffoldBackgroundColor
               : context.tokens.background,
-          appBar: AppBar(
-            titleSpacing: 0,
-            title: InkWell(
-              onTap: other.isEmpty || !WorkspaceStore.matchmakerEnabled
-                  ? null
-                  : () => context.push('/known-matchmakers/$other'),
-              child: Row(
-                children: <Widget>[
-                  ChatAvatar(
-                    name: title,
-                    photoUrl: thread?.photoFor(me),
-                    radius: 18,
+          appBar: _searching
+              ? _searchBar(theme)
+              : AppBar(
+                  titleSpacing: 0,
+                  title: Semantics(
+                    button: true,
+                    label: 'לפרופיל של $title',
+                    child: InkWell(
+                      onTap: other.isEmpty ? null : _openProfile,
+                      borderRadius: BorderRadius.circular(24),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: <Widget>[
+                            ChatAvatar(
+                              name: title,
+                              photoUrl: thread?.photoFor(me),
+                              radius: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                title,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(title, overflow: TextOverflow.ellipsis)),
-                ],
-              ),
-            ),
-          ),
+                  actions: <Widget>[
+                    PopupMenuButton<String>(
+                      tooltip: 'עוד',
+                      onSelected: _menu,
+                      itemBuilder: (BuildContext context) =>
+                          <PopupMenuEntry<String>>[
+                            const PopupMenuItem<String>(
+                              value: 'search',
+                              child: Text('חיפוש בשיחה'),
+                            ),
+                            const PopupMenuItem<String>(
+                              value: 'profile',
+                              child: Text('לפרופיל'),
+                            ),
+                            if (thread != null)
+                              PopupMenuItem<String>(
+                                value: 'archive',
+                                child: Text(
+                                  archived ? 'הוצאה מהארכיון' : 'העברה לארכיון',
+                                ),
+                              ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem<String>(
+                              value: 'block',
+                              child: Text(
+                                blockedByMe ? 'ביטול החסימה' : 'חסימה',
+                              ),
+                            ),
+                            const PopupMenuItem<String>(
+                              value: 'report',
+                              child: Text('דיווח'),
+                            ),
+                          ],
+                    ),
+                  ],
+                ),
           body: Column(
             children: <Widget>[
               Expanded(
-                child: !_messages.loaded
+                child: !_messages.loaded && outbox.isEmpty
                     ? const Center(child: CircularProgressIndicator())
-                    : list.isEmpty
+                    : list.isEmpty && outbox.isEmpty
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
@@ -1174,33 +1721,87 @@ class _ChatScreenState extends State<ChatScreen> {
                     : _MessageList(
                         controller: _scroll,
                         messages: list,
+                        outbox: outbox,
                         me: me,
                         other: other,
                         thread: thread,
                         loadingOlder: _messages.loadingOlder,
                         onOpenRef: _openRef,
                         onAnswer: _answerOffer,
+                        onRetry: _retry,
+                        onDiscard: (ChatOutboxItem i) =>
+                            ChatOutbox.remove(i.localId),
+                        keys: _keys,
+                        highlight: highlight,
                       ),
               ),
-              _Composer(
-                controller: _text,
-                focusNode: _focus,
-                canSend: _canSend && !_sending,
-                busy: _sending,
-                refLabel: _ref == null
-                    ? null
-                    : _ref!.kind == 'proposal' || _ref!.kind == 'idea'
-                    ? 'בנוגע לרעיון: ${_ref!.label}'
-                    : 'לגבי: ${_ref!.label}',
-                onClearRef: () => setState(() => _ref = null),
-                onSend: _send,
-                onAttach: _attach,
-                onRecord: _recordVoice,
-              ),
+              if (blocked)
+                _BlockedBar(
+                  byMe: blockedByMe,
+                  onUnblock: () => _toggleBlock(thread),
+                )
+              else
+                _Composer(
+                  controller: _text,
+                  focusNode: _focus,
+                  canSend: _canSend && !_sending,
+                  busy: _sending,
+                  refLabel: _ref == null
+                      ? null
+                      : _ref!.kind == 'proposal' || _ref!.kind == 'idea'
+                      ? 'בנוגע לרעיון: ${_ref!.label}'
+                      : 'לגבי: ${_ref!.label}',
+                  onClearRef: () => setState(() => _ref = null),
+                  onSend: _send,
+                  onAttach: _attach,
+                  onRecord: _recordVoice,
+                ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+/// In place of the composer while the conversation is blocked.
+class _BlockedBar extends StatelessWidget {
+  const _BlockedBar({required this.byMe, required this.onUnblock});
+
+  final bool byMe;
+  final VoidCallback onUnblock;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              Icons.block_rounded,
+              size: 18,
+              color: context.tokens.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                byMe
+                    ? 'חסמת את השיחה הזו — לא יישלחו בה הודעות חדשות.'
+                    : 'אי אפשר לשלוח הודעות חדשות בשיחה הזו.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            if (byMe)
+              TextButton(
+                onPressed: onUnblock,
+                child: const Text('ביטול חסימה'),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1217,9 +1818,26 @@ class _MessageList extends StatelessWidget {
     required this.loadingOlder,
     required this.onOpenRef,
     required this.onAnswer,
+    this.outbox = const <ChatOutboxItem>[],
+    this.onRetry,
+    this.onDiscard,
+    this.keys = const <String, GlobalKey>{},
+    this.highlight,
   });
 
   final ScrollController controller;
+
+  /// Lines not on the server yet — uploads on their way and failed sends —
+  /// at the very bottom, newest last.
+  final List<ChatOutboxItem> outbox;
+  final ValueChanged<ChatOutboxItem>? onRetry;
+  final ValueChanged<ChatOutboxItem>? onDiscard;
+
+  /// Keys for the messages a search found, so it can scroll to them.
+  final Map<String, GlobalKey> keys;
+
+  /// The search's current match, drawn marked.
+  final String? highlight;
 
   /// Oldest first.
   final List<ChatMessage> messages;
@@ -1238,12 +1856,23 @@ class _MessageList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final int n = messages.length;
+    final int k = outbox.length;
     return ListView.builder(
       controller: controller,
       reverse: true,
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-      itemCount: n + (loadingOlder ? 1 : 0),
-      itemBuilder: (BuildContext context, int i) {
+      itemCount: k + n + (loadingOlder ? 1 : 0),
+      itemBuilder: (BuildContext context, int index) {
+        if (index < k) {
+          final ChatOutboxItem item = outbox[k - 1 - index];
+          return _OutboxBubble(
+            key: ValueKey<String>('outbox:${item.localId}'),
+            item: item,
+            onRetry: onRetry == null ? null : () => onRetry!(item),
+            onDiscard: onDiscard == null ? null : () => onDiscard!(item),
+          );
+        }
+        final int i = index - k;
         if (i == n) {
           return const Padding(
             padding: EdgeInsets.all(12),
@@ -1267,18 +1896,155 @@ class _MessageList extends StatelessWidget {
                 onOpenRef: onOpenRef,
                 onAnswer: (String a) => onAnswer(m, a),
               );
+        final Widget marked = m.id == highlight
+            ? DecoratedBox(
+                decoration: BoxDecoration(
+                  color: context.tokens.softHighlight.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: body,
+              )
+            : body;
         return KeyedSubtree(
-          key: ValueKey<String>(m.id),
+          key: keys[m.id] ?? ValueKey<String>(m.id),
           child: firstOfDay
               ? Column(
                   children: <Widget>[
                     _DayChip(day: _day(m)),
-                    body,
+                    marked,
                   ],
                 )
-              : body,
+              : marked,
         );
       },
+    );
+  }
+}
+
+/// A line written here that the server has not got: "שולח…" while a file
+/// goes up, "לא נשלחה" with "ניסיון חוזר" when it failed. Never dropped by
+/// itself.
+class _OutboxBubble extends StatelessWidget {
+  const _OutboxBubble({
+    super.key,
+    required this.item,
+    this.onRetry,
+    this.onDiscard,
+  });
+
+  final ChatOutboxItem item;
+  final VoidCallback? onRetry;
+  final VoidCallback? onDiscard;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color fill = dark
+        ? AppColors.primaryLightDarkDm
+        : context.tokens.maleWash;
+    final AppGlyph? glyph = switch (item.type) {
+      ChatMessageType.image => AppGlyph.photo,
+      ChatMessageType.voice => AppGlyph.mic,
+      ChatMessageType.card => AppGlyph.card,
+      ChatMessageType.idea || ChatMessageType.ideaOffer => AppGlyph.spark,
+      _ => null,
+    };
+    final String body = item.text.isNotEmpty ? item.text : item.type.preview;
+    return Align(
+      alignment: AlignmentDirectional.centerEnd,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.78,
+        ),
+        child: Opacity(
+          opacity: item.sending ? 0.75 : 1,
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+            decoration: BoxDecoration(
+              color: fill,
+              borderRadius: BorderRadius.circular(14),
+              border: item.sending
+                  ? null
+                  : Border.all(
+                      color: context.tokens.badge.withValues(alpha: 0.6),
+                    ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (glyph != null) ...<Widget>[
+                      AppGlyphIcon(
+                        glyph,
+                        size: 16,
+                        color: context.tokens.maleAccent,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Flexible(
+                      child: Text(body, style: theme.textTheme.bodyLarge),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                if (item.sending)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const SizedBox.square(
+                        dimension: 11,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      ),
+                      const SizedBox(width: 6),
+                      Text('שולח…', style: theme.textTheme.labelSmall),
+                    ],
+                  )
+                else
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 4,
+                    children: <Widget>[
+                      Icon(
+                        Icons.error_outline_rounded,
+                        size: 14,
+                        color: context.tokens.badge,
+                      ),
+                      Text(
+                        'לא נשלחה',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: context.tokens.badge,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: onRetry,
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                        ),
+                        child: const Text('ניסיון חוזר'),
+                      ),
+                      TextButton(
+                        onPressed: onDiscard,
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          foregroundColor: context.tokens.textSecondary,
+                        ),
+                        child: const Text('מחיקה'),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1548,11 +2314,21 @@ class _OfferBlock extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         if (answer == 'approved')
-          Text(
-            mine ? '✓ אישר/ה את הרעיון' : '✓ אישרת את הרעיון',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: context.tokens.maleAccent,
-            ),
+          Row(
+            children: <Widget>[
+              AppGlyphIcon(
+                AppGlyph.check,
+                size: 16,
+                color: context.tokens.maleAccent,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                mine ? 'אישר/ה את הרעיון' : 'אישרת את הרעיון',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: context.tokens.maleAccent,
+                ),
+              ),
+            ],
           )
         else if (answer == 'declined') ...<Widget>[
           Text(

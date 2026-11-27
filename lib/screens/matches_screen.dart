@@ -659,7 +659,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     return SearchResultRow(
       leading: SearchResultCouple(a: personA, b: personB),
       title: names,
-      subtitle: '${match.status.icon} ${match.status.displayName}',
+      subtitle: match.status.displayName,
       onTap: () {
         _closeSearch();
         pushLeavingSearch(context, '/matches/${match.id}');

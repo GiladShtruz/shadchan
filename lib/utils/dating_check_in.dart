@@ -81,29 +81,29 @@ abstract final class DatingCheckIn {
     return days < 0 ? 0 : days;
   }
 
-  /// "הם יוצאים כבר 7 ימים 😊 בדקת איך הולך?" — and its shorter and longer
+  /// "הם יוצאים כבר 7 ימים. בדקת איך הולך?" — and its shorter and longer
   /// forms, because "כבר 0 ימים" and "כבר 96 ימים" are both things a person
   /// would not say.
   static String headline(int days) {
     if (days <= 0) {
-      return 'הם יצאו היום לראשונה 😊 שווה לבדוק איך היה';
+      return 'הם יצאו היום לראשונה. שווה לבדוק איך היה';
     }
     if (days == 1) {
-      return 'הם יוצאים כבר יום 😊 בדקת איך הולך?';
+      return 'הם יוצאים כבר יום. בדקת איך הולך?';
     }
     if (days < 14) {
-      return 'הם יוצאים כבר $days ימים 😊 בדקת איך הולך?';
+      return 'הם יוצאים כבר $days ימים. בדקת איך הולך?';
     }
     if (days < 60) {
       final int weeks = days ~/ 7;
       return weeks == 2
-          ? 'הם יוצאים כבר שבועיים 😊 בדקת איך הולך?'
-          : 'הם יוצאים כבר $weeks שבועות 😊 בדקת איך הולך?';
+          ? 'הם יוצאים כבר שבועיים. בדקת איך הולך?'
+          : 'הם יוצאים כבר $weeks שבועות. בדקת איך הולך?';
     }
     final int months = days ~/ 30;
     return months == 2
-        ? 'הם יוצאים כבר חודשיים 😊 בדקת איך הולך?'
-        : 'הם יוצאים כבר $months חודשים 😊 בדקת איך הולך?';
+        ? 'הם יוצאים כבר חודשיים. בדקת איך הולך?'
+        : 'הם יוצאים כבר $months חודשים. בדקת איך הולך?';
   }
 
   /// "יוצאים מהיום" / "יוצאים כבר יומיים" / "יוצאים כבר שבוע" — how long a

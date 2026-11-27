@@ -14,6 +14,8 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_progress.dart';
 import 'package:shadchan/utils/weekly_pace.dart';
 import 'package:shadchan/widgets/home_add_hub.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
+import 'package:shadchan/utils/matchmaker_rank.dart';
 
 T? _maybeWatch<T>(BuildContext context) {
   try {
@@ -192,13 +194,27 @@ class HomeWeeklyProgress extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Text(
-          progress.line,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
+        Row(
+          children: <Widget>[
+            if (ideas != null) ...<Widget>[
+              RankMark(
+                level: MatchmakerRanks.current(ideas).level,
+                size: 20,
+                color: fill,
+              ),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Text(
+                progress.line,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 6),
         ClipRRect(

@@ -1549,7 +1549,7 @@ class _DatingPanel extends StatelessWidget {
             Expanded(
               child: Text(
                 since == null
-                    ? 'הם יוצאים 😊 בדקת איך הולך?'
+                    ? 'הם יוצאים. בדקת איך הולך?'
                     : DatingCheckIn.headline(DatingCheckIn.daysOut(since)),
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w900,

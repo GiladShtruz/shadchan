@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -490,10 +491,10 @@ class KnownMatchmakerFace extends StatelessWidget {
       foregroundImage: hasPhoto
           ? avatarImage(context, photo, diameter: radius * 2)
           : null,
-      child: Icon(
-        Icons.person_rounded,
-        size: radius * 1.3,
-        color: AppColors.white,
+      child: AppGlyphIcon(
+        AppGlyph.person,
+        size: radius * 1.1,
+        color: context.tokens.maleAccent,
       ),
     );
   }
@@ -859,7 +860,16 @@ class _KnownMatchmakerProfileScreenState
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: <Widget>[
           Center(
-            child: KnownMatchmakerFace(name: name, photoUrl: photo, radius: 46),
+            child: GestureDetector(
+              onTap: photo == null || photo.trim().isEmpty
+                  ? null
+                  : () => ProfilePhotoViewer.open(context, photo, name: name),
+              child: KnownMatchmakerFace(
+                name: name,
+                photoUrl: photo,
+                radius: 46,
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           Row(

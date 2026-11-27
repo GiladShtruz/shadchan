@@ -228,7 +228,7 @@ class IdeaWeekRecord {
           : 'השבוע: ${_ideas(thisWeek)} · זה השיא השבועי הראשון שלך';
     }
     if (broken) {
-      return 'שברת את השיא! ${_ideas(thisWeek)} השבוע 🎉';
+      return 'שברת את השיא! ${_ideas(thisWeek)} השבוע';
     }
     return 'השיא שלך: ${_ideas(record)} · עוד ${target - thisWeek} '
         'לשבור אותו השבוע';

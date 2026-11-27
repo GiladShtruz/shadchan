@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/widgets/app_toast.dart';
 
@@ -53,22 +54,24 @@ void main() {
     expect(find.text('נוסף חבר למאגר'), findsNothing);
   });
 
-  testWidgets('the mark rides at the end of the line', (
+  testWidgets('the mark is the app glyph, not an emoji in the line', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       host(
-        (BuildContext context) =>
-            AppToast.show(context, '30 חברים נוספו למאגר', emoji: '🙌'),
+        (BuildContext context) => AppToast.show(
+          context,
+          '30 חברים נוספו למאגר',
+          glyph: AppGlyph.people,
+        ),
       ),
     );
 
     await tester.tap(find.text('פעולה'));
     await tester.pump();
 
-    // One string, so the bidi algorithm puts the emoji where the sentence
-    // finishes — which in Hebrew is its left-hand side.
-    expect(find.text('30 חברים נוספו למאגר 🙌'), findsOneWidget);
+    expect(find.text('30 חברים נוספו למאגר'), findsOneWidget);
+    expect(find.byType(AppGlyphIcon), findsOneWidget);
 
     // Let the auto-dismiss timer run out; a pending timer fails the test.
     await tester.pump(AppToast.visibleFor);
